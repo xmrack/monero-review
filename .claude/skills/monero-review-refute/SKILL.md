@@ -1,7 +1,7 @@
 ---
 name: monero-review-refute
 description: Adversarially verify the findings in an existing Monero PR review.
-allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
+allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
 ---
 
 A first-pass security review of this pull request has already been written to
@@ -155,10 +155,13 @@ the form above.
 
 ## Shell shape
 
-The Bash tool refuses `>` redirects, `&&`/`;` chains, and `$(...)` whatever the
-allowlist says. Pipes are fine and you should use them freely. When you need a
-file written — and you do, since your deliverable is a rewritten `review.md` —
-use the `Write` and `Edit` tools, which have no such restriction. Prefer `Edit`
+The Bash tool refuses `>` redirects, `$(...)` and every shell **block**
+(`for ... do ... done`, `while`, `if ... then`) whatever the allowlist says.
+Pipes and `&&`/`;` chains are fine and you should use them freely — those are
+validated part by part, while a loop is refused whole however innocent its
+contents. When you need a file written — and you do, since your deliverable
+is a rewritten `review.md` — use the `Write` and `Edit` tools, which have no
+such restriction. Prefer `Edit`
 for per-finding changes so you do not have to reproduce the whole report from
 memory each time.
 
@@ -173,11 +176,15 @@ Two more turn-wasters worth knowing before you hit them:
   prototype is settleable by `file:line` instead of left UNRESOLVED — which is
   exactly what happened in an earlier review. Untracked, so use `ls`/`find`/`rg`,
   not `git ls-files`.
-- **A compound command is only as allowed as its parts.** Pipes have always
-  worked, so the checker splits and validates each piece rather than banning
-  compound shapes. `echo`, `printf`, `test`, `seq` and similar are now
-  allowlisted, so chains that previously failed on those parts should work. If
-  one is still refused, find the component that is not permitted instead of
+- **A pipe or chain is only as allowed as its parts; a loop is refused whole.**
+  Pipes have always worked, so the checker splits those and validates each
+  piece rather than banning compound shapes. `echo`, `printf`, `test`, `seq`
+  and similar are allowlisted, so chains of them run. A `for`/`while`/`if`
+  block is not decomposable and is always refused — it was the largest single
+  cause of refused calls in a measured day of runs, 8 of 9 with every command
+  inside the loop allowlisted. Pass a glob to a tool that takes many paths
+  instead (`grep -n pat dir/*.c`, `stat -c '%n %s' dir/*`, `wc -c dir/*`). If a
+  pipe or chain is refused, find the component that is not permitted instead of
   rephrasing — or just split it, which always works. Git also takes multiple
   objects directly:
   `git log --no-walk --format='=== %h ===%n%B' <sha> <sha> <sha>` returns
@@ -187,6 +194,15 @@ Two more turn-wasters worth knowing before you hit them:
 - **Do not append `; echo "rc=$?"`.** It is refused, and the tool result
   already reports success, failure and stderr. Three of five refusals in one
   recent run were this shape on commands that would otherwise have worked.
+- **`g++ -E` is the only compiler form you have.** `-fsyntax-only`, `-c`, `-o`
+  and `-x c++` are refused by design — nothing here is built or run. Settle a
+  type or size question by reading the header (`deps-include/` for system
+  ones), not by trying to compile a probe. Attempts to compile were the
+  biggest unclassified cause of refusals in a measured day of runs.
+- **`gpg`, `tar`, `env`, `man`, `rm`, `mkdir`, `getent` and `hash` are not
+  available.** `env` and `getent` never will be — one runs a command the
+  allowlist has not seen, the other is a network lookup. `cd` *is* allowed, but
+  you are already at the repo root, so it is usually noise; `git -C` is not.
 - **`external/rapidjson`, `external/randomx`, `external/supercop` and
   `external/gtest` are submodules whose source IS fetched**, at the PR head's
   pinned commits — but `git ls-files` and `git grep` cannot see inside them,

@@ -27,29 +27,82 @@ KEYS = ("permission_denials", "permissionDenials")
 # alternative in the skills. An UNCLASSIFIED denial is therefore the
 # interesting one: it means a NEW cause has appeared and the skills do not yet
 # answer it. That is the line worth reading.
+#
+# Ordered most-specific first, and `chain` is last on purpose: a day of runs
+# (38 refusals over 48 reviews) had 15 calls labelled `chain` whose real gate
+# was a `cd`, a shell block, or a binary that is simply not allowlisted. The
+# chaining was never the problem, and "split the chain" was the wrong advice
+# every time. Anything more specific therefore suppresses it.
 CAUSES = (
     # (label, pattern, the answer the skills already give)
     ("rc-echo",      r'echo\s+"?rc\d*=\$\?',
      "the tool result already reports success/failure"),
-    ("chain",        r';|&&|\bfor\b[^;]*\bdo\b',
-     "one command takes several args: git log --no-walk <sha> <sha>"),
+    ("loop",         r'\b(for|while|until)\b[^\n]*\bdo\b|\bif\b[^\n]*\bthen\b',
+     "a shell block is refused whole, however allowlisted its parts: pass a "
+     "glob to a tool that takes many paths -- grep -n pat dir/*.c, "
+     "stat -c '%n %s' dir/*, wc -c dir/*"),
+    ("compile",      r'\bg\+\+(?!\s+-E\b)',
+     "g++ -E is the only compiler form here; nothing is built or run"),
+    ("not-allowlisted",
+     r'(?:^|[|;&]\s*)(gpg|tar|env|man|col|rm|mkdir|rmdir|getent|hash|xargs|'
+     r'make|cmake|curl|wget|python3?|perl|bash|sh|zsh)\b',
+     "the binary is not on the allowlist -- read the source instead of "
+     "running the tool"),
+    ("var-prefix",   r'(?:^|[|;&]\s*)[A-Z_][A-Z0-9_]*=',
+     "a VAR=val prefix runs a command the allowlist has not seen, like env; "
+     "drop it, or set the variable's effect with the tool's own flag"),
+    ("git form",     r'\bgit\s+(?:-C\b|--git-dir|--work-tree|branch\b)',
+     "not an allowlisted git form: for a submodule read PR_SUBMODULES.md, "
+     "which already holds the bump range, or `cd <dir> && git log` -- cd is "
+     "allowlisted, git -C is not"),
+    ("git blame",    r'\bgit\s+blame\b',
+     "deliberately not allowlisted: git log -S <string> and git log -L find "
+     "the commit that introduced a line, and take a path directly"),
     ("redirect",     r'(?<!2)>\s*[^&\s]',
      "use the Write tool"),
-    ("substitution", r'\$\(',
+    ("substitution", r'\$\(|\$\{|\$\'',
      "resolve it in a separate call"),
+    ("dollar-arg",   r'\$\d',
+     "an unresolved-looking expansion is refused whatever the quoting: "
+     "sed -E 's/.../\\1/' instead of rg -r '$1'"),
     ("outside-tree", r'(^|\s)(/usr/|/etc/|/opt/)|find\s+/\s',
      "/usr/include/boost/X -> deps-include/boost/X"),
-    ("git -C",       r'\bgit\s+-C\b',
-     "PR_SUBMODULES.md already holds the submodule range"),
+    ("cd",           r'(?:^|[|;&]\s*)cd\s',
+     "cd is allowlisted now, and you start at the repo root anyway"),
+    ("chain",        r';|&&|\|\|',
+     "one command takes several args: git log --no-walk <sha> <sha>"),
 )
+
+# Quoted text is data, not shell syntax. Matching the raw command reported a
+# redirect for `printf '...sizeof(std::map<std::string,int>)==48...'` and for
+# `rg -o 'https?://[^ >)\\]+'` -- neither of which redirects anything -- and
+# told the model to "use the Write tool". These causes see the command with
+# quoted spans blanked out; the rest see it whole.
+ON_BARE = frozenset(("loop", "not-allowlisted", "redirect", "cd", "chain",
+                     "var-prefix"))
+QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+
+
+def bare(cmd):
+    """The command with quoted spans blanked, length preserved."""
+    return QUOTED.sub(lambda m: " " * len(m.group(0)), cmd)
 
 
 def classify(cmd):
     """All causes matching one refused command, most specific first."""
-    hits = [name for name, pat, _ in CAUSES if re.search(pat, cmd)]
-    # rc-echo implies a chain; report the specific reason, not both.
-    if "rc-echo" in hits and "chain" in hits:
+    stripped = bare(cmd)
+    hits = [name for name, pat, _ in CAUSES
+            if re.search(pat, stripped if name in ON_BARE else cmd)]
+    # rc-echo and loop both read as chains; report the specific reason.
+    if len(hits) > 1 and "chain" in hits:
         hits.remove("chain")
+    # $( ) is already reported as a substitution.
+    if "substitution" in hits and "dollar-arg" in hits:
+        hits.remove("dollar-arg")
+    # awk's $0/$1 are its own field syntax, and awk is allowlisted -- flagging
+    # them as an unresolved expansion sends the reader after the wrong thing.
+    if "dollar-arg" in hits and re.search(r'\bawk\b', cmd):
+        hits.remove("dollar-arg")
     return hits or ["UNCLASSIFIED"]
 
 
