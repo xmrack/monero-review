@@ -21,7 +21,7 @@ on:
         type: choice
         options:
           - claude-opus-5
-          - claude-sonnet-5
+          - claude-fable-5-1
 
   # Twice an hour, off the top of the hour.
   #
@@ -57,11 +57,22 @@ env:
   # any dispatch that omits the input. Keep the `model:` input default above
   # identical, or the dropdown lies about scheduled runs again.
   #
-  # Opus. Measured cost per review on this queue: Sonnet ran a $1.02 median
-  # and $0.13 on a trivial diff; the one Opus review so far cost $13.56, and
-  # dispatch.sh recorded ~$3.69 API-equivalent on an earlier sample. Budget
-  # for several times the Sonnet rate, and watch the per-issue telemetry
-  # footer rather than guessing -- it reports real cost per run.
+  # Opus. Measured cost per review on this queue: the one Opus review so far
+  # cost $13.56, and dispatch.sh recorded ~$3.69 API-equivalent on an earlier
+  # sample. Sonnet, before it was dropped from the dropdown, ran a $1.02
+  # median and $0.13 on a trivial diff -- so budget for several times that,
+  # and watch the per-issue telemetry footer rather than guessing, since it
+  # reports real cost per run.
+  #
+  # Fable is the other option and is UNMEASURED on this queue: no cost,
+  # runtime or finding-quality sample yet. Two things to watch on the first
+  # few fable runs. Cost, from the telemetry footer. And runtime, because
+  # `Record failed attempt` still keeps elapsed time as its weakest fallback
+  # signal on the assumption that a fast finish means an account problem
+  # rather than a hard diff -- that was calibrated on Sonnet and Opus, so if
+  # fable simply reviews faster, check that a good short run is not being
+  # charged as a failed attempt. The execution log is the stronger signal and
+  # is consulted first, so this should not bite, but it is unverified.
   DEFAULT_MODEL: claude-opus-5
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,

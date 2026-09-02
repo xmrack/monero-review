@@ -3,7 +3,7 @@
 # No GitHub Actions, no secrets, no runner -- just your authenticated claude CLI.
 #
 #   ./review-local.sh 9876              # review PR 9876 with Opus
-#   ./review-local.sh 9876 claude-sonnet-5
+#   ./review-local.sh 9876 claude-fable-5-1
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 set -euo pipefail
