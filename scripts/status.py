@@ -127,7 +127,15 @@ def main():
                 done.update(re.findall(r"\b[0-9a-f]{12}\b", i["title"]))
         left = [p for p in open_prs
                 if not p["draft"] and p["head"]["sha"][:12] not in done]
-        print(f"  {len(left)} unreviewed of {len(open_prs)} open upstream")
+        # Says "before the doc-only filter" because it is: this runs with no
+        # token by default, and separating the two would cost one file listing
+        # per PR against a 60/hour anonymous budget. The selector does make
+        # that split -- `ready` vs `docs` in a run's select log, and in every
+        # published review's footer -- and the difference is not cosmetic: a
+        # count of 13 here has meant 1 PR actually in line and 12 permanent
+        # README edits.
+        print(f"  {len(left)} unreviewed of {len(open_prs)} open upstream "
+              f"(before the doc-only filter)")
     except urllib.error.HTTPError as exc:
         left = None
         print(f"  could not read upstream PRs: HTTP {exc.code}")
@@ -140,7 +148,9 @@ def main():
         print(f"  {len(recent)} review(s) in the last 24h")
         if left and recent:
             days = len(left) / len(recent)
-            print(f"  at that rate, {len(left)} remaining is ~{days:.0f} day(s)")
+            print(f"  at that rate, {len(left)} remaining is ~{days:.0f} "
+                  f"day(s) -- an upper bound, since some of those {len(left)} "
+                  f"are doc-only and will never be picked")
         elif left:
             print("  nothing in the last 24h -- is the cron firing? (see CRON)")
         newest = max(reviews, key=lambda i: i["created_at"])

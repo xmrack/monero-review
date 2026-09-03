@@ -126,7 +126,15 @@ jobs:
       # on the by-number and paused paths below, which return before the
       # selector runs; the consumer omits the line rather than printing a zero
       # it did not measure.
+      #
+      # `queue` counts every unreviewed PR including doc-only ones and keeps
+      # that meaning for comparability with older issues; `ready` is the count
+      # that answers "is there anything actually waiting", and `docs` is the
+      # residue that never will be. See scripts/select_prs.py.
       queue: ${{ steps.pick.outputs.queue }}
+      ready: ${{ steps.pick.outputs.ready }}
+      docs: ${{ steps.pick.outputs.docs }}
+      unprobed: ${{ steps.pick.outputs.unprobed }}
       open: ${{ steps.pick.outputs.open }}
     steps:
       - uses: actions/checkout@v6
@@ -783,7 +791,9 @@ jobs:
       - name: Queue depth
         if: always()
         env:
-          QUEUED: ${{ needs.select.outputs.queue }}
+          READY: ${{ needs.select.outputs.ready }}
+          DOCS: ${{ needs.select.outputs.docs }}
+          UNPROBED: ${{ needs.select.outputs.unprobed }}
           OPEN: ${{ needs.select.outputs.open }}
         run: |
           set -euo pipefail
@@ -791,9 +801,21 @@ jobs:
           # dispatch by PR number and a paused sweep both return before it.
           # Omit the line rather than print a zero nobody measured.
           [ -s review.md ] || exit 0
-          [ -n "${QUEUED:-}" ] && [ -n "${OPEN:-}" ] || exit 0
-          printf '<sub>Queue: %s unreviewed of %s open upstream PR(s) when this run started.</sub>\n' \
-            "$QUEUED" "$OPEN" >> review.md
+          [ -n "${READY:-}" ] && [ -n "${DOCS:-}" ] && [ -n "${OPEN:-}" ] \
+            || exit 0
+
+          # Two numbers, because one could not tell "the bot is behind" from
+          # "the bot is done and the rest are README edits". `ready` includes
+          # the PR this run is reviewing, since it was in line when the run
+          # started -- which is what the whole line is timestamped to.
+          line="Queue: $READY in line to review, $DOCS doc-only"
+          # Only when the probe budget actually truncated the queue: an
+          # unclassified count is a gap in what was measured, not a bucket.
+          if [ -n "${UNPROBED:-}" ] && [ "$UNPROBED" != "0" ]; then
+            line="$line, $UNPROBED unclassified (probe cap)"
+          fi
+          printf '<sub>%s, of %s open upstream PR(s) when this run started.</sub>\n' \
+            "$line" "$OPEN" >> review.md
 
       # An issue is the dedup marker, so it is only written on success --
       # a rate-limited or timed-out run leaves no marker and gets retried.
