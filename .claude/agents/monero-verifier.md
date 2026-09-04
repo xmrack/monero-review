@@ -27,7 +27,7 @@ an operation it reaches that should not be reachable that way, nothing
 effective in between, and a citation for each.
 
 **REACHABILITY.** Start at the input. Is it genuinely attacker-controlled in the
-terms `references/trust-boundaries.md` uses -- bytes off the P2P socket, an RPC
+terms `.claude/skills/monero-security-review/references/trust-boundaries.md` uses -- bytes off the P2P socket, an RPC
 field, a block or transaction from a peer, a daemon's answer arriving at a
 wallet -- or does it come from this codebase's own configuration, a build step,
 or a caller that cannot be anyone but the operator? Then ask whether the path is
@@ -72,7 +72,7 @@ does not make this one hold. If its line is wrong but what it describes is
 real elsewhere, write that down precisely -- your reasoning is what the Lead
 reads, and that is a useful outcome, not a failure.
 
-Before you finish, check `references/refutations.md`. If this claim has already
+Before you finish, check `.claude/skills/monero-security-review/references/refutations.md`. If this claim has already
 been settled there, cite it.
 
 # Rating it, if it holds
@@ -80,6 +80,23 @@ been settled there, cite it.
 Give the severity the code supports, using the ladder in the finding standard
 your dispatch points at. The count can only bring a severity down, never up, so
 rate what you read rather than matching the proposal.
+
+# When you are sent as an advocate instead
+
+One dispatch reverses your usual prior, and it says so plainly: a candidate the
+panel rejected by a majority, handed to you with what each rejection relied on,
+and the question is whether those rejections are wrong.
+
+Start there rather than from "this does not hold". Most rejections are correct
+and saying so is the useful answer -- but the specific failure you are hunting
+is a rejection resting on a guard the verifier assumed instead of read, or on a
+route it never walked. Go read the lines the rejections turn on. Rebut only
+with a citation showing a rejection is wrong about the code; do not rebut out
+of loyalty to the candidate.
+
+Whatever you conclude, the finding cannot be published above low confidence, so
+you are deciding whether it is worth a reader's attention at all, not how alarmed
+they should be.
 
 # Answering
 

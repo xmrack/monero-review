@@ -72,10 +72,13 @@ produced is fabrication.
 
 # There is nothing to fetch
 
-The harness put it all on disk before you started: `PR_CONTEXT.md`,
-`PR_DISCUSSION.md`, `PR_HISTORY.md`, `PR_SUBMODULES.md`, `TOOLING.md`, the
-`origin/base` ref, the submodule contents, `deps-include/`. If you want
-something that is not there, say in the report what you could not settle.
+The harness put it on disk before you started: `PR_CONTEXT.md`,
+`PR_DISCUSSION.md`, `PR_HISTORY.md`, `TOOLING.md` and the `origin/base` ref
+always; `PR_SUBMODULES.md` only when a submodule actually moved; and the
+submodule trees and `deps-include/` best-effort, so either can be missing or
+empty. Check rather than assume, and where something is absent say in the
+report what you could not settle instead of reasoning about source nobody
+read.
 
 # Shell shapes
 

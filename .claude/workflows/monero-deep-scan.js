@@ -284,8 +284,8 @@ const byDefect = new Map()
 
 // Deduplicate against everything seen in ANY round, not against what survives.
 // Otherwise a candidate a later round re-proposes comes back every round.
-function harvest(r, tag, extra) {
-  if (!r) { researchAccount.push({ cell: tag, failed: true }); return 0 }
+function harvest(r, tag, extra, kind) {
+  if (!r) { researchAccount.push({ cell: tag, failed: true, kind: kind || 'cell' }); return -1 }
   if (Array.isArray(r.notFinished) && r.notFinished.length) {
     researchAccount.push({ cell: tag, notFinished: r.notFinished })
   }
@@ -303,9 +303,9 @@ function harvest(r, tag, extra) {
 
 researched.forEach((r, i) => {
   const cell = cells[i]
-  harvest(r, cell.unit.name + '/' + cell.lens, { unit: cell.unit.name, foundBy: cell.lens })
+  harvest(r, cell.unit.name + '/' + cell.lens, { unit: cell.unit.name, foundBy: cell.lens }, 'cell')
 })
-const failedCells = researchAccount.filter((x) => x.failed).length
+const failedCells = researchAccount.filter((x) => x.failed && x.kind === 'cell').length
 if (failedCells) log(failedCells + ' research cell(s) returned nothing usable; reported, not hidden')
 log('round 1: ' + byDefect.size + ' distinct candidate(s) from ' + cells.length + ' cell(s)')
 
@@ -320,6 +320,8 @@ const knownSoFar = () => Array.from(byDefect.values())
   .map((c) => '  ' + c.file + ':' + c.line + ' (' + c.category + ') ' + c.title).join('\n') || '  (none)'
 
 let seamFresh = 0
+let seamRan = false
+let seamFailed = false
 if (units.length > 1) {
   const seam = await agent(
     [CONTEXT, '',
@@ -344,8 +346,13 @@ if (units.length > 1) {
     ].join('\n'),
     { label: 'research:seams', phase: 'Research', schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
   )
-  seamFresh = harvest(seam, 'seams', { unit: 'seams', foundBy: 'cross-unit' })
-  log('seams: ' + seamFresh + ' fresh candidate(s) crossing unit boundaries')
+  const got = harvest(seam, 'seams', { unit: 'seams', foundBy: 'cross-unit' }, 'seam')
+  seamFailed = got < 0
+  seamRan = !seamFailed
+  seamFresh = seamFailed ? 0 : got
+  log(seamFailed
+    ? 'seams: the pass returned nothing usable — reported as not run, NOT as a clean result'
+    : 'seams: ' + seamFresh + ' fresh candidate(s) crossing unit boundaries')
 }
 
 // One gap pass per unit, told what has already been found there. A single round
@@ -375,8 +382,14 @@ const gapFresh = await parallel(units.map((u) => () => agent(
     schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
 )))
 let gapCount = 0
-gapFresh.forEach((r, i) => { gapCount += harvest(r, 'gap/' + units[i].name, { unit: units[i].name, foundBy: 'gap-pass' }) })
-log('gap pass: ' + gapCount + ' fresh candidate(s) the first round missed')
+let gapFailed = 0
+gapFresh.forEach((r, i) => {
+  const got = harvest(r, 'gap/' + units[i].name, { unit: units[i].name, foundBy: 'gap-pass' }, 'gap')
+  if (got < 0) gapFailed += 1
+  else gapCount += got
+})
+log('gap pass: ' + gapCount + ' fresh candidate(s) the first round missed' +
+    (gapFailed ? ', and ' + gapFailed + ' unit(s) whose second look returned nothing usable' : ''))
 
 const candidates = Array.from(byDefect.values())
 candidates.forEach((c, i) => { c.id = 'C' + (i + 1) })
@@ -387,7 +400,8 @@ const coverageBase = {
   units, excluded, unaccounted, mapperFallback: !gotPartition,
   unitCeiling: UNIT_CEILING, unitsAllowed: MAX_UNITS,
   cells: cells.length, failedCells, researchAccount,
-  seamPassRan: units.length > 1, seamFresh, gapFresh: gapCount,
+  seamPassApplicable: units.length > 1, seamRan, seamFailed, seamFresh,
+  gapFresh: gapCount, gapFailed,
   candidatesProposed: proposed.length, candidatesDistinct: candidates.length,
 }
 
@@ -447,7 +461,11 @@ const judged = await parallel(candidates.map((c) => () => parallel(
     cast: cast.length,
     // No answers at all is not a refutation: nobody looked. It is reported as
     // unverified so a silent panel failure cannot read as a clean candidate.
-    outcome: cast.length === 0 ? 'unverified' : (agreeing.length >= 2 ? 'holds' : 'refuted'),
+    // Fewer than two answers is a panel failure, not a verdict: with one yes and
+    // two silences the old form said "refuted" while no angle had refuted
+    // anything, and the report has no refutation to cite.
+    outcome: cast.length < 2 ? 'unverified' : (agreeing.length >= 2 ? 'holds' : 'refuted'),
+    rejecting: cast.filter((v) => v.holds === false).length,
     severity,
     confidence: capConfidence(c.confidence, agreeing.length >= 3 ? 'high' : 'medium'),
     anchorDoubted: cast.filter((v) => v.anchorMatches === false).length,
@@ -468,12 +486,17 @@ if (dropped) log(dropped + ' candidate(s) failed verification outright and are r
 // refutations are left alone -- three independent noes is a real answer.
 phase('Re-look')
 
-const marginal = results.filter((r) => r.outcome === 'refuted' && r.agreeing === 1)
+// A genuine two-to-one: all three answered, one held it, two rejected it. Not
+// merely "one agreed" -- that also matches a panel where the other two went
+// silent, and the advocate would then be sent to disprove rejections nobody cast.
+const marginal = results.filter((r) => r.outcome === 'refuted' && r.cast === 3 &&
+                                       r.agreeing === 1 && r.rejecting === 2)
 if (marginal.length) log(marginal.length + ' candidate(s) were one vote short; re-looking at those')
 
 const advocated = await parallel(marginal.map((r) => () => agent(
   [CONTEXT, '',
-   'A candidate was rejected two-to-one. Your job is the opposite of the usual:',
+   'A candidate was rejected ' + r.rejecting + '-to-' + r.agreeing + ' by the panel.',
+   'Your job is the opposite of the usual:',
    'find out whether the two rejections are wrong. Do not defend it out of',
    'loyalty -- most rejections are correct -- but the specific failure you are',
    'hunting is a rejection resting on a guard the verifier assumed instead of',
@@ -528,8 +551,11 @@ return {
     marginalReLooked: marginal.length,
     rescuedOnReLook: promoted,
     anchorDoubted: results.filter((r) => r.anchorDoubted >= 2).map((r) => r.candidate.id),
-    severityLowered: results.filter((r) => r.severityLowered)
+    // Built from what actually publishes, and after the re-look promotions --
+    // otherwise a refuted candidate turns up here and the Lead is told to
+    // annotate a finding that is not in the report.
+    severityLowered: findings.filter((r) => r.severityLowered)
       .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityLowered })),
   },
-  next: 'Write review.md per the REPORT SPEC. Publish the severities and confidences as returned -- they are already settled by the count. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, any failed research cell, whether the seam pass ran and what it added, and any candidate in coverage.candidatesUnverified. A finding carrying `rescued` was refuted two-to-one and then saved on re-look: say so in its Verification line and keep its confidence at low. Check each finding\'s cited line before writing it down.',
+  next: 'Write review.md per the REPORT SPEC. Publish the severities and confidences as returned -- they are already settled by the count. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, and the counts. For anything that has to be named individually use the lists, not the tallies: the top-level `unverified` array holds the candidates no panel decided (coverage.candidatesUnverified is its count, plus any whose panel threw, which are a count with no record), and coverage.researchAccount entries with failed:true are the passes that came back unusable. Say whether the seam pass ran at all: coverage.seamFailed true means nobody looked across the unit boundaries, which is a limit on the review and must never be published as a clean cross-unit result. Any id in coverage.anchorDoubted is a finding two verifiers could not find at its cited line: re-anchor it from the code or drop it, and say which. A finding carrying `rescued` was rejected by a majority and then saved on re-look: give the real split from its vote record and keep its confidence low.',
 }

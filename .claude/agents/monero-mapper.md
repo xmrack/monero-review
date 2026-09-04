@@ -28,7 +28,7 @@ Each unit you emit carries:
   literal, no globs.
 - `role` — one line on what this part of the change does.
 - `boundary` — the trust boundary it sits behind, named as
-  `references/trust-boundaries.md` names them: the P2P/Levin surface, the
+  `.claude/skills/monero-security-review/references/trust-boundaries.md` names them: the P2P/Levin surface, the
   restricted or unrestricted RPC surface, block and transaction validation,
   the daemon-to-wallet direction, the build and packaging path. Write `none`
   when nothing untrusted reaches it.

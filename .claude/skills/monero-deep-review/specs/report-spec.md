@@ -96,7 +96,7 @@ look decisive throws away the expensive part.
 **Nominate the durable refutations.** Where a refutation settles something about
 this codebase rather than about this diff -- what epee's serializer really
 bounds, what a zero scalar does, which zone a limit applies to -- say so and
-name it as worth adding to `references/refutations.md`. That file is why the
+name it as worth adding to `.claude/skills/monero-security-review/references/refutations.md`. That file is why the
 next review does not re-propose it, and this pipeline is the cheapest place to
 grow it. Do not edit it from here: propose, and let a human land it.
 
@@ -120,6 +120,9 @@ So:
   above it, every real finding stops labelling the issue;
 - a refuted entry never gets a `###` heading of its own.
 
-Verified against `labels.py` rather than assumed: this template yields
-`medium, low`, a bracketed severity inside a refuted bullet is correctly
-ignored, and moving `## Refuted` above `## Findings` yields nothing at all.
+Measured against `labels.py`, not assumed: a report written from this template
+with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity
+inside a refuted bullet is correctly ignored; and moving `## Refuted` above
+`## Findings` yields nothing at all. The template block itself yields nothing,
+because its placeholder heading has no real severity word in it -- which is
+also the check that the regex is matching severities rather than brackets.

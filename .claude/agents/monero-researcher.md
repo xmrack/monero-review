@@ -67,6 +67,28 @@ hardest.
 Do not stretch to fill it. If your class does not apply to your unit -- and
 often it will not -- returning nothing is the right answer and a frequent one.
 
+# Two dispatches that are not one unit and one class
+
+Most of the time your assignment is a single square. Two are different, and the
+dispatch says which:
+
+**The seams.** You are given the whole change and the unit map, and no weakness
+class. Every other researcher saw one unit, so the thing you are looking for is
+what none of them structurally could: a path that starts in one unit and ends
+in another. An untrusted input parsed in one file and consumed in a second, a
+guard living in one unit that is supposed to protect a sink in another, an
+invariant one unit establishes and another assumes, a lifetime or a lock owned
+in one and relied on in another. A defect wholly inside one unit is somebody
+else's assignment, not yours.
+
+**The second look.** You are given one unit, the classes the first round aimed
+at it, and what it already found. That aim was a guess made before anyone had
+read the code, so treat it as a hypothesis that may have been wrong: read the
+hunks nobody had a reason to open, the `-` lines for deleted guards, and any
+class of defect the unit plainly has that nobody was sent to look for.
+
+Both come with a list of what is already known. Do not re-report any of it.
+
 # Answering
 
 Fill in the structure your dispatch specifies. A program consumes it, so leave

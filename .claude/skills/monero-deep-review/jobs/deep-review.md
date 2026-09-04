@@ -64,8 +64,11 @@ file and line counts, that this is the deep pass, and that nothing is a finding
 until the verifiers have finished. Then wait. Per-stage progress shows under
 `/workflows`; do not narrate it yourself.
 
-You get back `findings`, `refuted`, `coverage`, and a `next` line. Follow
-`next`.
+You get back `findings`, `refuted`, `unverified`, `coverage`, and a `next` line.
+Follow `next`. Note that `unverified` is a list of candidates no panel decided,
+while `coverage.candidatesUnverified` is only its count (plus any whose panel
+threw, which are a count with no record) — when something has to be named, use
+the list.
 
 ## 5. Write `review.md`
 
@@ -86,15 +89,23 @@ Coverage is not a formality. It must name:
 - the units and the weakness classes run over each;
 - every excluded file with its reason;
 - **every path in `coverage.unaccounted`**, as neither reviewed nor excluded;
-- whether the seam pass ran (`coverage.seamPassRan`) and what it added
-  (`coverage.seamFresh`), and what the per-unit second look found
-  (`coverage.gapFresh`) — both worth stating at zero;
+- whether the seam pass ran at all. `coverage.seamPassApplicable` is false on a
+  single-unit change; `coverage.seamFailed` true means it was applicable and
+  nobody looked, which is a limit on the review and must never be written up as
+  a clean cross-unit result. Only when `coverage.seamRan` is true does
+  `coverage.seamFresh` mean anything, and then it is worth stating at zero;
+- what the per-unit second look found (`coverage.gapFresh`), and how many units
+  it failed to cover (`coverage.gapFailed`);
+- any id in `coverage.anchorDoubted` — a finding two verifiers could not find at
+  its cited line. Re-anchor it from the code or drop the finding, and say which
+  you did;
 - `coverage.marginalReLooked` and `coverage.rescuedOnReLook`: how many
   candidates fell one vote short, and which the advocate saved;
 - any research cell that came back empty-handed through failure rather than
-  judgement (`coverage.failedCells`);
-- any candidate whose verifiers all failed to answer
-  (`coverage.candidatesUnverified`);
+  judgement — `coverage.failedCells` is the count, and the entries in
+  `coverage.researchAccount` with `failed: true` name them;
+- any candidate no panel decided: the `unverified` list names them, and
+  `coverage.candidatesUnverified` counts them;
 - `coverage.mapperFallback` when the partition was unusable and the whole change
   was read as one unit — complete, but blunter;
 - `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the cap
