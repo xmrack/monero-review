@@ -9,8 +9,17 @@ Who else is working:
   weakness classes each unit deserves. It also records which changed files it
   chose not to review, and why.
 - **Researchers** each take one unit and one weakness class and propose
-  candidates.
+  candidates. Two work differently. One reads only what crosses the boundaries
+  between units, because splitting the change up is what makes the rest
+  tractable and is also the one thing that can hide a defect whose input arrives
+  in one unit and does its damage in another. Another takes a second look at
+  each unit knowing what the first round found, because the weakness classes
+  were picked before anyone had read the code.
 - **Verifiers** each take one candidate and one angle and try to take it apart.
+  Where they split two to one, an **advocate** goes back and tries to show the
+  two rejections wrong: the way a real defect dies here is a verifier refuting
+  it with a guard it assumed rather than read, and a near-miss is where that
+  happens. A unanimous rejection is left alone.
 
 Researchers are measured on missing nothing and verifiers on refusing
 everything, which is the arrangement. They are meant to pull against each

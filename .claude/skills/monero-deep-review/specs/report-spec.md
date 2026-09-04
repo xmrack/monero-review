@@ -23,9 +23,15 @@ They will check your citations. Write as though they will.
 Then the changed files deliberately excluded, with the reason given for each.
 Then, if the workflow reported any, the changed files nobody accounted for --
 named individually and described as neither reviewed nor excluded.
+Then what the extra passes did: whether the seam pass ran (it does not on a
+single-unit change) and what crossing a boundary turned up, and what the
+per-unit second look found that the first round missed. Both are worth stating
+even at zero -- a zero from the seam pass is evidence about the change, and its
+absence is a limit on the review.
 Then the counts: candidates proposed, candidates left after merging duplicates,
-how many stood up. Anything a researcher said it could not finish reading is
-reported as that researcher's own account, not as established fact.>
+how many stood up, how many were one vote short and re-looked, and how many of
+those the advocate rescued. Anything a researcher said it could not finish
+reading is reported as that researcher's own account, not as established fact.>
 
 ## Findings
 
@@ -45,7 +51,11 @@ a victim action. "None" is worth writing when it is true.>
 
 **Fix.** <What to change, at the cause rather than at one caller.>
 
-**Verification.** <n>/3 angles agreed (<which>).
+**Verification.** <n>/3 angles agreed (<which>). <For a finding carrying
+`rescued`: say that two angles rejected it, name what each relied on, and give
+the line the advocate showed they were wrong about. Its confidence stays `low`
+however strong the argument reads -- it is published against the panel's
+majority and the reader is entitled to know it.>
 
 ## Refuted
 
@@ -82,6 +92,13 @@ this pipeline. Never phrase a finding so that it implies otherwise.
 **Keep the refuted list.** It is most of what a deep review produces, and it is
 how the next reviewer avoids spending a panel on the same idea. Dropping it to
 look decisive throws away the expensive part.
+
+**Nominate the durable refutations.** Where a refutation settles something about
+this codebase rather than about this diff -- what epee's serializer really
+bounds, what a zero scalar does, which zone a limit applies to -- say so and
+name it as worth adding to `references/refutations.md`. That file is why the
+next review does not re-propose it, and this pipeline is the cheapest place to
+grow it. Do not edit it from here: propose, and let a human land it.
 
 **"No findings" is a finished report.** It is also the common outcome on this
 queue. What makes it worth reading is Coverage and Checked-and-clear having real

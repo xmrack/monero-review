@@ -81,14 +81,24 @@ Before you write a finding down, read its cited line and check it still says
 what the candidate quoted. Nothing upstream does that for you, and a wrong
 citation is the fastest way to lose the reader.
 
-Coverage is not a formality. It must name the units and their weakness classes,
-every excluded file with its reason, **every path in `coverage.unaccounted`**
-described as neither reviewed nor excluded, any research cell that came back
-empty-handed through failure rather than judgement
-(`coverage.failedCells`), any candidate whose verifiers all failed to answer
-(`coverage.candidatesUnverified`), and `coverage.mapperFallback` when the
-partition was unusable and the whole change was read as one unit — complete,
-but blunter.
+Coverage is not a formality. It must name:
+
+- the units and the weakness classes run over each;
+- every excluded file with its reason;
+- **every path in `coverage.unaccounted`**, as neither reviewed nor excluded;
+- whether the seam pass ran (`coverage.seamPassRan`) and what it added
+  (`coverage.seamFresh`), and what the per-unit second look found
+  (`coverage.gapFresh`) — both worth stating at zero;
+- `coverage.marginalReLooked` and `coverage.rescuedOnReLook`: how many
+  candidates fell one vote short, and which the advocate saved;
+- any research cell that came back empty-handed through failure rather than
+  judgement (`coverage.failedCells`);
+- any candidate whose verifiers all failed to answer
+  (`coverage.candidatesUnverified`);
+- `coverage.mapperFallback` when the partition was unusable and the whole change
+  was read as one unit — complete, but blunter;
+- `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the cap
+  scales with the size of the change.
 
 Keep `refuted` in the report. It is most of what this pipeline produces and it
 is how the next reviewer avoids buying a panel for the same idea twice.

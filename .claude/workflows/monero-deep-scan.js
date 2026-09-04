@@ -4,8 +4,9 @@ export const meta = {
   whenToUse: 'Started by the monero-deep-review skill, whose recipe resolves the range and computes the changed-file list first. args carry root, pr, changedFiles and optionally maxUnits. Do not invoke directly: without those it has nothing to review and will say so.',
   phases: [
     { title: 'Map', detail: 'split the changed files into units; every changed file placed or excluded with a reason' },
-    { title: 'Research', detail: 'one researcher per unit x weakness class' },
+    { title: 'Research', detail: 'one researcher per unit x weakness class, then the seams between units, then a gap pass' },
     { title: 'Verify', detail: 'three angles per candidate, counted here rather than in a model' },
+    { title: 'Re-look', detail: 'candidates one vote short get an advocate, so a wrong refutation is not final' },
   ],
 }
 
@@ -109,11 +110,24 @@ const VERDICT_SCHEMA = {
   required: ['holds', 'reasoning', 'decidingLine'],
 }
 
+const ADVOCATE_SCHEMA = {
+  type: 'object',
+  properties: {
+    rebutted: { type: 'boolean' },
+    reasoning: { type: 'string' },
+    decidingLine: { type: 'string' },
+  },
+  required: ['rebutted', 'reasoning', 'decidingLine'],
+}
+
 const a = (args && typeof args === 'object') ? args : {}
 const ROOT = a.root
 const PR = a.pr
 const CHANGED = Array.isArray(a.changedFiles) ? a.changedFiles.filter(Boolean) : []
-const MAX_UNITS = a.maxUnits || 8
+// Scale to the change. A two-file diff does not need eight units and three
+// lenses each; the cap the recipe passes is a ceiling, not a target.
+const UNIT_CEILING = a.maxUnits || 8
+const MAX_UNITS = Math.max(1, Math.min(UNIT_CEILING, Math.ceil(CHANGED.length / 2)))
 
 if (!ROOT || !CHANGED.length) {
   log('no checkout root or no changed files were supplied; there is nothing to review')
@@ -260,44 +274,128 @@ const researched = await parallel(cells.map((cell) => () => agent(
 
 const researchAccount = []
 const proposed = []
-researched.forEach((r, i) => {
-  const cell = cells[i]
-  const tag = cell.unit.name + '/' + cell.lens
-  if (!r) { researchAccount.push({ cell: tag, failed: true }); return }
+
+// Same file, same symbol, same line AND same category is one defect seen twice.
+// Category is in the key on purpose: an overflow and a privacy leak can share a
+// sink line and are not the same defect. On a real duplicate keep the WORSE
+// severity -- the panel can only bring it down later.
+const defectKey = (c) => [c.file || '', c.symbol || '', c.line || 0, c.category || ''].join('#')
+const byDefect = new Map()
+
+// Deduplicate against everything seen in ANY round, not against what survives.
+// Otherwise a candidate a later round re-proposes comes back every round.
+function harvest(r, tag, extra) {
+  if (!r) { researchAccount.push({ cell: tag, failed: true }); return 0 }
   if (Array.isArray(r.notFinished) && r.notFinished.length) {
     researchAccount.push({ cell: tag, notFinished: r.notFinished })
   }
-  for (const c of (r.candidates || [])) proposed.push({ ...c, unit: cell.unit.name, foundBy: cell.lens })
+  let fresh = 0
+  for (const c of (r.candidates || [])) {
+    proposed.push({ ...c, ...extra })
+    const key = defectKey(c)
+    const prev = byDefect.get(key)
+    if (!prev) { byDefect.set(key, { ...c, ...extra, alsoFoundBy: [] }); fresh += 1; continue }
+    prev.severity = worseSeverity(prev.severity, c.severity)
+    prev.alsoFoundBy.push(extra.foundBy)
+  }
+  return fresh
+}
+
+researched.forEach((r, i) => {
+  const cell = cells[i]
+  harvest(r, cell.unit.name + '/' + cell.lens, { unit: cell.unit.name, foundBy: cell.lens })
 })
 const failedCells = researchAccount.filter((x) => x.failed).length
 if (failedCells) log(failedCells + ' research cell(s) returned nothing usable; reported, not hidden')
+log('round 1: ' + byDefect.size + ' distinct candidate(s) from ' + cells.length + ' cell(s)')
 
-// Same file, same symbol, same line AND same category is one defect seen twice.
-// Category is part of the key on purpose: an overflow and a privacy leak can
-// share a sink line and are not the same finding. On a genuine duplicate keep
-// the WORSE severity -- the panel can only bring it down later.
-const byDefect = new Map()
-for (const c of proposed) {
-  const key = [c.file || '', c.symbol || '', c.line || 0, c.category || ''].join('#')
-  const prev = byDefect.get(key)
-  if (!prev) { byDefect.set(key, { ...c, alsoFoundBy: [] }); continue }
-  prev.severity = worseSeverity(prev.severity, c.severity)
-  prev.alsoFoundBy.push(c.foundBy)
+// The seams. Splitting the change into units is what makes per-unit research
+// tractable, and it is also a blind spot: a defect whose untrusted input
+// arrives in one unit and does its damage in another is invisible to every
+// researcher, because none of them was given both halves. In this codebase that
+// is where the interesting bugs live -- bytes off the wire in one file, the
+// validation decision they corrupt in a different one. So one pass looks only
+// at what crosses a boundary. Pointless with a single unit.
+const knownSoFar = () => Array.from(byDefect.values())
+  .map((c) => '  ' + c.file + ':' + c.line + ' (' + c.category + ') ' + c.title).join('\n') || '  (none)'
+
+let seamFresh = 0
+if (units.length > 1) {
+  const seam = await agent(
+    [CONTEXT, '',
+     'Every other researcher on this change saw ONE unit of it. You see the whole',
+     'change, and you are looking for exactly what they structurally could not: a',
+     'path that STARTS in one unit and ends in another.',
+     '',
+     'The units this change was split into:',
+     units.map((u) => '  [' + u.name + '] ' + u.boundary + ' — ' + u.role + '\n' +
+       (u.paths || []).map((x) => '      ' + x).join('\n')).join('\n'),
+     '',
+     'Trace values across those boundaries: an untrusted input parsed in one unit',
+     'and consumed in another, a guard that lives in one unit protecting a sink in',
+     'another (and whether every route to that sink still passes through it), an',
+     'invariant one unit establishes and another assumes, a lifetime or lock owned',
+     'in one and relied on in another.',
+     '',
+     'Do not re-report anything already found -- these are known:',
+     knownSoFar(),
+     '',
+     'A single-unit defect is not your job. Returning nothing is a fine answer.',
+    ].join('\n'),
+    { label: 'research:seams', phase: 'Research', schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
+  )
+  seamFresh = harvest(seam, 'seams', { unit: 'seams', foundBy: 'cross-unit' })
+  log('seams: ' + seamFresh + ' fresh candidate(s) crossing unit boundaries')
 }
+
+// One gap pass per unit, told what has already been found there. A single round
+// of per-cell research reliably misses the tail: the lens assignment is a guess
+// the mapper made before anyone had read the code, and by now there is evidence.
+const gapFresh = await parallel(units.map((u) => () => agent(
+  [CONTEXT, '',
+   'A second look at ONE unit, after a first pass has already been made over it.',
+   '',
+   'Unit: ' + u.name,
+   'What it does: ' + u.role,
+   'Trust boundary: ' + u.boundary,
+   'Files:',
+   (u.paths || []).map((x) => '  ' + x).join('\n'),
+   '',
+   'Already found across the whole change, do not re-report these:',
+   knownSoFar(),
+   '',
+   'The first pass was aimed at these classes: ' + (u.lenses || []).join(', ') + '.',
+   'That aim was chosen before anyone had read the code, so it may have been wrong.',
+   'Look at what it would have skipped. Read the hunks nobody had a reason to',
+   'open, the "-" lines for deleted guards, and any class of defect this unit',
+   'plainly has that is not in the list above.',
+   'Returning nothing is the expected outcome when the first pass was thorough.',
+  ].join('\n'),
+  { label: 'research:gap/' + u.name, phase: 'Research',
+    schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
+)))
+let gapCount = 0
+gapFresh.forEach((r, i) => { gapCount += harvest(r, 'gap/' + units[i].name, { unit: units[i].name, foundBy: 'gap-pass' }) })
+log('gap pass: ' + gapCount + ' fresh candidate(s) the first round missed')
+
 const candidates = Array.from(byDefect.values())
 candidates.forEach((c, i) => { c.id = 'C' + (i + 1) })
-log(proposed.length + ' proposed, ' + candidates.length + ' distinct after merging duplicates')
+
+log(proposed.length + ' proposed in total, ' + candidates.length + ' distinct after merging duplicates')
 
 const coverageBase = {
   units, excluded, unaccounted, mapperFallback: !gotPartition,
+  unitCeiling: UNIT_CEILING, unitsAllowed: MAX_UNITS,
   cells: cells.length, failedCells, researchAccount,
+  seamPassRan: units.length > 1, seamFresh, gapFresh: gapCount,
   candidatesProposed: proposed.length, candidatesDistinct: candidates.length,
 }
 
 if (!candidates.length) {
   return {
     findings: [], refuted: [], unverified: [],
-    coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [] },
+    coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
+                marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [] },
     next: 'Nothing was proposed. Write review.md per the REPORT SPEC as a no-findings report, with Coverage carrying the units, the exclusions and their reasons, and any unaccounted files.',
   }
 }
@@ -361,6 +459,57 @@ const results = judged.filter(Boolean)
 const dropped = judged.length - results.length
 if (dropped) log(dropped + ' candidate(s) failed verification outright and are reported as unverified')
 
+// All three angles start from "this does not hold". That bias is what makes the
+// panel worth having, and it is also the one thing in this design that can lose
+// a real finding: the documented way a genuine defect dies here is a verifier
+// refuting it with a guard it assumed rather than read. A candidate that
+// convinced exactly one angle is the near-miss where that happens, so it gets
+// an advocate whose only job is to show the refusals wrong. Unanimous
+// refutations are left alone -- three independent noes is a real answer.
+phase('Re-look')
+
+const marginal = results.filter((r) => r.outcome === 'refuted' && r.agreeing === 1)
+if (marginal.length) log(marginal.length + ' candidate(s) were one vote short; re-looking at those')
+
+const advocated = await parallel(marginal.map((r) => () => agent(
+  [CONTEXT, '',
+   'A candidate was rejected two-to-one. Your job is the opposite of the usual:',
+   'find out whether the two rejections are wrong. Do not defend it out of',
+   'loyalty -- most rejections are correct -- but the specific failure you are',
+   'hunting is a rejection resting on a guard the verifier assumed instead of',
+   'reading, or on a route it did not walk.',
+   '',
+   'Candidate ' + r.candidate.id + ' — ' + r.candidate.title,
+   '  where:           ' + r.candidate.file + ':' + r.candidate.line + ' in ' + r.candidate.symbol,
+   '  category:        ' + r.candidate.category,
+   '  untrusted input: ' + r.candidate.untrustedInput,
+   '  which reaches:   ' + r.candidate.reaches,
+   '  missing guard:   ' + r.candidate.missingGuard,
+   '',
+   'What each angle concluded:',
+   r.votes.map((v) => '  [' + v.angle + '] ' + (v.holds === null ? 'no answer' : (v.holds ? 'holds' : 'does not hold')) +
+     '\n      ' + (v.reasoning || '(none)') + '\n      deciding line: ' + (v.decidingLine || '(none)')).join('\n'),
+   '',
+   'Go read the lines those rejections turn on. Set rebutted only if a rejection',
+   'is demonstrably wrong about the code, and cite the line that shows it. If the',
+   'rejections hold up, say so -- that is the common and useful answer.',
+  ].join('\n'),
+  { label: 'relook:' + r.candidate.id, phase: 'Re-look', schema: ADVOCATE_SCHEMA, agentType: 'monero-verifier' },
+)))
+
+const promoted = []
+advocated.forEach((adv, i) => {
+  const r = marginal[i]
+  if (!adv || adv.rebutted !== true) return
+  r.outcome = 'holds'
+  // Rescued against the panel's majority, so it is published at the lowest
+  // confidence whatever anyone claimed, and the split is on the record.
+  r.confidence = 'low'
+  r.rescued = { reasoning: adv.reasoning, decidingLine: adv.decidingLine }
+  promoted.push({ id: r.candidate.id, title: r.candidate.title, decidingLine: adv.decidingLine })
+})
+if (promoted.length) log(promoted.length + ' candidate(s) survived on re-look; published at low confidence with the split recorded')
+
 const findings = results.filter((r) => r.outcome === 'holds')
 const refuted = results.filter((r) => r.outcome === 'refuted')
 const unverified = results.filter((r) => r.outcome === 'unverified')
@@ -376,9 +525,11 @@ return {
   coverage: {
     ...coverageBase,
     candidatesUnverified: unverified.length + dropped,
+    marginalReLooked: marginal.length,
+    rescuedOnReLook: promoted,
     anchorDoubted: results.filter((r) => r.anchorDoubted >= 2).map((r) => r.candidate.id),
     severityLowered: results.filter((r) => r.severityLowered)
       .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityLowered })),
   },
-  next: 'Write review.md per the REPORT SPEC. Publish the severities and confidences as returned -- they are already settled by the count. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, any failed research cell, and any candidate in coverage.candidatesUnverified. Check each finding\'s cited line before writing it down.',
+  next: 'Write review.md per the REPORT SPEC. Publish the severities and confidences as returned -- they are already settled by the count. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, any failed research cell, whether the seam pass ran and what it added, and any candidate in coverage.candidatesUnverified. A finding carrying `rescued` was refuted two-to-one and then saved on re-look: say so in its Verification line and keep its confidence at low. Check each finding\'s cited line before writing it down.',
 }
