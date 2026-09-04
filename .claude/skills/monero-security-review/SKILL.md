@@ -217,6 +217,24 @@ already in), and it remains true that `git log -- <path>` and
 read `PR_SUBMODULES.md` first: it already holds the bump range, and
 `git -C` is *not* allowlisted.
 
+**You do not need a scratch file.** Redirecting a pipeline into `/tmp/x` so
+you can grep it again is now the *only* refusal shape left here — every
+refused call in a measured day was this, and it fails two gates at once,
+the redirect and `/tmp` being outside the tree. In each case the file was
+unnecessary:
+
+- The pipeline's output already *is* the answer; the tool result hands it to
+  you. `git show origin/base:<path> | xxd -p | tr -d '\n'` needs no `> /tmp/x`
+  after it.
+- A second pass over the first pass is one more pipe stage. Instead of
+  `grep A f | sed ... > /tmp/x; grep B /tmp/x | head`, write
+  `grep A f | sed ... | grep B | head`.
+- Two unrelated outputs are two questions, so make two calls. Chaining them
+  through a file to save a turn spends the turn on a refusal instead.
+
+If you genuinely want a file that persists across turns — scratch notes, or
+`review.md` — that is `Write`, which has no shell restrictions at all.
+
 **A pipe or a chain is only as allowed as its parts; a shell block is refused
 whole.** Pipes have always worked here (`git diff origin/base...HEAD | wc -l`),
 and so do `&&` and `;` chains — the checker splits those up and validates each
