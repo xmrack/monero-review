@@ -59,7 +59,9 @@ CAUSES = (
      "deliberately not allowlisted: git log -S <string> and git log -L find "
      "the commit that introduced a line, and take a path directly"),
     ("redirect",     r'(?<!2)>\s*[^&\s]',
-     "use the Write tool"),
+     "you do not need the file: the pipeline output already is the answer, "
+     "a second pass is one more | stage, and two outputs are two calls. "
+     "Write is for a file that must persist across turns"),
     ("substitution", r'\$\(|\$\{|\$\'',
      "resolve it in a separate call"),
     ("dollar-arg",   r'\$\d',
@@ -140,19 +142,51 @@ def load(path):
         return events or None
 
 
+RETRY_MARK = "   [sandbox-disabled retry]"
+WIDTH = 220
+
+
 def describe(entry):
-    """One line for a denied call: the command, or the path, or the raw input."""
+    """(tool, full text) for a denied call: the command, path, or raw input.
+
+    Returns the text UNTRUNCATED, because two things downstream need all of
+    it. `classify` needs it or a cause past the display width is invisible:
+    one refused command was 338 characters with its `> /tmp/x` at character
+    296, and truncating first reported it as UNCLASSIFIED -- the signal that
+    means "a new cause the skills do not answer yet" -- when it was the most
+    familiar cause there is. And the de-duplication key needs it, or two
+    commands that differ only past the cut collapse into one line with a
+    count of 2, hiding one of them completely.
+
+    Truncation is now `display`'s job, at print time only.
+    """
     if not isinstance(entry, dict):
-        return "Bash", str(entry)[:160]
+        return "Bash", str(entry)
     tool = entry.get("tool_name") or entry.get("toolName") or "?"
     ti = entry.get("tool_input") or entry.get("toolInput") or {}
     if isinstance(ti, dict):
         what = ti.get("command") or ti.get("file_path") or json.dumps(ti)
         if ti.get("dangerouslyDisableSandbox"):
-            what = f"{what}   [sandbox-disabled retry]"
+            what = f"{what}{RETRY_MARK}"
     else:
         what = str(ti)
-    return tool, str(what)[:220]
+    return tool, str(what)
+
+
+def display(what, width=WIDTH):
+    """One line for the log: truncated, but never losing the retry marker.
+
+    A blocked command retried with the sandbox off is the most interesting
+    thing this script can report, and on a long command the marker sat past
+    the cut and vanished. Mark the elision so a reader knows to go to the
+    execution artifact for the rest.
+    """
+    if len(what) <= width:
+        return what
+    if what.endswith(RETRY_MARK):
+        head = max(0, width - len(RETRY_MARK) - 3)
+        return what[:head] + "..." + RETRY_MARK
+    return what[:width - 3] + "..."
 
 
 def main():
@@ -193,7 +227,7 @@ def main():
     for (tool, what), n in seen.most_common():
         hits = classify(what)
         causes.update({h: n for h in hits})
-        print(f"  x{n} [{tool}] {what}")
+        print(f"  x{n} [{tool}] {display(what)}")
         print(f"      cause: {', '.join(hits)}")
 
     print("denial causes: "

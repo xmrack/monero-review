@@ -194,6 +194,12 @@ Two more turn-wasters worth knowing before you hit them:
 - **Do not append `; echo "rc=$?"`.** It is refused, and the tool result
   already reports success, failure and stderr. Three of five refusals in one
   recent run were this shape on commands that would otherwise have worked.
+- **You do not need a scratch file.** Piping into `/tmp/x` to grep the output
+  again is the only refusal shape left in a measured day of runs, and it fails
+  twice over: the redirect, and `/tmp` being outside the tree. The pipeline's
+  output already is the answer, a second pass is one more `|` stage, and two
+  unrelated outputs are just two calls. For a file that has to persist, use
+  `Write`.
 - **`g++ -E` is the only compiler form you have.** `-fsyntax-only`, `-c`, `-o`
   and `-x c++` are refused by design — nothing here is built or run. Settle a
   type or size question by reading the header (`deps-include/` for system
