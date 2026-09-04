@@ -27,6 +27,17 @@ gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
 
 - `.claude/skills/monero-security-review/SKILL.md` — the review itself. Edit
   this if the output isn't sharp enough.
+- `.claude/skills/monero-deep-review/` — a second, much heavier review that
+  **never runs on its own**. Type `/monero-deep-review` to get it: the diff is
+  partitioned into components, a researcher runs per component and per category
+  lens, and every candidate faces three independent verifiers whose votes are
+  counted in code. Several times the cost of the default review, for a diff
+  that earns it. Needs the `Workflow` and `Agent` tools, which the scheduled
+  sweep does not grant, so it cannot fire from the queue.
+- `.claude/agents/` and `.claude/workflows/` — the agents and the orchestration
+  the deep review dispatches. `.claude/agents/monero-context.md` is the context
+  contract every one of those agents opens with, so they start where the
+  default review starts.
 - `scripts/select_prs.py` — picks the next PR, skipping ones already reviewed.
 - `scripts/dispatch.sh` and `scripts/drip.sh` — run reviews unattended on a
   timer. `dispatch.sh` runs the review on GitHub and files results as issues;
