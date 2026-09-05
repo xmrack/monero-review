@@ -25,6 +25,13 @@ gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
 
 ## Where things are
 
+- `.claude/references/monero/` — how the Monero codebase actually works:
+  architecture, six end-to-end flows, per-subsystem notes, the macro families
+  that make grep lie, the coding dialects, errors and concurrency, build and
+  tests. Shared by every skill and owned by none of them; `README.md` there is
+  the index. The three files under
+  `.claude/skills/monero-security-review/references/` are the other half —
+  they say what to *suspect*, these say what the code *is*.
 - `.claude/skills/monero-security-review/SKILL.md` — the review itself. Edit
   this if the output isn't sharp enough.
 - `.claude/skills/monero-deep-review/` — a second, much heavier review that

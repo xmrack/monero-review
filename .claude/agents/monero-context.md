@@ -53,6 +53,22 @@ it real.
 
 ## Monero knowledge, shared with the default review
 
+How the codebase works, in `.claude/references/monero/` (shared by every skill
+here; `README.md` is the index):
+
+- `macros.md` — **read this before you trust a grep.** Most control flow and
+  every wire-facing serializer here is macro-generated and has no text form.
+  "Nothing calls this" and "this field is unvalidated" are usually claims
+  about a macro.
+- `flows.md` — six end-to-end traces naming, step by step, where a check
+  happens and where none does.
+- `architecture.md` and the `subsystems-*.md` for whatever you were assigned.
+- `errors-and-concurrency.md` — before you call a failure unhandled or a
+  sequence a race.
+- `navigation.md` — the search recipes that actually work in this tree.
+
+What to suspect:
+
 - `.claude/skills/monero-security-review/references/trust-boundaries.md` —
   who can reach what, and which inputs are attacker-controlled.
 - `.claude/skills/monero-security-review/references/codebase-notes.md` — how

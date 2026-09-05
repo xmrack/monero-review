@@ -47,12 +47,17 @@ There is one job. Read its recipe and follow it as written:
 - [REPORT SPEC — the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
 - Shared Monero references, which the default review also uses and which this
   skill deliberately does not duplicate:
+  - `.claude/references/monero/` -- how the codebase works: `README.md` is the
+    index, `macros.md` and `flows.md` are the two every agent should have read
+    before it forms a theory.
   - `.claude/skills/monero-security-review/references/trust-boundaries.md`
   - `.claude/skills/monero-security-review/references/codebase-notes.md`
   - `.claude/skills/monero-security-review/references/refutations.md`
 
-Those three files are the single source of Monero review knowledge in this
-repository. When something in them is wrong, fix it there -- both skills
-improve at once, and a second copy would drift.
+Those are the single source of Monero knowledge in this repository: the
+`references/monero/` directory for what the code IS, the three files under
+`monero-security-review/references/` for what to SUSPECT. When something in
+either is wrong, fix it there -- every skill improves at once, and a second
+copy would drift.
 
 @${CLAUDE_SKILL_DIR}/role.md

@@ -5,10 +5,19 @@ supposed to guarantee, and the questions that have historically been worth
 asking of each. Verify paths against the checkout — this is a map, not a
 substitute for reading the code.
 
-## Two serialization systems, not one
+**This file is the judgement half.** For how the code actually works — the
+library graph, end-to-end traces, per-subsystem symbol maps, the macro
+families, the coding dialects, threading — see `.claude/references/monero/`,
+which every skill here shares. Read `macros.md` there before trusting any
+grep result.
+
+## Four serialization systems, not one
 
 This is the most important structural fact about the codebase, and the easiest
-to get wrong.
+to get wrong. Two of them carry most of the risk and are described below; the
+full set — including the newer epee `wire` layer (write-only on master) and
+`boost::serialization` for persisted local state — is in
+`.claude/references/monero/architecture.md`.
 
 **`contrib/epee/`** is a general-purpose library predating much of the project,
 with its own conventions. It carries `portable_storage` (the object
@@ -162,6 +171,18 @@ supplied. Key derivation, output-index handling, and change-detection are where
 host-supplied values do damage.
 
 ## FCMP++ work
+
+`src/fcmp_pp/` is on master and in the build, and it is **not
+consensus-reachable**. Get that right in both directions: the only consumer
+outside the directory is `rct::verPointsForTorsion` in `src/ringct/rctSigs.cpp`,
+and that function has no production caller at all — only
+`tests/unit_tests/crypto.cpp`. `RCTType` still stops at
+`RCTTypeBulletproofPlus = 6`.
+
+**It also means Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
+staticlib crate linked as `libfcmp_pp_rust.a`, pulling `helioselene` from a git
+revision and patching `crypto-bigint` to a fork branch. A change under there is
+a supply-chain change whatever the diff looks like.
 
 If the branch under review touches Full-Chain Membership Proofs, it brings new
 curve arithmetic (a curve cycle with its own field implementations), divisor

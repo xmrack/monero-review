@@ -25,6 +25,13 @@ verdict is REFUTED; a finding has to earn CONFIRMED.
 - `PR_HISTORY.md` — the last dozen commits for every file the PR touches,
   precomputed. Dating a removed guard is often what settles whether its removal
   was deliberate, so read this before re-deriving anything.
+- `.claude/references/monero/` — how the codebase actually works, shared by
+  every skill here. For refutation the load-bearing ones are `macros.md` (a
+  claim that rests on "nothing calls this" or "this field is unvalidated" is
+  usually a claim about macro-generated code), `flows.md` (which check runs
+  where, and which paths skip it — `fast_check`, the verification-id cache),
+  and `errors-and-concurrency.md` (before agreeing that something is a race,
+  or that a failure is unhandled).
 - `references/` in the `monero-security-review` skill directory:
   `refutations.md` (the recurring reasons findings here turn out to be
   unreachable — read this before you start), `trust-boundaries.md`, and

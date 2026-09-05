@@ -371,8 +371,30 @@ doesn't touch.
 
 ## Reference material
 
-Read these when the corresponding question comes up. They are in
-`references/` next to this file.
+Two sets. `.claude/references/monero/` describes **what the code is**; the
+`references/` directory next to this file describes **what to suspect**.
+
+### How the codebase works — `.claude/references/monero/`
+
+Shared by every skill in this repository, and not owned by this one. Start
+with `README.md` there; it says which file answers which question. The ones
+you will reach for most:
+
+- **`macros.md`** — read it before believing a grep result. Most of this
+  codebase's control flow and every wire-facing serializer is macro-generated
+  and does not exist as text.
+- **`flows.md`** — six end-to-end traces (block in, transaction out, wallet
+  refresh, RPC request, startup, sync and reorg) naming where each check
+  happens and where none does.
+- **`architecture.md`**, then the matching `subsystems-*.md` for whatever the
+  diff touches.
+- **`errors-and-concurrency.md`** — before judging a failure path, and before
+  calling anything a race.
+
+If something in there is wrong, fix it there in the same change. Every skill
+reads those files.
+
+### What to suspect — `references/`
 
 - **`references/trust-boundaries.md`** — where untrusted data enters, what
   "untrusted" means at each point, and severity anchoring per boundary. Read it
