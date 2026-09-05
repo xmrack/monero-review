@@ -22,7 +22,11 @@ set -euo pipefail
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
 MODEL=${2:-claude-opus-5}
 UPSTREAM=${UPSTREAM:-monero-project/monero}
+# DEEP=0 and DEEP=false mean off, not "a non-empty string, so on". Getting
+# that wrong starts a multi-hour pipeline for someone who typed the obvious
+# way to turn it off.
 DEEP=${DEEP:-}
+case "$DEEP" in 0|false|no|off) DEEP="" ;; esac
 
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number" >&2; exit 1; }
 
@@ -270,20 +274,45 @@ if [ -n "$DEEP" ]; then
   # and an honest report of that is indistinguishable from a clean review
   # unless somebody counts the cells that never reported.
   STAMP=$(grep -o '<!-- deep-scan [^>]*-->' "$CACHE/review.md" | tail -1 || true)
-  CELLS=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]cells=\([0-9]\{1,\}\).*/\1/p')
-  FAILED=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]failedCells=\([0-9]\{1,\}\).*/\1/p')
-  if [ -z "$CELLS" ] || [ -z "$FAILED" ]; then
+  field() { printf '%s' "$STAMP" | sed -n "s/.*[[:space:]]$1=\([0-9]\{1,\}\).*/\1/p"; }
+  # 10# forces base 10: `failedCells=08` is otherwise an octal literal and the
+  # arithmetic below dies with "value too great for base". `if`, not `&&`, so
+  # an absent field does not carry a failure into the assignment under -e.
+  num() { v=$(field "$1"); if [ -n "$v" ]; then printf '%s' "$(( 10#$v ))"; fi; }
+  CELLS=$(num cells);      FAILED=$(num failedCells)
+  CANDS=$(num candidates); CONF=$(num confirmed)
+  REFUT=$(num refuted);    UNVER=$(num unverified)
+  # The stamp is written by the model. The execution log is the independent
+  # record that the fleet it describes was ever dispatched.
+  FLEET=no
+  grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' \
+    "$CACHE/exec.json" 2>/dev/null && FLEET=yes
+  # Both halves of the pipeline can die independently. Healthy research plus a
+  # dead verifier fleet returns every candidate as unverified and an empty
+  # findings list, which reads exactly like a clean review unless somebody
+  # counts. Same checks the workflow runs, in the same order.
+  if [ -z "$CELLS" ] || [ -z "$FAILED" ] || [ -z "$CANDS" ] || \
+     [ -z "$CONF" ] || [ -z "$REFUT" ] || [ -z "$UNVER" ]; then
     echo "!! deep report carries no readable coverage stamp -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — the deep pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran."
-  elif [ "$CELLS" = "0" ]; then
+  elif [ "$FLEET" != "yes" ]; then
+    echo "!! execution log records no Workflow/Agent call -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched."
+  elif [ "$(( CONF + REFUT + UNVER ))" -ne "$CANDS" ]; then
+    echo "!! coverage stamp does not add up -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the coverage stamp does not add up ($CONF + $REFUT + $UNVER is not $CANDS), so it was not taken from a real pipeline result."
+  elif [ "$CELLS" -eq 0 ]; then
     echo "!! deep pass dispatched no research cells -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — the deep pass dispatched no research cells at all, so nothing was examined."
   elif [ "$(( FAILED * 2 ))" -gt "$CELLS" ]; then
     echo "!! $FAILED of $CELLS research cells failed -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — $FAILED of $CELLS research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+  elif [ "$CANDS" -gt 0 ] && [ "$(( UNVER * 2 ))" -gt "$CANDS" ]; then
+    echo "!! no panel verdict on $UNVER of $CANDS candidates -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $UNVER of $CANDS candidates. An empty findings list means the panel went silent, not that the candidates died honestly."
   else
-    echo "==> deep pass verified itself ($(( CELLS - FAILED )) of $CELLS cells reported)"
-    VERIFIED="verified by the deep pipeline's own panel — every candidate faced three independent verifiers on separate angles, the votes were counted in code rather than argued in prose, and severity was lowered and confidence capped by the count. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
+    echo "==> deep pass verified itself ($(( CELLS - FAILED )) of $CELLS cells, $(( CONF + REFUT )) of $CANDS candidates decided)"
+    VERIFIED="verified by the deep pipeline's own panel, which decided $(( CONF + REFUT )) of $CANDS candidate(s) — $CONF confirmed, $REFUT refuted. Each faced three verifiers on separate angles; the votes were counted in code rather than argued in prose. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
   fi
 elif [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
   echo "==> findings present, verifying"

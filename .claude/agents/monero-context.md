@@ -35,9 +35,12 @@ against master returns the whole branch divergence instead of the change
 - `PR_CONTEXT.md` — the PR's title and description.
 - `PR_DISCUSSION.md` — upstream review comments and CI status for this head.
 - `PR_HISTORY.md` — recent commit history of each changed file.
-- `PR_SUBMODULES.md` — written only when this PR actually moves a submodule, so
-  its absence means no bump rather than a harness failure. Read it before
-  reaching into a submodule's history.
+- `PR_SUBMODULES.md` — written by the GitHub harness, and only when this PR
+  actually moves a submodule. Read it before reaching into a submodule's
+  history. Its absence is NOT proof of no bump: `review-local.sh` never writes
+  it at all, so on a local run there is nothing here either way. Settle it
+  from the diff -- `git diff origin/base...HEAD --submodule=log` -- rather
+  than reading an absent file as an answer.
 - `TOOLING.md` — which optional analysers this run has, and whether
   `deps-include/` landed. Read it rather than probing for binaries. It does not
   say whether the symbol index was built; check that yourself, below.
@@ -114,9 +117,10 @@ This is a blobless partial clone. Commits and trees are local, blobs are
 fetched on demand, and two shapes never finish:
 
 - `git log -S'<text>'` with no `-- <path>`. Always give the pickaxe a path.
-- `git blame`, deliberately not allowlisted. So is `git log -L`, which costs the
-  same here: it diffs the file at every revision that touched it, one lazy blob
-  fetch per commit.
+- `git blame`, deliberately not allowlisted. `git log -L` IS allowlisted --
+  `Bash(git log:*)` admits it -- and that is the trap: it costs what blame
+  costs here, diffing the file at every revision that touched it, one lazy
+  blob fetch per commit. Nothing will refuse it for you. Do not reach for it.
 
 To find where a line came from, the measured fast pair is
 `git log --oneline -15 -- <path>` (0.018s) then `git show <commit> -- <path>`

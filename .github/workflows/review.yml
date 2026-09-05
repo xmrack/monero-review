@@ -141,9 +141,10 @@ env:
   # would let a single-reviewer skill fan out unsupervised -- keep them here.
   #
   # Four separate `Agent(name)` entries rather than one `Agent(a, b, c, d)`.
-  # Rules in this list union -- that is exactly how the 82 `Bash(...)` entries
-  # above work -- so four scoped rules grant the same four agents, and they do
-  # it without asking whether a comma inside parentheses survives the split.
+  # Rules in this list union -- that is exactly how the 76 `Bash(...)` rules
+  # in the 82-entry list above work -- so four scoped rules grant the same
+  # four agents, and they do it without asking whether a comma inside
+  # parentheses survives the split.
   #
   # Never a bare `Agent`. That would grant every agent type on disk, including
   # the built-in general-purpose one, whose own tool set is unrestricted --
@@ -180,6 +181,23 @@ env:
 # `inputs` context here because this key is evaluated before any job starts
 # and `github` is the context guaranteed to be readable at that point; it is
 # empty on a `schedule` tick, which is exactly the default wanted.
+#
+# The accepted cost of that split: a sweep can now run WHILE a deep run is in
+# flight, and until the deep run files its issue the PR it is reviewing is
+# still unreviewed as far as select_prs.py can tell -- so the sweep can pick
+# the same one and default-review it in parallel. That costs one duplicate
+# review and one duplicate issue; it corrupts nothing, because the dedup
+# record is the issue title and the second one to arrive simply agrees with
+# the first. Losing hours of sweep ticks instead would be worse.
+#
+# The two also share one Claude account, so a deep run can exhaust it under a
+# sweep that started later. That failure is already handled correctly rather
+# than by luck: attempt.py reads a usage limit as `infra` and `Record failed
+# attempt` spares the PR, so the sweep's victim keeps its full retry budget.
+#
+# If either starts happening often, dispatch deep runs when the queue is
+# short, or set REVIEW_PAUSED for the duration, rather than putting the two
+# back in one group.
 concurrency:
   group: monero-review${{ github.event.inputs.mode == 'deep' && '-deep' || '' }}
   cancel-in-progress: false
@@ -928,6 +946,9 @@ jobs:
         env:
           MODE: ${{ inputs.mode || 'default' }}
           VERIFY_OUTCOME: ${{ steps.refute.outcome }}
+          # The review pass's own execution log, snapshotted above. Deep mode
+          # reads it as independent evidence that the agent fleet ran.
+          PASS1_EXEC: ${{ env.PASS1_EXEC }}
           # A step outcome of `success` is not proof the model ran. When
           # claude-code-action declines itself -- a workflow-validation skip --
           # it exits 0 having done nothing, and its execution_file output is
@@ -954,28 +975,91 @@ jobs:
             # judged on an earlier one's numbers.
             stamp=$(grep -o '<!-- deep-scan [^>]*-->' review.md | tail -1 || true)
             field() { printf '%s' "$stamp" | sed -n "s/.*[[:space:]]$1=\([0-9]\{1,\}\).*/\1/p"; }
-            cells=$(field cells)
-            failed=$(field failedCells)
+            # 10# forces base 10. Without it a stamp reading `failedCells=08`
+            # is an octal literal, `$(( failed * 2 ))` dies with "value too
+            # great for base", and `set -e` takes the whole step down.
+            # `if`, not `[ -n "$v" ] && ...`: the && form returns 1 when the
+            # field is absent, and `cells=$(num cells)` then carries that
+            # status into an assignment, which `set -e` treats as fatal --
+            # turning the missing-stamp case from a reported "unverified"
+            # into a bare step failure with no footer saying why.
+            num() { v=$(field "$1"); if [ -n "$v" ]; then printf '%s' "$(( 10#$v ))"; fi; }
+            cells=$(num cells)
+            failed=$(num failedCells)
+            cands=$(num candidates)
+            conf=$(num confirmed)
+            refut=$(num refuted)
+            unver=$(num unverified)
 
-            if [ -z "$stamp" ] || [ -z "$cells" ] || [ -z "$failed" ]; then
+            # The pipeline has two halves and BOTH can die independently. The
+            # research half reads the diff; the verification half is what
+            # makes a surviving finding mean anything. Checking only the
+            # first was the original mistake here: healthy research plus a
+            # dead verifier fleet returns every candidate as `unverified` and
+            # an empty findings list, which reads from the outside exactly
+            # like a clean review -- and publishing it files the marker that
+            # retires the pull request for good.
+            # The stamp is written by the model, so on its own it is a claim,
+            # not evidence -- exactly what REFUTE_EXEC exists to avoid taking
+            # on trust on the default path. The execution log is the
+            # independent record: if it shows no Workflow or Agent tool call,
+            # the fleet was never dispatched and any stamp in the report was
+            # invented. Both key spellings are matched because the log's
+            # schema is not documented.
+            #
+            # UNVERIFIED AGAINST A REAL DEEP LOG -- no deep run has happened
+            # yet. If a good deep run comes back "no trace", look here first:
+            # print exec-pass1.json from the run's artifact and check how a
+            # tool call is actually spelled, rather than loosening the gate.
+            fleet=no
+            if [ -n "${PASS1_EXEC:-}" ] && [ -f "${PASS1_EXEC:-}" ] &&
+               grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' "$PASS1_EXEC"; then
+              fleet=yes
+            fi
+
+            if [ -z "$stamp" ] || [ -z "$cells" ] || [ -z "$failed" ] || \
+               [ -z "$cands" ] || [ -z "$conf" ] || [ -z "$refut" ] || [ -z "$unver" ]; then
               state=unverified
               note="**NOT VERIFIED** — the deep pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
-            elif [ "$cells" = "0" ]; then
+            elif [ "$fleet" != "yes" ]; then
+              state=unverified
+              note="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched. The numbers are not evidence of anything."
+            elif [ "$(( conf + refut + unver ))" -ne "$cands" ]; then
+              # Every candidate ends in exactly one of the three buckets, so
+              # this identity holds by construction in the pipeline. A stamp
+              # that fails it was not copied from a real `coverage` object --
+              # a template left unfilled, or numbers someone reasoned their
+              # way to. Either way it is not evidence.
+              state=unverified
+              note="**NOT VERIFIED** — the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
+            elif [ "$cells" -eq 0 ]; then
               state=unverified
               note="**NOT VERIFIED** — the deep pass dispatched no research cells at all, so nothing was examined."
             elif [ "$(( failed * 2 ))" -gt "$cells" ]; then
               state=unverified
               note="**NOT VERIFIED** — $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+            elif [ "$cands" -gt 0 ] && [ "$(( unver * 2 ))" -gt "$cands" ]; then
+              state=unverified
+              note="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
             else
               state=deep
               covered="$(( cells - failed )) of $cells research cells reported"
-              if [ -z "$sevs" ]; then
-                note="the deep pipeline ran ($covered) and its adversarial panel confirmed nothing. Verification here is the pipeline's own: every candidate faced three independent verifiers and the votes were counted in code, not argued in prose."
+              # Report what the stamp says, attributed, rather than asserting
+              # the panel's behaviour as something this step established. It
+              # can see the numbers the report carries; it did not watch the
+              # verifiers work.
+              if [ "$cands" -eq 0 ]; then
+                note="the deep pipeline ran ($covered) and proposed no candidates, so no panel was needed. Coverage and Checked-and-clear below are what this result rests on."
+              elif [ -z "$sevs" ]; then
+                note="the deep pipeline ran ($covered). Its panel decided $(( conf + refut )) of $cands candidate(s) and confirmed none: the report records $refut refuted. Each candidate is put to three verifiers on separate angles and the votes are counted in code rather than argued in prose."
               else
-                note="verified by the deep pipeline's own panel — every candidate faced three independent verifiers on separate angles, the votes were counted in code rather than argued in prose, and severity was lowered and confidence capped by the count. Coverage: $covered. See the report's own Coverage and Refuted sections for what was examined and what died."
+                note="verified by the deep pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s) — $conf confirmed, $refut refuted. Each faced three verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered and confidence capped by the count. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
               fi
               if [ "$failed" != "0" ]; then
                 note="$note $failed cell(s) failed rather than reporting; the report names them."
+              fi
+              if [ "$unver" != "0" ]; then
+                note="$note $unver candidate(s) got no verdict from any angle and are named in the report as undecided, not as clean."
               fi
             fi
 

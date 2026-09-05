@@ -133,9 +133,9 @@ is how the next reviewer avoids buying a panel for the same idea twice.
 End the file with the coverage stamp the REPORT SPEC describes — the HTML
 comment carrying `cells`, `failedCells` and the rest, straight from `coverage`.
 The harness reads it and refuses to publish a run whose research mostly failed,
-because such a run and a genuinely clean one are otherwise indistinguishable
-from the outside. Write it even when every cell failed; that is the case it
-exists for.
+or whose panels mostly returned no verdict, because such a run and a genuinely
+clean one are otherwise indistinguishable from the outside. Write it even when
+everything failed; that is the case it exists for.
 
 ## 6. Say what happened
 

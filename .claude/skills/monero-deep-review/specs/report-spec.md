@@ -119,24 +119,43 @@ object -- never a number you reasoned your way to.
 
 | field | from |
 | --- | --- |
-| `units` | `coverage.units` (the count) |
-| `cells` | research cells dispatched: `coverage.researchAccount.length` |
+| `units` | `coverage.units.length` |
+| `cells` | `coverage.cells` |
 | `failedCells` | `coverage.failedCells` |
-| `candidates` | distinct candidates after merging duplicates |
-| `confirmed` | findings you are publishing |
-| `refuted` | entries in `refuted` |
+| `candidates` | `coverage.candidatesDistinct` |
+| `confirmed` | the returned `findings` array's length |
+| `refuted` | the returned `refuted` array's length |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
 
-It exists because of one failure mode the prose cannot cover. If the agent
-fleet dies mid-run -- a usage limit is the realistic way -- the workflow still
-returns an empty `findings` list, and an honest report of that is a report with
-no findings in it. To `labels.py` and to the harness that is byte-for-byte a
-clean review, and publishing it files the issue that marks this pull request
-reviewed forever. The stamp is the only thing that separates "three verifiers
-looked and found nothing" from "nobody looked". A run whose failed cells are
-most of its cells is refused publication on the strength of these numbers, so
-reporting them accurately matters more than the report reading well.
+`cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
+`researchAccount` is an exception log, not a roster: a pass is recorded there
+only when it failed outright or came back `notFinished`, and its entries span
+cells, the seam pass and the gap pass alike, distinguished by `kind`. On a
+clean run it is **empty**. `coverage.cells` is the number of research cells
+dispatched and `coverage.failedCells` counts only the `kind: "cell"` failures
+among them, so those two are the pair that can honestly be divided into each
+other -- which is exactly what the harness does.
+
+`confirmed + refuted + unverified` must equal `candidates`. That is not a rule
+imposed on you -- every candidate ends in exactly one of those three buckets,
+so it holds by construction in any real result. The harness checks it, and a
+stamp that fails it is treated as fabricated and the report is not published.
+If your numbers do not add up, you took them from the wrong place; go back to
+`coverage` rather than adjusting one to fit.
+
+It exists because of one failure mode the prose cannot cover, and the fleet has
+**two halves that die separately**. If the researchers die, nothing was read.
+If the researchers work and the verifier panels die, every candidate comes back
+`unverified` and `findings` is empty -- and an honest report of either is a
+report with no findings in it. To `labels.py` and to the harness that is
+byte-for-byte a clean review, and publishing it files the issue that marks this
+pull request reviewed forever. The stamp is the only thing that separates
+"three verifiers looked and found nothing" from "nobody looked".
+
+So the harness refuses to publish on these numbers when most cells failed, when
+most candidates got no verdict, or when the arithmetic does not hold. Reporting
+them accurately matters more than the report reading well.
 
 Write it even when everything failed. Especially then.
 
@@ -154,12 +173,13 @@ So:
   reading, and a report without it has no stopping point;
 - a refuted entry never gets a `###` heading of its own;
 - **a bracketed-severity `###` heading appears only under `## Findings`.**
-  Everything above `## Refuted` is read as a finding, so a candidate no panel
-  decided, an id in `coverage.anchorDoubted`, or anything under `Not covered`
-  is a bullet -- never a heading. Measured: `### [HIGH] C4 was proposed but no
-  verifier answered` under `## Not covered` makes `labels.py` print `high`,
-  and the published issue then carries a HIGH label for something explicitly
-  undecided.
+  `labels.py` reads everything ABOVE the first `## Refuted` as a finding, so
+  such a heading in `## Coverage` -- a candidate no panel decided, an id in
+  `coverage.anchorDoubted` -- labels the published issue as though it were a
+  confirmed finding. Write those as bullets. Below `## Refuted` the risk is
+  smaller, because that is where `labels.py` stops reading; it is only a
+  danger in a report that omitted `## Refuted`, which is the other half of why
+  the rule above says always emit it.
 
 Measured against `labels.py`, not assumed: a report written from this template
 with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity
