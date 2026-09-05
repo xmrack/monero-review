@@ -2,7 +2,7 @@
      It exists so a researcher or verifier starts from exactly what the default
      reviewer starts from. The workflow inlines the same facts into each
      dispatch; keep this file and the CONTEXT constant in
-     .claude/workflows/monero-deep-review.js in agreement. -->
+     .claude/workflows/monero-deep-scan.js in agreement. -->
 
 # Start here
 

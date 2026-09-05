@@ -71,6 +71,8 @@ majority and the reader is entitled to know it.>
 
 - <What could not be settled and why: a tool this run lacked, a claim needing
   a running binary, a submodule whose source was absent.>
+
+<!-- deep-scan units=<n> cells=<n> failedCells=<n> candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> -->
 ```
 
 # Rules
@@ -108,6 +110,36 @@ content. Do not pad, and do not soften something real to be kind about the code.
 more than a LOW, because they are the part a "no findings" would otherwise
 overstate.
 
+# The coverage stamp is not decoration
+
+The last line is an HTML comment, invisible when rendered, and the harness
+reads it. Emit it **always**, as the final line, with every field present and
+every value a plain integer taken verbatim from the returned `coverage`
+object -- never a number you reasoned your way to.
+
+| field | from |
+| --- | --- |
+| `units` | `coverage.units` (the count) |
+| `cells` | research cells dispatched: `coverage.researchAccount.length` |
+| `failedCells` | `coverage.failedCells` |
+| `candidates` | distinct candidates after merging duplicates |
+| `confirmed` | findings you are publishing |
+| `refuted` | entries in `refuted` |
+| `unverified` | `coverage.candidatesUnverified` |
+| `unaccounted` | `coverage.unaccounted.length` |
+
+It exists because of one failure mode the prose cannot cover. If the agent
+fleet dies mid-run -- a usage limit is the realistic way -- the workflow still
+returns an empty `findings` list, and an honest report of that is a report with
+no findings in it. To `labels.py` and to the harness that is byte-for-byte a
+clean review, and publishing it files the issue that marks this pull request
+reviewed forever. The stamp is the only thing that separates "three verifiers
+looked and found nothing" from "nobody looked". A run whose failed cells are
+most of its cells is refused publication on the strength of these numbers, so
+reporting them accurately matters more than the report reading well.
+
+Write it even when everything failed. Especially then.
+
 # The grammar is load-bearing
 
 `scripts/labels.py` labels the published issue from this file. It reads finding
@@ -117,8 +149,17 @@ So:
 - headings stay `### [SEVERITY / CONFIDENCE] Title`, severity spelled
   `CRITICAL`, `HIGH`, `MEDIUM` or `LOW`;
 - `## Refuted` keeps that exact spelling and stays **below** `## Findings` --
-  above it, every real finding stops labelling the issue;
-- a refuted entry never gets a `###` heading of its own.
+  above it, every real finding stops labelling the issue. Emit the heading
+  even when nothing was refuted (`- none`): it is where `labels.py` stops
+  reading, and a report without it has no stopping point;
+- a refuted entry never gets a `###` heading of its own;
+- **a bracketed-severity `###` heading appears only under `## Findings`.**
+  Everything above `## Refuted` is read as a finding, so a candidate no panel
+  decided, an id in `coverage.anchorDoubted`, or anything under `Not covered`
+  is a bullet -- never a heading. Measured: `### [HIGH] C4 was proposed but no
+  verifier answered` under `## Not covered` makes `labels.py` print `high`,
+  and the published issue then carries a HIGH label for something explicitly
+  undecided.
 
 Measured against `labels.py`, not assumed: a report written from this template
 with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity

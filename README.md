@@ -17,11 +17,42 @@ Locally — no secrets, no runner, results in `reviews/`:
 ./review-local.sh 11155
 ```
 
+`DEEP=1 ./review-local.sh 11155` runs the deep review instead — see below.
+
 Or on GitHub Actions, which files the result as an issue here:
 
 ```bash
 gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
 ```
+
+## Review one PR the hard way
+
+For a diff that earns it — a wide change, a consensus or crypto rewrite, a
+thin default review against something obviously risky — the same workflow runs
+the multi-agent deep review instead:
+
+```bash
+gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
+```
+
+or locally, which is the cheaper place to find out what it costs:
+
+```bash
+DEEP=1 ./review-local.sh 11155
+```
+
+That partitions the diff, runs a researcher per component per weakness class,
+and puts every candidate to three independent verifiers whose votes are counted
+in code rather than argued in prose. It replaces the two-pass shape rather than
+adding to it: the pipeline is its own adversary, so the refutation pass is
+turned off. Budget hours, not minutes, and several times a normal review's
+cost — the runtime caps concurrent agents at two on any runner this repo can
+reach, so the fan-out is paid for in wall clock. It must name a PR number;
+`mode=deep` with `pr=sweep` is refused. A deep run that fails is never charged
+against the PR's place in the ordinary queue.
+
+No deep run has happened in CI yet, so its cost and runtime here are arithmetic
+rather than measurement. Read the telemetry footer on the first one.
 
 ## Where things are
 
@@ -35,12 +66,13 @@ gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
 - `.claude/skills/monero-security-review/SKILL.md` — the review itself. Edit
   this if the output isn't sharp enough.
 - `.claude/skills/monero-deep-review/` — a second, much heavier review that
-  **never runs on its own**. Type `/monero-deep-review` to get it: the diff is
-  partitioned into components, a researcher runs per component and per category
-  lens, and every candidate faces three independent verifiers whose votes are
-  counted in code. Several times the cost of the default review, for a diff
-  that earns it. Needs the `Workflow` and `Agent` tools, which the scheduled
-  sweep does not grant, so it cannot fire from the queue.
+  **never runs on its own**. Type `/monero-deep-review` to get it, or dispatch
+  it (below): the diff is partitioned into components, a researcher runs per
+  component and per category lens, and every candidate faces three independent
+  verifiers whose votes are counted in code. Several times the cost of the
+  default review, for a diff that earns it. The scheduled sweep never picks
+  it — it grants neither `Workflow` nor `Agent`, and asking for the deep pass
+  is a deliberate act.
 - `.claude/agents/` and `.claude/workflows/` — the agents and the orchestration
   the deep review dispatches. `.claude/agents/monero-context.md` is the context
   contract every one of those agents opens with, so they start where the

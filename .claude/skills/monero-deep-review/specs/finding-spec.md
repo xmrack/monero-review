@@ -1,6 +1,6 @@
 <!-- Read by researchers when proposing and by verifiers when rating. The
      category list and the two vocabularies below are enforced as schemas in
-     .claude/workflows/monero-deep-review.js; change both together or the
+     .claude/workflows/monero-deep-scan.js; change both together or the
      agents will fail validation. -->
 
 # What counts as a candidate

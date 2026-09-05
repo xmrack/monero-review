@@ -4,13 +4,25 @@
 #
 #   ./review-local.sh 9876              # review PR 9876 with Opus
 #   ./review-local.sh 9876 claude-fable-5-1
+#   DEEP=1 ./review-local.sh 9876       # the multi-agent deep review instead
 #
 # Findings land in reviews/pr-<n>-<sha>.md
+#
+# DEEP=1 runs /monero-deep-review: the diff is partitioned, a researcher runs
+# per component per weakness class, and every candidate faces three
+# independent verifiers whose votes are counted in code. It replaces the
+# two-pass shape rather than adding to it -- the pipeline is its own
+# adversary, so the refutation pass is skipped. Budget hours and several times
+# a normal review's cost. Concurrency is capped at min(16, max(2, CPUs - 2)),
+# so a machine with more cores finishes proportionally sooner; this is also
+# the cheapest place to measure what a deep run really costs before spending
+# a CI runner's afternoon on one.
 set -euo pipefail
 
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
 MODEL=${2:-claude-opus-5}
 UPSTREAM=${UPSTREAM:-monero-project/monero}
+DEEP=${DEEP:-}
 
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number" >&2; exit 1; }
 
@@ -211,10 +223,24 @@ bash "$HERE/scripts/build_index.sh" "$CACHE"
 
 TOOLS="Read,Grep,Glob,Write,Edit,Skill,Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
 
+# The deep pass needs these on top, and nothing else does. Kept identical to
+# DEEP_EXTRA_TOOLS in .github/workflows/review.yml -- four separate
+# Agent(name) entries rather than one Agent(a, b, c, d), because this string
+# is comma-split and a comma inside parentheses is a parser question nobody
+# has answered.
+DEEP_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+
+if [ -n "$DEEP" ]; then
+  PROMPT="/monero-deep-review"
+  TOOLS="$TOOLS,$DEEP_TOOLS"
+else
+  PROMPT="/monero-security-review"
+fi
+
 rm -f "$CACHE/review.md" "$CACHE/exec.json" "$CACHE/exec-refute.json"
-echo "==> reviewing with $MODEL"
+echo "==> reviewing with $MODEL${DEEP:+ (deep)}"
 T0=$(date +%s)
-( cd "$CACHE" && claude -p "/monero-security-review" \
+( cd "$CACHE" && claude -p "$PROMPT" \
     --model "$MODEL" --output-format json --allowedTools "$TOOLS" > exec.json )
 
 if [ ! -s "$CACHE/review.md" ]; then
@@ -231,7 +257,35 @@ VERIFIED="**NOT VERIFIED** — the adversarial pass did not complete. Expect fal
 # labels.py is the one place that knows what a severity heading looks like;
 # asking it here keeps this gate from drifting away from the workflow's, which
 # is how unverified findings got published once already.
-if [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
+if [ -n "$DEEP" ]; then
+  # The deep pipeline is its own adversary: every candidate faced three
+  # independent verifiers and the votes were counted in code. Running
+  # /monero-review-refute over that would pay for a second adversary and
+  # rewrite a report written to a different spec -- it keeps only the header
+  # block and Checked-and-clear, dropping the Coverage section the deep
+  # pipeline exists to produce.
+  #
+  # Read the report's coverage stamp for the same reason the workflow does:
+  # if the agent fleet dies mid-run the pipeline still returns no findings,
+  # and an honest report of that is indistinguishable from a clean review
+  # unless somebody counts the cells that never reported.
+  STAMP=$(grep -o '<!-- deep-scan [^>]*-->' "$CACHE/review.md" | tail -1 || true)
+  CELLS=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]cells=\([0-9]\{1,\}\).*/\1/p')
+  FAILED=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]failedCells=\([0-9]\{1,\}\).*/\1/p')
+  if [ -z "$CELLS" ] || [ -z "$FAILED" ]; then
+    echo "!! deep report carries no readable coverage stamp -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the deep pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran."
+  elif [ "$CELLS" = "0" ]; then
+    echo "!! deep pass dispatched no research cells -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the deep pass dispatched no research cells at all, so nothing was examined."
+  elif [ "$(( FAILED * 2 ))" -gt "$CELLS" ]; then
+    echo "!! $FAILED of $CELLS research cells failed -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — $FAILED of $CELLS research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+  else
+    echo "==> deep pass verified itself ($(( CELLS - FAILED )) of $CELLS cells reported)"
+    VERIFIED="verified by the deep pipeline's own panel — every candidate faced three independent verifiers on separate angles, the votes were counted in code rather than argued in prose, and severity was lowered and confidence capped by the count. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
+  fi
+elif [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
   echo "==> findings present, verifying"
   # Tolerate failure here: pass 1's work still has value, but it must be
   # labelled, because unverified findings are mostly false positives.

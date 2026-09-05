@@ -15,8 +15,11 @@ targets. Confirm that instead of assuming it, one command per call:
 
 The range is `origin/base...HEAD`, three dots, never inside `$(...)`.
 
-`PR_CONTEXT.md` has the number and title. Take those two facts from it and
-treat the rest as the author's claims.
+`PR_CONTEXT.md` opens with a `Pull request: <upstream>#<n>` line written by the
+harness, outside the author-supplied fence, and then the author's own title.
+Take the number and title from there and treat the rest as the author's claims.
+If that line is absent — an older harness, or a checkout prepared by hand —
+pass `pr: null` rather than guessing; the workflow handles it.
 
 ## 2. List the changed files
 
@@ -45,6 +48,19 @@ tool, this session does not have it, so nothing ran, and `/monero-security-revie
 is what to use here. Do not improvise around it. Dispatching the agents
 yourself would yield a report claiming a verification nobody performed, which
 is the one thing this skill must never produce.
+
+**Say it in chat and write nothing to `review.md`.** That file is the
+harness's input, not a place to leave a note. A file explaining why nothing
+ran carries no severity heading, so `labels.py` reads it as a review that
+found nothing, the harness files the issue that marks this pull request
+reviewed, and it is never looked at again — a harness misconfiguration turned
+into a permanent clean bill of health. An absent file is read correctly: the
+run failed and the pull request stays in the queue.
+
+In the CI harness the tool is granted (`.github/workflows/review.yml` appends
+`Workflow` and the four `Agent(...)` grants when it is dispatched with
+`mode=deep`), so reaching this stop there means the harness is misconfigured
+and the run should be diagnosed rather than retried.
 
 ## 4. Start the run
 
@@ -114,6 +130,13 @@ Coverage is not a formality. It must name:
 Keep `refuted` in the report. It is most of what this pipeline produces and it
 is how the next reviewer avoids buying a panel for the same idea twice.
 
+End the file with the coverage stamp the REPORT SPEC describes — the HTML
+comment carrying `cells`, `failedCells` and the rest, straight from `coverage`.
+The harness reads it and refuses to publish a run whose research mostly failed,
+because such a run and a genuinely clean one are otherwise indistinguishable
+from the outside. Write it even when every cell failed; that is the case it
+exists for.
+
 ## 6. Say what happened
 
 A few sentences: what was reviewed, how many candidates were proposed, how many
@@ -121,6 +144,9 @@ stood up, and where `review.md` is. Claim no more verification than `coverage`
 supports.
 
 If `coverage.unaccounted` is not empty, lead with that rather than the findings.
+If `coverage.failedCells` is a large share of the cells dispatched, lead with
+*that*: the run did not review what it set out to, and no number of clean units
+makes up for the ones nobody read.
 
 "No findings" is a complete and ordinary result. Say it plainly.
 
