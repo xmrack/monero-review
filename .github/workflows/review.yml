@@ -316,16 +316,21 @@ jobs:
     # matrix leg, so BATCH=2 gets this each.
     #
     # The deep pass is a different animal: dozens of agents at an effective
-    # concurrency of 2 (see runs-on above). Estimated from this runner class's
-    # measured single-pass timings, a wide diff is 130-245 minutes, so 120
-    # would time out around the midpoint. 350 covers the pessimistic end and
-    # stays under GitHub's hard 6-hour job kill, which no timeout-minutes
-    # value can exceed. The default pass keeps its tight limit: it finishes in
-    # 4-24 minutes and a hung one should fail fast.
+    # concurrency of 2 (see runs-on above). The default pass keeps its tight
+    # limit: it finishes in 4-24 minutes and a hung one should fail fast.
     #
-    # UNMEASURED. No deep run has happened here yet, so 350 is arithmetic, not
-    # observation. The first real run is the measurement -- read the per-phase
-    # timings out of the log before trusting this number.
+    # MEASURED, once, on run 471 -- monero-project/monero#9559, the carrot_core
+    # change: 50 files, +11398/-3, partitioned into 8 units and 22 research
+    # cells, 4 candidates each put to a three-angle panel. 3h13m wall, $99.79
+    # at API rates, against $13.56 for a default Opus review of a normal diff.
+    # So roughly 7x the cost and 10-20x the clock, for a diff at the wide end
+    # of what upstream produces.
+    #
+    # 350 leaves about 1.8x headroom over that, and stays under GitHub's hard
+    # 6-hour job kill, which no timeout-minutes value can exceed. One sample is
+    # not a distribution: a diff materially wider than 9559 could still run
+    # out, and the failure mode is a cancellation, so nothing is published and
+    # nothing is charged to the PR.
     timeout-minutes: ${{ inputs.mode == 'deep' && 350 || 120 }}
     permissions:
       contents: read
@@ -1069,10 +1074,10 @@ jobs:
             # invented. Both key spellings are matched because the log's
             # schema is not documented.
             #
-            # UNVERIFIED AGAINST A REAL DEEP LOG -- no deep run has happened
-            # yet. If a good deep run comes back "no trace", look here first:
-            # print exec-pass1.json from the run's artifact and check how a
-            # tool call is actually spelled, rather than loosening the gate.
+            # VERIFIED against run 471's real execution log: the matcher
+            # hits `"name": "Workflow"` there. If a good deep run ever comes
+            # back "no trace", print exec-pass1.json from the run's artifact
+            # and check how a tool call is spelled, rather than loosening it.
             fleet=no
             if [ -n "${PASS1_EXEC:-}" ] && [ -f "${PASS1_EXEC:-}" ] &&
                grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' "$PASS1_EXEC"; then
@@ -1443,5 +1448,5 @@ jobs:
           path: |
             exec-pass1.json
             ${{ steps.refute.outputs.execution_file }}
-            /home/runner/.claude/projects/*/subagents/workflows/*/journal.jsonl
+            /home/runner/.claude/projects/*/*/subagents/workflows/*/journal.jsonl
           if-no-files-found: ignore

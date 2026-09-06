@@ -63,9 +63,13 @@ What the deep path does differently, and why each matters here:
   is the dedup contract `select_prs.py` and `status.py` parse -- so the label
   is the only thing that tells a deep review from a default one at a glance.
 
-The cost is unmeasured. One Opus single-pass review on this queue recorded
-$13.56, and this shape dispatches dozens of agents against that one. Read the
-telemetry footer on the first run before making it a habit.
+**Measured once**, on monero-project/monero#9559 (carrot_core: 50 files,
++11398/-3): 3h13m wall, $99.79 at API rates, 8 units, 22 research cells, 4
+candidates, all four refuted unanimously. A default Opus review of a normal
+diff on this queue recorded $13.56, so budget roughly seven times that and
+hours rather than minutes. 9559 is at the wide end of what upstream produces,
+and one sample is not a distribution -- read the telemetry footer on each run
+rather than treating this as the number.
 
 ## What this is, and when it is worth it
 

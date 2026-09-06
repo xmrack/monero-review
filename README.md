@@ -49,16 +49,18 @@ That partitions the diff, runs a researcher per component per weakness class,
 and puts every candidate to three independent verifiers whose votes are counted
 in code rather than argued in prose. It replaces the two-pass shape rather than
 adding to it: the pipeline is its own adversary, so the refutation pass is
-turned off. Budget hours, not minutes, and several times a normal review's
-cost — the runtime caps concurrent agents at two on any runner this repo can
-reach, so the fan-out is paid for in wall clock. It must name a PR number;
-`mode=deep` with `pr=sweep` is refused. A deep run that fails is never charged
-against the PR's place in the ordinary queue.
+turned off. It must name a PR number; `mode=deep` with `pr=sweep` is refused.
+A deep run that fails is never charged against the PR's place in the ordinary
+queue.
 
-Costs and runtimes here are still arithmetic rather than measurement — the
-first CI deep run got as far as dispatching its fleet and then exited on top
-of it, which is fixed but not yet re-measured. Read the telemetry footer on
-the first one that completes.
+**What it costs, measured once.** On monero-project/monero#9559 — the
+carrot_core change, 50 files and +11398 lines, at the wide end of what upstream
+produces — it took **3h13m and $99.79**, against $13.56 for a default Opus
+review of a normal diff. It split that into 8 units and 22 research cells,
+proposed 4 candidates, and refuted all 4 unanimously. The runtime caps
+concurrent agents at two on any runner this repo can reach, so the fan-out is
+paid for in wall clock. Budget hours and about seven times a normal review;
+one sample is not a distribution, so read the telemetry footer on each run.
 
 ## Where things are
 

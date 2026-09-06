@@ -75,11 +75,11 @@ Workflow({ name: "monero-deep-scan",
 `root` has to be absolute. The agents `cd` to it before doing anything, because
 the working directory is not reliably the checkout.
 
-**`args` is an object, not a string.** Pass it as real JSON — an actual object
-with an actual array in `changedFiles`. Serialising it to a string first is a
-measured failure: on the first CI deep run the whole thing arrived as one
-JSON-encoded string, so `args.changedFiles` was `undefined` inside the script
-and the mapper had nothing to partition.
+Prefer passing `args` as a real object rather than a JSON-encoded string. Both
+work — measured: the first two CI deep runs both serialised it to a string, and
+the one that got as far as running the fleet partitioned all 50 changed files
+correctly, so the harness parses it. An object is simply the documented shape
+and one less thing between you and the script.
 
 Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, that this is the deep pass, and that nothing is a finding
