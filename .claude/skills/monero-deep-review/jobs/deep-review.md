@@ -75,16 +75,52 @@ Workflow({ name: "monero-deep-scan",
 `root` has to be absolute. The agents `cd` to it before doing anything, because
 the working directory is not reliably the checkout.
 
+**`args` is an object, not a string.** Pass it as real JSON — an actual object
+with an actual array in `changedFiles`. Serialising it to a string first is a
+measured failure: on the first CI deep run the whole thing arrived as one
+JSON-encoded string, so `args.changedFiles` was `undefined` inside the script
+and the mapper had nothing to partition.
+
 Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, that this is the deep pass, and that nothing is a finding
-until the verifiers have finished. Then wait. Per-stage progress shows under
-`/workflows`; do not narrate it yourself.
+until the verifiers have finished.
+
+## 4b. Wait for it — this is not optional
+
+The Workflow tool **always returns immediately**. Its result says
+`Workflow launched in background. Task ID: <id>` and the fleet then runs
+outside your turn. If you end your turn there, the run ends with it: measured
+on the first CI deep run, the Lead said "I'll wait for it to finish", stopped,
+and the session exited `success` after 52 seconds having killed every agent it
+had just dispatched. Nothing was refused and nothing errored. It simply walked
+away from three hours of work it had already paid to start.
+
+So take the `Task ID` from that result and block on it:
+
+```
+TaskOutput({ task_id: "<the Task ID>", block: true, timeout: 600000 })
+```
+
+600000ms is the maximum per call, so one call is not enough. If it comes back
+`not_ready` or still running, **call it again**, and keep calling until it
+returns the workflow's result. A wide diff is a few hours, which is a couple
+of dozen calls; that is expected and it is far cheaper than the alternative.
+Do not end your turn, do not start writing `review.md`, and do not summarise
+anything until that result is in your hands.
+
+Per-stage progress shows under `/workflows` when a human is watching; do not
+narrate it yourself.
 
 You get back `findings`, `refuted`, `unverified`, `coverage`, and a `next` line.
 Follow `next`. Note that `unverified` is a list of candidates no panel decided,
 while `coverage.candidatesUnverified` is only its count (plus any whose panel
 threw, which are a count with no record) — when something has to be named, use
 the list.
+
+If the workflow genuinely fails rather than returning — the task dies, or
+`TaskOutput` reports an error rather than a result — say so and write nothing.
+A report with no pipeline behind it is the one thing this skill must never
+produce.
 
 ## 5. Write `review.md`
 

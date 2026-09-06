@@ -161,7 +161,28 @@ env:
   # their shell calls are judged against the session allowlist -- which is
   # why the deep pass gets ALLOWED_TOOLS in full and not the shorter list in
   # the deep skill's frontmatter.
-  DEEP_EXTRA_TOOLS: "Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+  #
+  # `TaskOutput` is not decoration, it is what makes the deep pass finish at
+  # all. MEASURED on run 469: the Workflow tool ALWAYS backgrounds -- it
+  # returns "Workflow launched in background. Task ID: <id>" the moment the
+  # fleet starts. In an interactive session a completion notification wakes
+  # the model. Headless there is no next turn: the Lead said "I'll wait for
+  # it to finish", ended its turn, and `claude -p` exited `success` after 52
+  # seconds, killing the whole fleet with the process. Nothing was refused
+  # and nothing errored -- the run simply walked away from its own work.
+  # TaskOutput with block:true is the only way to hold the turn open.
+  #
+  # Related lever, deliberately NOT set: print mode does wait for background
+  # work, but with a ceiling -- the CLI carries the string "Background tasks
+  # still running after <n>s; terminating. Set
+  # CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely." That
+  # ceiling is a backstop for a Lead that ends its turn anyway, and it cannot
+  # substitute for the fix above: waiting for the fleet after the turn has
+  # ended still leaves nobody to write review.md. Its default is not
+  # established here, so it is left alone. If a future run shows the fleet
+  # terminated while the Lead was still working, that variable is the first
+  # thing to try.
+  DEEP_EXTRA_TOOLS: "Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
 
 # One review at a time, repo-wide. Rapid ticks collapse into a single pending
 # run rather than stacking, and no two runs can pick the same PR concurrently.
@@ -191,9 +212,17 @@ env:
 # the first. Losing hours of sweep ticks instead would be worse.
 #
 # The two also share one Claude account, so a deep run can exhaust it under a
-# sweep that started later. That failure is already handled correctly rather
-# than by luck: attempt.py reads a usage limit as `infra` and `Record failed
-# attempt` spares the PR, so the sweep's victim keeps its full retry budget.
+# sweep that started later. attempt.py now recognises an account-level limit
+# from the execution log and reads it as `infra`, so the sweep's victim keeps
+# its full retry budget.
+#
+# That used to be a false claim here, and it is worth recording why: a limit
+# refused BEFORE any work leaves no execution log, which attempt.py has
+# always read as infra. A limit landing MID-RUN leaves a full record with
+# real turns and tokens, which fell straight through to the "the model did
+# real work and produced nothing" branch and charged the pull request for an
+# account-level event. Two of those retire it from the queue for good. The
+# fix is in scripts/attempt.py, not here.
 #
 # If either starts happening often, dispatch deep runs when the queue is
 # short, or set REVIEW_PAUSED for the duration, rather than putting the two
@@ -716,6 +745,39 @@ jobs:
       # every one of those a no-op.
       - id: claude
         uses: anthropics/claude-code-action@v1
+        env:
+          # Wait out a usage limit instead of dying on it -- DEEP RUNS ONLY.
+          #
+          # Read out of the CLI binary: the interactive "continuing
+          # automatically when your limit resets" behaviour is gated on
+          # isInteractive(), which `-p` AND any non-TTY stdout set false. So
+          # every Actions run is in the non-waiting mode by construction. On
+          # a subscription OAuth token a usage-limit 429 (the kind carrying
+          # `anthropic-ratelimit-unified-*` headers) is classified
+          # NON-retryable and gets zero retries, and separately any
+          # Retry-After above 60s hard-fails. A limit therefore kills the run
+          # outright rather than pausing it.
+          #
+          # CLAUDE_CODE_RETRY_WATCHDOG=1 switches 429/529 onto a persistent
+          # retry that sleeps until `anthropic-ratelimit-unified-reset`, in
+          # 30-second slices, capped at 6 hours, without consuming the retry
+          # budget. Anthropic's own remote runner sets it; claude-code-action
+          # does not.
+          #
+          # Deep only, deliberately. A deep run is hours of work by dozens of
+          # agents and losing it to a limit reset ten minutes away is pure
+          # waste. A scheduled sweep is the opposite: it should fail fast and
+          # let the next tick retry, and a sweep sleeping for hours would
+          # hold a runner and the concurrency group for nothing.
+          #
+          # UNMEASURED HERE, and it is an internal variable rather than a
+          # documented interface. Two things to watch on the first deep run
+          # that meets a limit: the sleep counts against `timeout-minutes:
+          # 350` and against GitHub's hard 6-hour job kill, so a long wait
+          # can still lose the run -- just having tried rather than not; and
+          # if it misbehaves, deleting this env block restores today's
+          # fail-fast behaviour exactly.
+          CLAUDE_CODE_RETRY_WATCHDOG: ${{ inputs.mode == 'deep' && '1' || '' }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: ${{ inputs.mode == 'deep' && '/monero-deep-review' || '/monero-security-review' }}
@@ -1041,6 +1103,17 @@ jobs:
             elif [ "$cands" -gt 0 ] && [ "$(( unver * 2 ))" -gt "$cands" ]; then
               state=unverified
               note="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
+            elif [ "$cands" -eq 0 ] && [ "$(( failed * 4 ))" -gt "$cells" ]; then
+              # A no-findings deep review is the strongest claim this
+              # pipeline makes, and it is the one a reader is least able to
+              # check. The majority test above is too lenient for it: with
+              # zero candidates proposed there is no panel evidence at all,
+              # so the claim rests entirely on how much of the diff was
+              # actually read. Demand near-complete coverage for it --
+              # anything worse than a quarter of cells lost is not a clean
+              # bill of health, it is a thin one.
+              state=unverified
+              note="**NOT VERIFIED** — nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
             else
               state=deep
               covered="$(( cells - failed )) of $cells research cells reported"
@@ -1136,8 +1209,14 @@ jobs:
           printf '<sub>%s, of %s open upstream PR(s) when this run started.</sub>\n' \
             "$line" "$OPEN" >> review.md
 
-      # An issue is the dedup marker, so it is only written on success --
-      # a rate-limited or timed-out run leaves no marker and gets retried.
+      # An issue is the dedup marker. This step is `if: always()`, so the
+      # thing that actually withholds it is the pair of guards below: a
+      # non-empty review.md, and a state on the publishable allowlist. A
+      # rate-limited or timed-out run fails both and leaves no marker, so it
+      # gets retried -- but note the corollary, that a run which wrote a good
+      # report and THEN died still publishes it, on a red job. That is the
+      # wanted behaviour and not an accident: the report is complete and the
+      # verification state says so.
       - name: Publish findings
         if: always()
         env:
@@ -1348,4 +1427,5 @@ jobs:
           path: |
             exec-pass1.json
             ${{ steps.refute.outputs.execution_file }}
+            /home/runner/.claude/projects/*/subagents/workflows/*/journal.jsonl
           if-no-files-found: ignore

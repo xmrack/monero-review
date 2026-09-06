@@ -232,7 +232,7 @@ TOOLS="Read,Grep,Glob,Write,Edit,Skill,Bash(git diff:*),Bash(git fetch origin:*)
 # Agent(name) entries rather than one Agent(a, b, c, d), because this string
 # is comma-split and a comma inside parentheses is a parser question nobody
 # has answered.
-DEEP_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+DEEP_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
 
 if [ -n "$DEEP" ]; then
   PROMPT="/monero-deep-review"

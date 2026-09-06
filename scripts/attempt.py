@@ -40,6 +40,32 @@ MIN_REAL_TURNS = 3
 # PR being too large or too hard, and a retry produces the same outcome.
 BUDGET_EXHAUSTED = {"error_max_turns"}
 
+# An ACCOUNT-level limit is never the pull request's fault, and it is the one
+# failure this file used to get backwards. A limit refused before any work
+# leaves no execution log at all, which the `not paths` branch below has
+# always read as infra. A limit landing MID-RUN is the opposite: the log is
+# complete, with real turns and real tokens, so it fell through to "the model
+# did real work and produced nothing" and charged the PR. Two of those retire
+# it from the queue permanently, for something no diff could have caused.
+#
+# There is no usage-limit subtype to key off -- the set is success,
+# error_during_execution, error_max_turns, error_max_budget_usd and
+# error_max_structured_output_retries. A subscription usage limit surfaces as
+# a 429 recorded in `api_error_status`, on a record that may still say
+# `subtype: success` with `is_error` set. So match the status code, and match
+# the message text too, because the field carrying it is not documented and
+# has changed shape before.
+API_LIMIT_STATUS = {429, 529}
+LIMIT_PHRASES = (
+    "usage limit",
+    "session limit",
+    "rate limit",
+    "rate_limit",
+    "overloaded",
+    "too many requests",
+    "quota",
+)
+
 METRIC_KEYS = ("total_cost_usd", "duration_ms", "usage", "num_turns", "subtype")
 
 
@@ -91,6 +117,31 @@ def find_result(node, depth=0):
     return None
 
 
+def hit_account_limit(result):
+    """True when this record shows an account-level API limit, not a PR problem.
+
+    Deliberately generous: a false positive costs one un-recorded attempt on a
+    PR that will be retried anyway, while a false negative charges a PR for an
+    outage. Those are not symmetric.
+    """
+    status = result.get("api_error_status")
+    try:
+        if status is not None and int(status) in API_LIMIT_STATUS:
+            return True
+    except (TypeError, ValueError):
+        pass
+
+    # Machine fields only. `result` is the model's own closing prose and is
+    # deliberately NOT searched: this repository reviews networking code, so a
+    # perfectly good review can end with "the PR adds rate limiting to the P2P
+    # layer" and would otherwise spare a PR that genuinely cannot be reviewed,
+    # leaving it at the head of the queue forever.
+    blob = " ".join(
+        str(result.get(key, "")) for key in ("errors", "error", "stop_reason")
+    ).lower()
+    return any(phrase in blob for phrase in LIMIT_PHRASES)
+
+
 def tokens(result):
     usage = result.get("usage")
     if not isinstance(usage, dict):
@@ -131,6 +182,15 @@ def verdict():
 
     if not results:
         return "unknown", "execution log present but no metrics record found"
+
+    # Before anything else: an account-level limit is not this PR's fault at
+    # any turn count. Checked ahead of BUDGET_EXHAUSTED so a run that was rate
+    # limited on its way to the turn cap is still spared.
+    for r in results:
+        if hit_account_limit(r):
+            return "infra", ("the run hit an account-level API limit "
+                             "(rate/usage limit or an overloaded API), which no "
+                             "change to this PR would avoid")
 
     for r in results:
         subtype = r.get("subtype")

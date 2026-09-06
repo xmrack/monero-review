@@ -51,8 +51,10 @@ reach, so the fan-out is paid for in wall clock. It must name a PR number;
 `mode=deep` with `pr=sweep` is refused. A deep run that fails is never charged
 against the PR's place in the ordinary queue.
 
-No deep run has happened in CI yet, so its cost and runtime here are arithmetic
-rather than measurement. Read the telemetry footer on the first one.
+Costs and runtimes here are still arithmetic rather than measurement — the
+first CI deep run got as far as dispatching its fleet and then exited on top
+of it, which is fixed but not yet re-measured. Read the telemetry footer on
+the first one that completes.
 
 ## Where things are
 

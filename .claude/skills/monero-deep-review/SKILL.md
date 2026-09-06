@@ -2,7 +2,7 @@
 name: monero-deep-review
 description: "Deep multi-agent security review of one Monero pull request. The diff is partitioned into components, a researcher fleet hunts each component under a category lens, and every candidate faces a three-lens adversarial panel whose votes are counted in code. Far slower and more expensive than the default single-pass review -- invoke it deliberately, on a diff that earns it."
 disable-model-invocation: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Workflow, Agent(monero-mapper), Agent(monero-researcher), Agent(monero-verifier), Agent(monero-explore), Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
+allowed-tools: Read, Grep, Glob, Write, Edit, Workflow, TaskOutput, Agent(monero-mapper), Agent(monero-researcher), Agent(monero-verifier), Agent(monero-explore), Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
 ---
 
 # Monero deep review
@@ -37,8 +37,17 @@ sweep is never deep by accident.
 
 What the deep path does differently, and why each matters here:
 
-- it appends `Workflow` and four `Agent(...)` grants to the binding allowlist,
-  which is what step 3 of the job checks for;
+- it appends `Workflow`, `TaskOutput` and four `Agent(...)` grants to the
+  binding allowlist. `Workflow` is what step 3 of the job checks for;
+  `TaskOutput` is what step 4b uses to hold the turn open while the fleet
+  works, and without it a run starts its own agents and then exits on top of
+  them;
+- it sets `CLAUDE_CODE_RETRY_WATCHDOG=1`, so a Claude usage limit is waited
+  out rather than fatal. Headless runs never wait by default -- the
+  interactive "continuing when your limit resets" behaviour is gated on an
+  interactive session, and every Actions run is non-TTY -- so without this a
+  limit reached three hours in throws the whole run away. The wait counts
+  against the job timeout, so it can still lose;
 - it turns the `/monero-review-refute` pass **off**, because this pipeline
   already puts every candidate to a counted three-angle panel. Left on, that
   pass would rewrite `review.md` in place and throw away `## Coverage`;
