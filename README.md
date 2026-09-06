@@ -41,6 +41,10 @@ or locally, which is the cheaper place to find out what it costs:
 DEEP=1 ./review-local.sh 11155
 ```
 
+Its issues carry a `deep` label, so they are one click to filter for and are
+never mistaken for an ordinary review in the list. Everything else about them
+is the same shape: same title contract, same severity labels.
+
 That partitions the diff, runs a researcher per component per weakness class,
 and puts every candidate to three independent verifiers whose votes are counted
 in code rather than argued in prose. It replaces the two-pass shape rather than

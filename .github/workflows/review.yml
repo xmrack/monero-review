@@ -1221,6 +1221,7 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MODE: ${{ inputs.mode || 'default' }}
           VERIFY_STATE: ${{ steps.verified.outputs.state }}
         run: |
           set -euo pipefail
@@ -1280,6 +1281,21 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           gh label create "pr-${{ matrix.pr }}" --force >/dev/null 2>&1 || true
           labels="pr-${{ matrix.pr }}"
+
+          # Which review this was. Without it a three-hour deep review with a
+          # counted three-angle panel behind it is indistinguishable from a
+          # nine-minute default one in the issue list: same title, same
+          # severity labels, and the only difference buried in the
+          # Verification footer at the foot of the body. The title stays out
+          # of this deliberately -- select_prs.py and status.py parse it as
+          # the dedup record, so it is a contract and not a place to describe
+          # things.
+          if [ "${MODE:-default}" = "deep" ]; then
+            gh label create deep --color 5319E7 --force \
+              --description "Reviewed by the multi-agent deep pipeline" \
+              >/dev/null 2>&1 || true
+            labels="$labels,deep"
+          fi
 
           # Severity labels, from findings that survived verification only --
           # refuted ones stay in the report but must not tag the issue.
