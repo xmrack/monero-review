@@ -1291,10 +1291,10 @@ jobs:
           # the dedup record, so it is a contract and not a place to describe
           # things.
           if [ "${MODE:-default}" = "deep" ]; then
-            gh label create deep --color 5319E7 --force \
+            gh label create deep-review --color 5319E7 --force \
               --description "Reviewed by the multi-agent deep pipeline" \
               >/dev/null 2>&1 || true
-            labels="$labels,deep"
+            labels="$labels,deep-review"
           fi
 
           # Severity labels, from findings that survived verification only --

@@ -59,9 +59,9 @@ What the deep path does differently, and why each matters here:
   to retire a PR from it;
 - it publishes on the strength of the coverage stamp this skill's REPORT SPEC
   requires, not on the refutation pass having run;
-- it labels the published issue `deep`. The title is left alone -- it is the
-  dedup contract `select_prs.py` and `status.py` parse -- so the label is the
-  only thing that tells a deep review from a default one at a glance.
+- it labels the published issue `deep-review`. The title is left alone -- it
+  is the dedup contract `select_prs.py` and `status.py` parse -- so the label
+  is the only thing that tells a deep review from a default one at a glance.
 
 The cost is unmeasured. One Opus single-pass review on this queue recorded
 $13.56, and this shape dispatches dozens of agents against that one. Read the
