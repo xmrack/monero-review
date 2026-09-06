@@ -159,6 +159,20 @@ them accurately matters more than the report reading well.
 
 Write it even when everything failed. Especially then.
 
+# Never cross-reference the upstream pull request
+
+Write `monero-project/monero PR 9559`, or just "this pull request". Never
+`monero-project/monero#9559`, and never a `https://github.com/.../pull/9559`
+link. GitHub turns either shape in an issue body into a reference event on the
+target, which posts a notification onto a stranger's pull request. This
+pipeline reads upstream and never touches it, and that has to hold for the
+report as much as for the tools. The same goes for any other repository's
+issues or pull requests you cite.
+
+The harness rewrites these shapes out of `review.md` immediately before
+publishing, so a slip is caught -- but it is caught by a regex over
+model-written prose, which is the weakest kind of guarantee. Do not rely on it.
+
 # The grammar is load-bearing
 
 `scripts/labels.py` labels the published issue from this file. It reads finding

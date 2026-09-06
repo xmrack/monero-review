@@ -369,6 +369,15 @@ Review only what this diff changes or newly makes reachable. Read as much
 surrounding code as you need. Do not report pre-existing issues the diff
 doesn't touch.
 
+## Never cross-reference the upstream pull request
+
+In the report, write `monero-project/monero PR 9559` or "this pull request" --
+never `monero-project/monero#9559`, and never a github.com pull URL. Either
+shape in a published issue body makes GitHub file a reference event on the
+upstream pull request, putting a notification on a stranger's work. This
+pipeline reads upstream and never touches it. The harness strips these shapes
+before publishing, but that is a regex over prose; do not lean on it.
+
 ## Reference material
 
 Two sets. `.claude/references/monero/` describes **what the code is**; the

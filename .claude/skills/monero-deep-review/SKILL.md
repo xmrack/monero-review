@@ -63,7 +63,7 @@ What the deep path does differently, and why each matters here:
   is the dedup contract `select_prs.py` and `status.py` parse -- so the label
   is the only thing that tells a deep review from a default one at a glance.
 
-**Measured once**, on monero-project/monero#9559 (carrot_core: 50 files,
+**Measured once**, on the carrot_core change upstream (50 files,
 +11398/-3): 3h13m wall, $99.79 at API rates, 8 units, 22 research cells, 4
 candidates, all four refuted unanimously. A default Opus review of a normal
 diff on this queue recorded $13.56, so budget roughly seven times that and

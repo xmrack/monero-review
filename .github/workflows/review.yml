@@ -319,8 +319,8 @@ jobs:
     # concurrency of 2 (see runs-on above). The default pass keeps its tight
     # limit: it finishes in 4-24 minutes and a hung one should fail fast.
     #
-    # MEASURED, once, on run 471 -- monero-project/monero#9559, the carrot_core
-    # change: 50 files, +11398/-3, partitioned into 8 units and 22 research
+    # MEASURED, once, on run 471 -- the carrot_core change upstream:
+    # 50 files, +11398/-3, partitioned into 8 units and 22 research
     # cells, 4 candidates each put to a three-angle panel. 3h13m wall, $99.79
     # at API rates, against $13.56 for a default Opus review of a normal diff.
     # So roughly 7x the cost and 10-20x the clock, for a diff at the wide end
@@ -1237,6 +1237,28 @@ jobs:
             echo "No review produced for $UPSTREAM#${{ matrix.pr }} @ \`$SHA\` -- see logs." \
               >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          fi
+
+          # NEVER let a published issue body cross-reference the upstream pull
+          # request. GitHub turns both `owner/repo#number` and a github.com
+          # pull URL into a reference event on the target -- a notification on
+          # a stranger's pull request, from a pipeline whose whole premise is
+          # that it reads upstream without touching it. The body is written by
+          # a model out of untrusted PR text, so no instruction can guarantee
+          # the shape never appears; this rewrites it at the last moment
+          # before `gh issue create`, on the exact bytes that get published.
+          #
+          # The issue TITLE keeps `$UPSTREAM#<n>` deliberately: titles do not
+          # create reference events, and that string is the dedup contract
+          # select_prs.py and status.py parse across ~500 existing issues.
+          before=$(grep -cE "$UPSTREAM#[0-9]+|https://github\.com/$UPSTREAM/pull/[0-9]+" review.md || true)
+          if [ "${before:-0}" != "0" ]; then
+            # `|` as the delimiter, not `#`: the pattern itself contains a
+            # literal `#`, which ends the s-expression and makes sed die with
+            # "unknown option to `s'" -- silently leaving every reference in
+            # place, because the step would carry on.
+            sed -i -E "s|https://github\.com/$UPSTREAM/pull/([0-9]+)|$UPSTREAM PR \1|g; s|$UPSTREAM#([0-9]+)|$UPSTREAM PR \1|g" review.md
+            echo "neutralised $before upstream cross-reference(s) in the issue body"
           fi
 
           # Verification is part of the deliverable, not a bonus. If pass 1 found

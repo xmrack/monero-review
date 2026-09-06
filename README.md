@@ -53,9 +53,9 @@ turned off. It must name a PR number; `mode=deep` with `pr=sweep` is refused.
 A deep run that fails is never charged against the PR's place in the ordinary
 queue.
 
-**What it costs, measured once.** On monero-project/monero#9559 — the
-carrot_core change, 50 files and +11398 lines, at the wide end of what upstream
-produces — it took **3h13m and $99.79**, against $13.56 for a default Opus
+**What it costs, measured once.** On the carrot_core change upstream — 50
+files and +11398 lines, at the wide end of what upstream produces — it took
+**3h13m and $99.79**, against $13.56 for a default Opus
 review of a normal diff. It split that into 8 units and 22 research cells,
 proposed 4 candidates, and refuted all 4 unanimously. The runtime caps
 concurrent agents at two on any runner this repo can reach, so the fan-out is
