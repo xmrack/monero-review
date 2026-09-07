@@ -52,7 +52,10 @@ if [ -z "$pr" ]; then
 fi
 
 log "reviewing PR $pr"
-if "$HERE/review-local.sh" "$pr" "${MODEL:-claude-opus-5}"; then
+# `auto` lets review-local.sh route the tier and pick the model with it --
+# Sonnet on a light diff, Opus otherwise. Set MODEL to pin one for every PR
+# the drip picks.
+if "$HERE/review-local.sh" "$pr" "${MODEL:-auto}"; then
   log "done: PR $pr"
 else
   log "ERROR: review of PR $pr failed"

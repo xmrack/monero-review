@@ -1,7 +1,7 @@
 ---
 name: monero-review-refute
 description: Adversarially verify the findings in an existing Monero PR review.
-allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
+allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Agent(monero-explore), Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
 ---
 
 A first-pass security review of this pull request has already been written to
@@ -41,6 +41,15 @@ verdict is REFUTED; a finding has to earn CONFIRMED.
   consumer it names.
 - `PR_DISCUSSION.md` — the upstream review discussion and the CI results for
   this head commit, if present. See below.
+- **`Agent(monero-explore)`** — a read-only sub-agent that answers one mapping
+  question in its own context and hands back the answer: who calls this, which
+  paths reach that line, is there a check one frame up. Reachability is most of
+  what this pass does, and chasing it through `cscope` and `rg` is what fills
+  your window — every dump you pull in stays there while you attack the next
+  finding. Delegate the lookup, keep the answer. It has your tools and your
+  sandbox, so it reaches nothing you cannot, and it makes no judgement: a hit
+  is evidence, a miss is inconclusive, and a guard you have not read yourself
+  still refutes nothing.
 - A symbol index, if `tags` and `cscope.out` exist in the repository root:
   `cscope -d -L3 <fn>` for callers, `readtags -t tags <sym>` for definitions
   (check `cscope --help` if the arguments are rejected). Use it — imprecise
@@ -242,9 +251,21 @@ Two more turn-wasters worth knowing before you hit them:
 Take each finding one at a time and independently. Do not let a strong finding
 lend credibility to a weak one.
 
-**1. Re-derive the claim from the code.** Open the cited file and line. Does the
-code say what the finding says it says? Misread control flow is the most common
-first-pass error. If the citation is wrong, that alone is REFUTED.
+**1. Re-derive the claim from the code, and say that you did.** Open the cited
+file and line. Does the code say what the finding says it says? Misread control
+flow is the most common first-pass error. If the citation is wrong, that alone
+is REFUTED.
+
+**Record the answer either way.** Every surviving finding's `**Verification:**`
+line opens by stating that the anchor holds, with the `file:line` you actually
+opened — `anchor holds at core_rpc_server.cpp:412` — and a finding whose
+citation you had to move says the old line and the new one. The deep pipeline
+makes each of its verifiers return this as a field and publishes the ids where
+two of them could not find the code at all; here there is one of you, so the
+sentence is the whole record. Without it a reader cannot tell a finding you
+re-derived from one you took on trust, and a wrong citation is the fastest way
+to lose them: they will chase it, fail to find it, and stop believing the
+paragraphs around it.
 
 **2. Attack reachability.** The finding names an entry point and a call
 sequence. Verify every link with `cscope -d -L3`, not by assumption. Ask: is the
@@ -280,8 +301,35 @@ MEDIUM when keys are in the process — correct it upward and say so.
 
 ## Output
 
-Rewrite `review.md` in place, keeping the header block and `Checked and clear`,
-and updating them where you proved the first pass wrong.
+Rewrite `review.md` in place, keeping the header block, `## Coverage`,
+`## Checked and clear` and `## Not covered`, and updating them where you proved
+the first pass wrong.
+
+### Carry `## Coverage` and the stamp through unchanged
+
+The first pass ends its report with a `## Coverage` section accounting for
+every changed file, and a last line reading
+
+    <!-- scan files=<n> reviewed=<n> excluded=<n> -->
+
+**Both survive this pass verbatim.** You are attacking findings, not
+re-reviewing the diff, so you have no basis for a different account of what was
+read — and the harness checks that stamp against the real changed-file list
+before it publishes anything. A rewrite that drops it turns a complete review
+into one that publishes nothing and leaves the pull request in the queue; a
+rewrite that *changes* the numbers, without having read the files, replaces a
+checkable fact with a guess.
+
+This is not hypothetical. The refutation pass rewrites the file wholesale, and
+"keep the header block and Checked and clear" is exactly the instruction under
+which the deep pipeline's own `## Coverage` was being thrown away — which is
+why the harness now refuses to run this pass on a deep or medium report at all.
+
+The one case for touching either: you established that the first pass claimed
+to have reviewed a file it plainly had not. Then move that file from reviewed
+to excluded, say so in `Coverage` with the reason, correct the stamp to match,
+and note the correction in your summary. Prefer `Edit` over `Write` for this,
+so the rest of the section cannot be lost to a re-typing.
 
 **Compress as you verify.** A first pass tends to narrate — it explains what it
 tried, in what order, and how confident it feels. Strip that. What survives is
@@ -292,8 +340,8 @@ reducing it.
 ```markdown
 ### [SEVERITY / CONFIRMED] Short title
 (the finding, corrected where the first pass got details wrong)
-- **Verification:** what you attacked it with, and the `file:line` that failed
-  to kill it. One or two sentences.
+- **Verification:** anchor holds at `file.cpp:123` — then what you attacked it
+  with, and the `file:line` that failed to kill it. One or two sentences.
 
 ## Refuted
 - ~~Title~~ — the guard, with `file:line`.
