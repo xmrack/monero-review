@@ -2,39 +2,36 @@
 # Review an upstream Monero PR locally, using the same skill the workflow uses.
 # No GitHub Actions, no secrets, no runner -- just your authenticated claude CLI.
 #
-#   ./review-local.sh 9876              # review PR 9876, tier chosen for you
+#   ./review-local.sh 9876              # the standard review
 #   ./review-local.sh 9876 claude-fable-5-1
-#   TIER=medium ./review-local.sh 9876  # pin a tier
 #   DEEP=1 ./review-local.sh 9876       # the full multi-agent deep review
+#   TIER=single ./review-local.sh 9876  # the single-reviewer fallback
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 #
-# FOUR TIERS, and by default the script picks one from the size and reach of
-# the diff, exactly as the workflow's router does -- scripts/tier.py holds the
-# policy and both callers read it, so a local run and a CI run of the same PR
-# get the same treatment.
+# TWO TIERS, both the agent fleet, differing in how wide it is thrown:
 #
-# Every tier reads with the SAME model. They differ by --effort and by turn
-# budget: a cheaper tier buys less thinking, not a smaller reader.
+#   standard  /monero-standard-review, high effort, 300 turns. The diff is
+#             mapped into at most 5 units, one researcher takes each with all
+#             of its weakness classes, and every candidate faces two verifier
+#             angles whose votes are counted in code. Its own adversary, so
+#             there is no separate refutation pass. This is what every review
+#             on the queue gets.
+#   deep      /monero-deep-review, 400 turns. The same pipeline at full width:
+#             a researcher per unit PER weakness class, a pass across the unit
+#             seams, a second look at every unit, three verifier angles, and an
+#             advocate for anything one vote short. Budget hours and several
+#             times the standard review.
 #
-#   light     medium effort, 100 turns. A small change nowhere near a trust
-#             boundary.
-#   standard  high effort, 200 turns: one reviewer over the whole diff, then
-#             an adversarial pass over whatever it found.
-#   medium    /monero-medium-review, high effort. The diff is mapped into
-#             units, one researcher takes each with all of its weakness
-#             classes, and every candidate faces two verifier angles whose
-#             votes are counted in code. Its own adversary, so the refutation
-#             pass is skipped.
-#   deep      /monero-deep-review. The same pipeline at full width: a
-#             researcher per unit per weakness class, a pass across the unit
-#             seams, a second look at every unit, and three verifier angles
-#             per candidate. Budget hours and several times a normal review.
+# Both read with the same model; deep buys more agents, not a better reader.
+# Concurrency is capped at min(16, max(2, CPUs - 2)), so a machine with more
+# cores finishes proportionally sooner. This is the cheapest place to measure
+# what either really costs before spending a CI runner's afternoon on one.
 #
-# Concurrency for the two fleet tiers is capped at min(16, max(2, CPUs - 2)),
-# so a machine with more cores finishes proportionally sooner. This is the
-# cheapest place to measure what either of them really costs before spending a
-# CI runner's afternoon on one.
+# TIER=single is not a third tier. It is the single-reviewer shape this queue
+# used to run -- one session over the whole diff, then /monero-review-refute
+# over whatever it found -- kept as the fallback for a session that cannot
+# grant the agent tools. Nothing in CI routes to it.
 set -euo pipefail
 
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
@@ -44,16 +41,19 @@ MODEL=${2:-auto}
 UPSTREAM=${UPSTREAM:-monero-project/monero}
 # DEEP=0 and DEEP=false mean off, not "a non-empty string, so on". Getting
 # that wrong starts a multi-hour pipeline for someone who typed the obvious
-# way to turn it off. MEDIUM is read the same way.
+# way to turn it off.
 DEEP=${DEEP:-}
 case "$DEEP" in 0|false|no|off) DEEP="" ;; esac
-MEDIUM=${MEDIUM:-}
-case "$MEDIUM" in 0|false|no|off) MEDIUM="" ;; esac
-# TIER pins one outright and overrides both flags. Validated after the
-# checkout exists, since the automatic answer needs the diff.
-TIER=${TIER:-}
+# TIER pins one outright and overrides DEEP. Nothing is inferred from the diff:
+# with two tiers and deep being a deliberate escalation, `standard` is simply
+# what a run is unless somebody says otherwise.
+TIER=${TIER:-standard}
 [ -n "$DEEP" ] && TIER=deep
-[ -z "$DEEP" ] && [ -n "$MEDIUM" ] && TIER=medium
+case "$TIER" in
+  standard|deep|single) ;;
+  *) echo "!! unknown TIER '$TIER' (standard, deep or single); using standard" >&2
+     TIER=standard ;;
+esac
 
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number" >&2; exit 1; }
 
@@ -273,31 +273,17 @@ FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),A
   ( cd "$CACHE" && git diff --name-only origin/base...HEAD )
 } > "$CACHE/PR_FILES.md"
 
-# Which review this is. An explicit TIER (or DEEP/MEDIUM above) wins; otherwise
-# ask the same classifier the workflow's router asks. Fail toward `standard`,
-# never toward the cheap tier: being wrong about size costs money, being wrong
-# about coverage costs a review.
-if [ -z "$TIER" ]; then
-  TIER=$( cd "$CACHE" && python3 "$HERE/scripts/tier.py" --diff 2>/dev/null \
-            | sed -n 's/^tier=//p' )
-  TIER=${TIER:-standard}
-fi
-case "$TIER" in
-  light|standard|medium|deep) ;;
-  *) echo "!! unknown TIER '$TIER'; using standard" >&2; TIER=standard ;;
-esac
-
-# One model, four efforts -- see the header. EFFORT is empty for deep on
-# purpose: its one real measurement (3h13m, $99.79) was taken without the flag
-# and the CLI does not document its default, so naming a level there would be
-# changing a measured pipeline blind. An empty EFFORT omits the argument.
+# One model on both tiers -- deep buys more agents, not a better reader. EFFORT
+# is empty for deep on purpose: its one real measurement (3h13m, $99.79) was
+# taken without the flag and the CLI does not document its default, so naming
+# a level there would be changing a measured pipeline blind. An empty EFFORT
+# omits the argument entirely.
 IS_FLEET=false
 TIER_MODEL=claude-opus-5
 case "$TIER" in
-  light)    PROMPT="/monero-security-review"; EFFORT=medium ;;
-  standard) PROMPT="/monero-security-review"; EFFORT=high ;;
-  medium)   PROMPT="/monero-medium-review";   EFFORT=high; IS_FLEET=true ;;
+  standard) PROMPT="/monero-standard-review"; EFFORT=high; IS_FLEET=true ;;
   deep)     PROMPT="/monero-deep-review";     EFFORT=;     IS_FLEET=true ;;
+  single)   PROMPT="/monero-security-review"; EFFORT=high ;;
 esac
 [ "$MODEL" = "auto" ] && MODEL="$TIER_MODEL"
 [ "$IS_FLEET" = "true" ] && TOOLS="$TOOLS,$FLEET_TOOLS"
@@ -428,16 +414,14 @@ else
   VERIFIED="first pass reported no findings, so there was nothing to attack."
 fi
 
-# COVERAGE, on the single-reviewer tiers, and after the refutation pass so a
-# rewrite that dropped the section is caught rather than missed. The fleet
-# tiers carry their own accounting in the stamp above.
+# COVERAGE, on the single-reviewer fallback only, and after the refutation
+# pass so a rewrite that dropped the section is caught rather than missed. Both
+# real tiers carry richer accounting in the stamp above, checked there.
 #
-# It binds hardest on the no-findings branch: that is the strongest claim a
-# review makes, the one a reader can least check, and in CI it is the one that
-# files the issue retiring the pull request from the queue for good. Locally
-# nothing is retired, so this reports rather than withholds -- but it reports
-# in the same words the workflow uses, so a local run and a CI run of the same
-# report read alike.
+# This is the only caller of scripts/coverage.py left. CI does not run the
+# fallback, so nothing there does: it stays because the fallback is what a
+# session without the agent grants falls back TO, and a fallback whose report
+# cannot say what it read is the failure the whole check exists to catch.
 if [ "$IS_FLEET" != "true" ]; then
   COV=$(python3 "$HERE/scripts/coverage.py" "$CACHE/review.md" "$CACHE/PR_FILES.md")
   COV_STATE=$(printf '%s\n' "$COV" | sed -n 's/^state=//p')

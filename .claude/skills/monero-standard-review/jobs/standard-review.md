@@ -42,13 +42,15 @@ For the report's Scope line: `git diff --shortstat origin/base...HEAD`
 ## 3. Confirm you can actually run it
 
 Check that `Workflow` is among the tools available to you right now, with its
-parameters. This skill's frontmatter asking for it proves nothing: the default
-review runs with a narrow allowlist carrying neither `Workflow` nor `Agent`,
-and this skill is written for a session where both are granted.
+parameters. This skill's frontmatter asking for it proves nothing: the
+single-reviewer fallback runs with a narrow allowlist carrying neither
+`Workflow` nor `Agent`, and this skill is written for a session where both are
+granted.
 
-If it is missing, stop with one line — that the medium review needs the
-Workflow tool, this session does not have it, so nothing ran, and
-`/monero-security-review` is what to use here. Do not improvise around it.
+If it is missing, stop with one line — that this review needs the Workflow
+tool, this session does not have it, so nothing ran, and
+`/monero-security-review`, the single-reviewer fallback, is what to use here.
+Do not improvise around it.
 Dispatching the agents yourself would yield a report claiming a verification
 nobody performed, which is the one thing this skill must never produce.
 
@@ -66,15 +68,15 @@ run failed and the pull request stays in the queue.
 Workflow({ name: "monero-deep-scan",
            args: { root: <absolute path of the checkout>,
                    pr: <number from PR_CONTEXT.md, or null>,
-                   profile: "medium",
+                   profile: "standard",
                    changedFiles: [<the list from step 2, verbatim>],
                    maxUnits: 5 } })
 ```
 
-`profile: "medium"` is not optional and not a hint. The workflow defaults an
+`profile: "standard"` is not optional and not a hint. The workflow defaults an
 unrecognised profile to `deep`, deliberately — a typo should cost money rather
-than coverage — so omitting it here buys the full three-hour pipeline on a
-budget that did not ask for it.
+than coverage — so omitting it here buys the full three-hour pipeline on every
+pull request the sweep picks up, which is a budget nobody asked for.
 
 `root` has to be absolute. The agents `cd` to it before doing anything, because
 the working directory is not reliably the checkout. Prefer passing `args` as a
@@ -82,8 +84,8 @@ real object rather than a JSON-encoded string; both work, an object is the
 documented shape.
 
 Send one short message before it goes quiet: what is under review, the head, the
-file and line counts, that this is the medium pass, and that nothing is a
-finding until the verifiers have finished.
+file and line counts, and that nothing is a finding until the verifiers have
+finished.
 
 ## 4b. Wait for it — this is not optional
 
@@ -104,8 +106,8 @@ TaskOutput({ task_id: "<the Task ID>", block: true, timeout: 600000 })
 600000ms is the maximum per call. If it comes back `not_ready` or still
 running, **call it again**, and keep calling until it returns the workflow's
 result. This tier is a smaller fleet than the deep one — on a five-unit change
-it is about eight agents at an effective concurrency of two — so expect
-several calls, not dozens. Do not end your turn, do not start writing
+it is about eight agents at an effective concurrency of two, and on an ordinary
+few-file diff it is three or four — so expect several calls, not dozens. Do not end your turn, do not start writing
 `review.md`, and do not summarise anything until that result is in your hands.
 
 You get back `findings`, `refuted`, `unverified`, `coverage`, and a `next` line.
@@ -146,7 +148,8 @@ thorough one. It must name:
   no cross-unit pass (`coverage.seamPassApplicable` is false and
   `coverage.roundTwoRan` says why), no per-unit second look, and two verifier
   angles rather than three. A reader who does not know that will read a clean
-  medium report as a clean deep one;
+  standard report as a clean deep one, and those lines are the whole basis on
+  which somebody decides this change has earned the deep pass;
 - any id in `coverage.anchorDoubted` — a finding both verifiers could not find
   at its cited line. Re-anchor it from the code or drop the finding, and say
   which you did;
@@ -168,7 +171,7 @@ thorough one. It must name:
   quote those with their file and line under *Not covered*;
 - `coverage.mapperFallback` when the partition was unusable and the whole
   change was read as one unit by one researcher — complete, but the bluntest
-  thing this tier can do, and barely better than the default review;
+  thing this tier can do, and barely better than a single reviewer;
 - `coverage.unitsAllowed` when it is below `coverage.unitCeiling`.
 
 Give the file arithmetic so it can be checked: every unit's file list either
@@ -182,7 +185,7 @@ End the file with the coverage stamp the REPORT SPEC describes. The harness
 reads it and refuses to publish a run whose research mostly failed, or whose
 panels mostly returned no verdict, because such a run and a genuinely clean one
 are otherwise indistinguishable from the outside. Write it even when everything
-failed; that is the case it exists for. `profile=medium` in that stamp is
+failed; that is the case it exists for. `profile=standard` in that stamp is
 checked against the mode the harness dispatched, so it has to be the profile
 you actually passed in step 4.
 
@@ -190,7 +193,7 @@ you actually passed in step 4.
 
 A few sentences: what was reviewed, how many candidates were proposed, how many
 stood up, and where `review.md` is. Claim no more verification than `coverage`
-supports, and say plainly that this was the medium tier.
+supports, and say plainly that this was the standard tier, not the deep one.
 
 If `coverage.unaccounted` is not empty, lead with that rather than the findings.
 If `coverage.failedCells` is a large share of the cells dispatched, lead with

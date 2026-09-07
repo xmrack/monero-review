@@ -1,9 +1,8 @@
 <!-- Read at delivery, once the workflow has returned. The heading grammar is
-     a contract with scripts/labels.py; the section names match the default
-     and deep reviews' so a medium review reads like every other issue in the
-     repo. The stamp shares the deep review's `deep-scan` prefix on purpose --
-     one parser in .github/workflows/review.yml reads both, keyed on
-     `profile`. -->
+     a contract with scripts/labels.py; the section names match the deep
+     review's so every issue in the repo reads alike. The stamp shares the deep
+     review's `deep-scan` prefix on purpose -- one parser in
+     .github/workflows/review.yml reads both, keyed on `profile`. -->
 
 # `review.md`
 
@@ -75,7 +74,7 @@ a victim action. "None" is worth writing when it is true.>
   a running binary, a submodule whose source was absent, a deferral nobody
   adjudicated.>
 
-<!-- deep-scan profile=medium units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
+<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
 
 # Confidence at this tier
@@ -84,7 +83,7 @@ a victim action. "None" is worth writing when it is true.>
 every surviving finding at `medium` however sure its proposer was. Publish what
 it returns. Do not talk a finding up to `high` in prose because the argument
 reads strongly to you — the cap is the honest statement of what two agreeing
-verifiers establish, and a reader comparing a medium review against a deep one
+verifiers establish, and a reader comparing a standard review against a deep one
 is entitled to that difference being visible.
 
 # The Verification line is a count, not a claim
@@ -103,7 +102,7 @@ read by `.github/workflows/review.yml` before it publishes anything.
 
 | field | source |
 | --- | --- |
-| `profile` | the literal `medium`. Checked against the mode the harness dispatched: if they disagree, the run is treated as not having happened, because the wrong pipeline ran on this tier's budget |
+| `profile` | the literal `standard`. Checked against the mode the harness dispatched: if they disagree, the run is treated as not having happened, because the wrong pipeline ran on this tier's budget |
 | `units` | `coverage.units.length` |
 | `cells` | `coverage.cells` |
 | `failedCells` | `coverage.failedCells` |
@@ -127,7 +126,7 @@ identity: a stamp failing it was not copied from a real result, and the report
 is not published.
 
 Write the stamp even when everything failed. That is the case it exists for.
-A medium run whose researchers all died returns no findings, and from outside
+A run whose researchers all died returns no findings, and from outside
 that is indistinguishable from a clean change — except by these numbers. The
 harness refuses to publish on them, which leaves the pull request in the queue
 to be reviewed again, instead of filing the issue that retires it forever.

@@ -48,8 +48,8 @@ scheduled pipeline runs with a narrow allowlist carrying neither `Workflow` nor
 `Agent`, and this skill is written for a session where both are granted.
 
 If it is missing, stop with one line — that the deep review needs the Workflow
-tool, this session does not have it, so nothing ran, and `/monero-security-review`
-is what to use here. Do not improvise around it. Dispatching the agents
+tool, this session does not have it, so nothing ran, and
+`/monero-security-review`, the single-reviewer fallback, is what to use here. Do not improvise around it. Dispatching the agents
 yourself would yield a report claiming a verification nobody performed, which
 is the one thing this skill must never produce.
 

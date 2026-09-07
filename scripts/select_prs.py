@@ -20,11 +20,6 @@ separate the PRs actually in line from the doc-only residue:
   docs      of those, the doc-only ones, which will never be picked
   unprobed  queued PRs the MAX_PROBES budget did not reach
   open      open PRs upstream
-  tier      which review the picked PRs get: light, standard or medium
-
-The tier comes out of the SAME file listing the doc-only probe already
-fetches, so routing the queue by the size and reach of a change costs no extra
-API call. scripts/tier.py holds the policy; this file only carries it.
 
 Env: UPSTREAM, REVIEW_REPO, MAX_AGE_DAYS, BATCH, GH_TOKEN (optional), API
      (optional base URL, for testing).
@@ -37,8 +32,6 @@ import re
 import sys
 import urllib.error
 import urllib.request
-
-import tier as tiers
 
 API = os.environ.get("API", "https://api.github.com")
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
@@ -140,34 +133,22 @@ def local_reviewed(dirpath):
 
 
 def worth_reviewing(upstream, number):
-    """Is there code here, and which review does it deserve?
-
-    Returns (ok, names, tier). One file listing answers both questions: the
-    doc-only test this has always done, and the routing decision, which needs
-    exactly the same data. Adding a second call per PR to route would have
-    doubled the probe cost against the 1000/hour budget for nothing.
-    """
+    """False only if every changed file is documentation-ish."""
     try:
         files = get(f"/repos/{upstream}/pulls/{number}/files", {"per_page": 100})
     except urllib.error.HTTPError as exc:
         # Fail open: an API hiccup should not silently drop a PR from review.
-        # Route it to `standard` for the same reason -- an unknown change is
-        # not evidence that a cheap review will do.
         print(f"warn: file listing for #{number} failed ({exc.code}); "
               "reviewing anyway", file=sys.stderr)
-        return True, [], "standard"
+        return True, []
     names = [f["filename"] for f in files]
     if not names:
-        return False, names, "standard"
-    changed = sum(f.get("additions", 0) + f.get("deletions", 0) for f in files)
-    truncated = len(names) >= 100
-    tier, why = tiers.classify(names, changed, truncated=truncated)
+        return False, names
     # A full page means there are more files we cannot see. Fail open rather
-    # than judge a large PR on a truncated list -- tier.py reads the same
-    # truncation as a reason to route heavier, not lighter.
-    if truncated:
-        return True, names, tier
-    return (not all(WORTHLESS.search(n) for n in names)), names, tier
+    # than judge a large PR on a truncated list.
+    if len(names) >= 100:
+        return True, names
+    return (not all(WORTHLESS.search(n) for n in names)), names
 
 
 def main():
@@ -241,12 +222,12 @@ def main():
     # 1000/hour authenticated budget at two ticks an hour. Doc-only PRs are
     # still not marked anywhere: re-probing them each tick is what makes one
     # eligible again the moment it grows a code file.
-    picked, picked_tiers, ready, docs, probes = [], [], 0, 0, 0
+    picked, ready, docs, probes = [], 0, 0, 0
     for pr in queue:
         if probes >= MAX_PROBES:
             break
         probes += 1
-        ok, names, tier = worth_reviewing(upstream, pr["number"])
+        ok, names = worth_reviewing(upstream, pr["number"])
         if not ok:
             docs += 1
             print(f"  skip #{pr['number']}: no reviewable code "
@@ -255,11 +236,10 @@ def main():
         ready += 1
         if len(picked) < batch:
             picked.append(str(pr["number"]))
-            picked_tiers.append(tier)
-            print(f"  take #{pr['number']} ({len(names)} file(s), {tier})",
+            print(f"  take #{pr['number']} ({len(names)} file(s))",
                   file=sys.stderr)
         else:
-            print(f"  queued #{pr['number']} ({len(names)} file(s), {tier})",
+            print(f"  queued #{pr['number']} ({len(names)} file(s))",
                   file=sys.stderr)
 
     # Everything the probe budget did not reach. Reported rather than folded
@@ -281,10 +261,6 @@ def main():
     # it would make them incomparable. `ready` is the new one worth reading,
     # and it counts the PR this run is about to review.
     print("prs=" + json.dumps(picked))
-    # One tier for the whole selection. See tier.heaviest: BATCH is 1, so this
-    # is the picked PR's own tier, and at BATCH>1 the batch runs at the
-    # heaviest in it because the matrix legs share one job-level timeout.
-    print(f"tier={tiers.heaviest(picked_tiers)}")
     print(f"queue={len(queue)}")
     print(f"ready={ready}")
     print(f"docs={docs}")

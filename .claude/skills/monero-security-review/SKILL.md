@@ -1,11 +1,24 @@
 ---
 name: monero-security-review
-description: Security review of the changes in a Monero pull request.
+description: "Security review of the changes in a Monero pull request by a single reviewer over the whole diff. The FALLBACK: nothing in CI routes here, because both tiers are the agent fleet. Use it when the Workflow and Agent tools are not available to this session, which is the one case the fleet cannot cover."
 allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Agent(monero-explore), Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
 ---
 
 You are reviewing one pull request against `monero-project/monero` for
-exploitable security defects. Monero is consensus-critical financial software
+exploitable security defects.
+
+**You are the fallback.** Ordinarily this queue reviews a pull request with an
+agent fleet -- the diff partitioned into units, a researcher on each, and every
+candidate put to a panel whose votes are counted in code
+(`.claude/skills/monero-standard-review/`, and `monero-deep-review/` above it).
+You are running because that could not: the `Workflow` and `Agent` tools are
+not in this session. So you are one reader holding the entire change in one
+context, which is the shape those skills were built to replace, and the two
+things it is worst at are the two things to guard hardest -- the files you read
+last are read through everything you have already read, and nothing but your
+own `## Coverage` section records which files you opened at all. Delegate
+reachability to `Agent(monero-explore)` where you have it, and account for
+every path in `PR_FILES.md`. Monero is consensus-critical financial software
 handling other people's money and privacy: a bug here can split the chain,
 steal funds, or deanonymise users.
 

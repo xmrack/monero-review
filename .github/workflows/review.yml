@@ -32,45 +32,48 @@ on:
           - auto
           - claude-opus-5
           - claude-fable-5-1
-      # Which review runs.
+      # Which review runs. TWO TIERS, and that is the whole of it.
       #
-      #   default   route by tier -- scripts/tier.py sizes the change and picks
-      #             light, standard or medium. This is what a `schedule` tick
-      #             gets, and what a dispatch that leaves the box alone gets.
-      #   light     lower effort, fewer turns. For a small change nowhere near
-      #             a trust boundary. Same model as every other tier -- see
-      #             the `model` input above for why the tiers vary effort
-      #             rather than who is reading.
-      #   standard  the two-pass reviewer+adversary shape this file was built
-      #             around, pinned regardless of size.
-      #   medium    the bounded agent fleet: mapped into units, one researcher
-      #             per unit, two verifier angles per candidate, counted in
-      #             code. Several times cheaper than deep, and it reads the
-      #             change in pieces rather than all at once.
-      #   deep      the full fleet. A human escalation for a diff that earned
-      #             it; requires a PR number, never 'sweep'.
+      #   default / standard   the agent fleet at bounded width: the diff is
+      #                        mapped into at most 5 units, one researcher takes
+      #                        each with all of its weakness classes, and every
+      #                        candidate faces two verifier angles counted in
+      #                        code. Every scheduled tick gets this.
+      #   deep                 the same fleet at full width -- a researcher per
+      #                        unit PER weakness class, a cross-unit seam pass,
+      #                        a second look at every unit, three angles, and an
+      #                        advocate for anything one vote short. A human
+      #                        escalation for a diff that earned it; requires a
+      #                        PR number, never 'sweep'.
       #
-      # `default` used to name the two-pass shape rather than the router. A
-      # dispatch that wants that shape specifically now says `standard`; the
-      # old spelling still works and now means "pick for me", which is what
-      # almost everyone dispatching it actually wanted.
+      # There is nothing to route. Anything that is not `deep` is the standard
+      # review, which is why no gate below asks a classifier anything: they all
+      # read `inputs.mode == 'deep'` or the `route` step's outputs. A `schedule`
+      # tick carries no inputs at all (see the cron comment below), so
+      # `inputs.mode` is the empty string there and falls through to standard,
+      # which is the wanted default -- the same property `inputs.pr || 'sweep'`
+      # already relies on.
       #
-      # Every gate below is written `== 'deep'` or reads the `route` step's
-      # outputs, never `!= 'default'`. A `schedule` tick carries no inputs at
-      # all (see the cron comment below), so `inputs.mode` is the empty string
-      # there and the router decides, which is the wanted default. That is the
-      # same property `inputs.pr || 'sweep'` already relies on.
+      # `standard` is spelled out as its own option beside `default` so a
+      # dispatch can be explicit about getting the ordinary review rather than
+      # relying on a word that reads like "whatever the default happens to be".
+      # They are the same thing.
+      #
+      # A third value briefly existed for the single-reviewer shape this queue
+      # used to run. It is not a tier any more: that reviewer survives at
+      # .claude/skills/monero-security-review/ as the fallback for a session
+      # where the agent fleet cannot be dispatched, and review-local.sh reaches
+      # it with TIER=single. Nothing in CI routes to it.
       mode:
-        description: "Review depth. default = choose by size and reach. deep requires a PR number above, never 'sweep'."
+        description: "Review depth. deep = the full multi-agent pipeline; requires a PR number above, never 'sweep'."
         required: false
         default: default
         type: choice
         options:
           - default
-          - light
           - standard
-          - medium
           - deep
+
 
   # Twice an hour, off the top of the hour.
   #
@@ -165,7 +168,7 @@ env:
   #   .claude/skills/monero-security-review/SKILL.md  (frontmatter)
   #   .claude/skills/monero-review-refute/SKILL.md    (frontmatter)
   #   .claude/skills/monero-deep-review/SKILL.md      (frontmatter, + FLEET)
-  #   .claude/skills/monero-medium-review/SKILL.md    (frontmatter, + FLEET)
+  #   .claude/skills/monero-standard-review/SKILL.md  (frontmatter, + FLEET)
   #   review-local.sh                                 (TOOLS, + FLEET_TOOLS)
   # `Agent(monero-explore)` is granted to the single-reviewer passes as well as
   # the fleet ones, and it is the one Agent grant that belongs here rather than
@@ -184,10 +187,14 @@ env:
   ALLOWED_TOOLS: >-
     Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)
 
-  # What the FLEET passes get on top of the list above, and nothing else gets.
-  # Both of them: `deep` and the cheaper `medium`, which runs the same
-  # .claude/workflows/monero-deep-scan.js under `profile: "medium"` and
-  # therefore needs exactly the same grants.
+  # What a review pass gets on top of the list above. BOTH tiers need it now:
+  # `standard` and `deep` are the same .claude/workflows/monero-deep-scan.js
+  # under different profiles, so there is no longer a pass that runs without
+  # these. It is kept as a separate name rather than folded into ALLOWED_TOOLS
+  # because the two lists answer different questions -- what any session here
+  # may touch, and what a session supervising a fleet additionally may -- and
+  # the fallback reviewer at .claude/skills/monero-security-review/ still runs
+  # on the first list alone.
   #
   # `Workflow` runs that script; the four `Agent` entries are the fleet it
   # dispatches. The default review's skill and the refutation skill were never
@@ -215,7 +222,7 @@ env:
   #
   # The agents themselves declare a bare `Bash` in their own frontmatter, so
   # their shell calls are judged against the session allowlist -- which is
-  # why a fleet pass gets ALLOWED_TOOLS in full and not the shorter list in
+  # why a review pass gets ALLOWED_TOOLS in full and not the shorter list in
   # its skill's frontmatter.
   #
   # `TaskOutput` is not decoration, it is what makes the deep pass finish at
@@ -323,18 +330,6 @@ jobs:
       docs: ${{ steps.pick.outputs.docs }}
       unprobed: ${{ steps.pick.outputs.unprobed }}
       open: ${{ steps.pick.outputs.open }}
-      # Which review the picked PR(s) get: light, standard or medium. Decided
-      # HERE rather than in the review job because `timeout-minutes` is a
-      # job-level key -- it is evaluated before any step runs, so it can read
-      # a `needs` output and cannot read a step output. A medium run needs
-      # hours where a light one should fail fast, and that is the difference
-      # this output exists to carry.
-      #
-      # scripts/tier.py holds the policy; select_prs.py feeds it the file
-      # listing it already fetched for the doc-only probe, so routing the
-      # sweep costs no extra API call. The by-number path below has no
-      # selector run behind it, so it probes the one PR itself.
-      tier: ${{ steps.pick.outputs.tier }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -360,13 +355,6 @@ jobs:
           fi
           if [[ "$WANT" =~ ^[0-9]+$ ]]; then
             echo "prs=[\"$WANT\"]" >> "$GITHUB_OUTPUT"
-            # One API call, so a dispatch by number is routed like a swept one
-            # rather than always getting the middle tier by accident. Non-fatal
-            # and it fails toward `standard` on its own: a run that cannot
-            # reach the API must not be downgraded to the cheap review because
-            # of it. `mode` still overrides whatever comes out.
-            python3 scripts/tier.py --pr "$WANT" >> "$GITHUB_OUTPUT" || \
-              echo "tier=standard" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Kill switch: `gh variable set REVIEW_PAUSED --body 1` stops sweeps.
@@ -420,21 +408,18 @@ jobs:
     # out, and the failure mode is a cancellation, so nothing is published and
     # nothing is charged to the PR.
     #
-    # THREE VALUES NOW, because the tier decides how long a run can honestly
-    # need. The medium fleet is roughly a third of deep's agents at the same
-    # concurrency of 2, so a five-unit change is around eight waves rather
-    # than twenty -- call it an hour, and 240 leaves real headroom without
-    # approaching the 6-hour job kill. light and standard keep the tight 120:
-    # they finish in 4-24 minutes and a hung one should fail fast.
+    # 240 for the standard tier, not the 120 a single reviewer got. That
+    # reviewer finished in 4-24 minutes and a hung one should fail fast; the
+    # standard tier is a fleet at an effective concurrency of 2, so a
+    # five-unit change is around eight waves. Most runs are a few files and
+    # well under an hour, and 240 is the ceiling a wide one needs rather than
+    # the time one takes.
     #
-    # `inputs.mode` is checked BESIDE the router's answer, not instead of it.
-    # A human pinning `-f mode=medium` on a PR the router called `standard`
-    # still needs the longer clock, and reading only `needs.select.outputs.tier`
-    # would give them 120 minutes and a cancellation two thirds of the way in.
-    timeout-minutes: >-
-      ${{ (inputs.mode == 'deep' && 350)
-       || ((inputs.mode == 'medium' || needs.select.outputs.tier == 'medium') && 240)
-       || 120 }}
+    # The cost of raising it: the concurrency group holds one pending run, so
+    # a review that outlasts the 30-minute tick discards the ticks behind it.
+    # That is the ordinary price of a longer review and this repo already paid
+    # it whenever a run passed 30 minutes.
+    timeout-minutes: ${{ inputs.mode == 'deep' && 350 || 240 }}
     permissions:
       contents: read
       issues: write
@@ -905,76 +890,59 @@ jobs:
 
       # WHICH REVIEW THIS RUN IS, resolved once, in one place. Every step
       # below reads these outputs rather than re-deriving the decision from
-      # `inputs.mode` -- that expression was already repeated in five places
-      # when there were two shapes, and there are four now.
+      # `inputs.mode` -- that expression was repeated in five places when there
+      # were two shapes and it drifted, which is the whole reason this step
+      # exists rather than the branching being inline.
       #
-      # Precedence: an explicit `mode` pins the tier; otherwise the router's
-      # answer from the select job; otherwise `standard`, which is where every
-      # unknown falls. Note the direction of that fallback -- an unrecognised
-      # or missing tier gets the shape this queue has always used, never the
-      # cheap one. Being wrong toward more review costs money; being wrong
-      # toward less costs coverage, and coverage here is permanent, because
-      # the issue a run files is the record that retires the pull request.
+      # There is no classifier and nothing to look up: anything that is not
+      # `deep` is the standard review. `standard` and `default` are the same
+      # value spelled two ways, and a `schedule` tick sends neither.
       - name: Route this review
         id: route
         env:
           MODE: ${{ inputs.mode || 'default' }}
-          ROUTED: ${{ needs.select.outputs.tier }}
           WANT_MODEL: ${{ inputs.model }}
         run: |
           set -euo pipefail
           case "$MODE" in
-            deep|light|standard|medium) tier="$MODE" ;;
-            *)                          tier="${ROUTED:-standard}" ;;
-          esac
-          case "$tier" in
-            light|standard|medium|deep) ;;
-            *) echo "unrecognised tier '$tier'; using standard"; tier=standard ;;
+            deep) tier=deep ;;
+            *)    tier=standard ;;
           esac
 
-          # ONE MODEL, FOUR EFFORTS. Every tier reads the diff with the same
-          # model; what a cheaper tier buys is less thinking and fewer turns,
-          # not a smaller reader. On consensus-critical financial software a
-          # missed bug costs more than any review, and the lever that actually
-          # moves the bill is thinking tokens -- 80% of the deep run's output
-          # spend -- which `--effort` controls directly.
+          # ONE MODEL, AND EFFORT WHERE IT EARNS ITS PLACE. Both tiers read the
+          # diff with the same model; a cheaper tier buys a smaller fleet and
+          # less thinking, never a smaller reader. On consensus-critical
+          # financial software a missed bug costs more than any review, and the
+          # lever that actually moves the bill is thinking tokens -- 80% of the
+          # deep run's output spend.
           #
-          # `light` sits at `medium` rather than `low`. The floor for reading a
-          # diff for exploitable defects is not the floor the flag offers, and
-          # a tier only reachable by a change that is small, short AND nowhere
-          # near a trust boundary has already had its risk argued down once.
+          # The effort set here is the LEAD's. Its researchers and verifiers
+          # carry their own, set by the workflow script per profile, and this
+          # value does not reach them. The Lead itself only fixes the range,
+          # lists the files, calls Workflow and writes the report.
           #
           # DEEP DELIBERATELY PASSES NO EFFORT. Its one real measurement --
           # 3h13m and $99.79 on 9559 -- was taken without the flag, the CLI
           # does not document its default, and there is no way from here to
           # know whether naming a level would raise or lower it. An empty
-          # `effort` means the argument is omitted entirely below, so deep runs
-          # exactly as it was measured. Set it only alongside a fresh
-          # measurement to compare against.
+          # `effort` omits the argument entirely below, so deep runs exactly as
+          # it was measured. Set it only alongside a fresh measurement.
           #
           # Turns are not billed; tokens are, so headroom is free and running
-          # out is not. The fleet tiers get more because the Lead spends turns
-          # blocking on TaskOutput while the fleet works -- whether a
-          # subagent's turns are charged to the parent's budget is not settled
-          # here, and 300/400 is insurance against the answer being yes.
+          # out is not. Both tiers get more than a single reviewer's 200
+          # because the Lead spends turns blocking on TaskOutput while the
+          # fleet works -- whether a subagent's turns are charged to the
+          # parent's budget is not settled here, and 300/400 is insurance
+          # against the answer being yes.
           case "$tier" in
-            light)
-              model="$DEFAULT_MODEL"; effort=medium; turns=100; fleet=false; refute=true
-              prompt=/monero-security-review; label= ;;
             standard)
-              model="$DEFAULT_MODEL"; effort=high; turns=200; fleet=false; refute=true
-              prompt=/monero-security-review; label= ;;
-            medium)
-              # The Lead only fixes the range, lists the files, calls Workflow
-              # and writes the report. Its researchers and verifiers carry
-              # their own effort, set to `high` by the workflow script for this
-              # profile -- this value does not reach them.
-              model="$DEFAULT_MODEL"; effort=high; turns=300; fleet=true; refute=false
-              prompt=/monero-medium-review; label=medium-review ;;
+              effort=high; turns=300
+              prompt=/monero-standard-review; label= ;;
             deep)
-              model="$DEFAULT_MODEL"; effort=; turns=400; fleet=true; refute=false
+              effort=;     turns=400
               prompt=/monero-deep-review; label=deep-review ;;
           esac
+          model="$DEFAULT_MODEL"
 
           # An explicit model overrides the tier's pick. `auto` is the
           # dropdown's default and means "do not override"; a `schedule` tick
@@ -984,10 +952,8 @@ jobs:
             model="$WANT_MODEL"
           fi
 
-          # `effort_arg` is the whole argument or the empty string, so the
-          # caller interpolates one value and never has to build a flag out of
-          # a maybe-empty level. An empty string leaves the CLI on its own
-          # default, which is what deep wants.
+          # The whole argument or the empty string, so the caller interpolates
+          # one value and never has to build a flag out of a maybe-empty level.
           effort_arg=""
           [ -n "$effort" ] && effort_arg="--effort $effort"
 
@@ -998,8 +964,6 @@ jobs:
             echo "effort_arg=$effort_arg"
             echo "turns=$turns"
             echo "prompt=$prompt"
-            echo "fleet=$fleet"
-            echo "refute=$refute"
             echo "label=$label"
           } >> "$GITHUB_OUTPUT"
           echo "::notice::tier=$tier model=$model effort=${effort:-(cli default)} turns=$turns prompt=$prompt"
@@ -1091,7 +1055,7 @@ jobs:
           claude_args: |
             --model ${{ steps.route.outputs.model }} ${{ steps.route.outputs.effort_arg }}
             --max-turns ${{ steps.route.outputs.turns }}
-            --allowedTools "${{ env.ALLOWED_TOOLS }}${{ steps.route.outputs.fleet == 'true' && format(',{0}', env.FLEET_EXTRA_TOOLS) || '' }}"
+            --allowedTools "${{ env.ALLOWED_TOOLS }},${{ env.FLEET_EXTRA_TOOLS }}"
 
       # NB: env.ALLOWED_TOOLS is the list that BINDS, and it is now the single
       # copy in this file -- both passes reference it. The `allowed-tools:`
@@ -1100,21 +1064,22 @@ jobs:
       # same drift that let the verification gate and labels.py disagree;
       # change them together, and see the ALLOWED_TOOLS comment for the list.
       #
-      # Only a FLEET pass -- deep or medium -- gets FLEET_EXTRA_TOOLS appended,
-      # and `steps.route.outputs.fleet` is the single place that is decided.
-      # Do not widen it to the refutation pass below: its skill dispatches no
-      # fleet, and a grant it cannot use is a grant nobody is checking. (It
-      # does get `Agent(monero-explore)`, which is in ALLOWED_TOOLS and
-      # therefore in every pass; the comment there says why that one is not
-      # the same kind of grant.)
+      # FLEET_EXTRA_TOOLS is appended unconditionally now, because both tiers
+      # are the fleet. It used to be conditional, and the condition was the
+      # only thing standing between a grant and a pass that could not use it;
+      # with no such pass left in CI, a conditional here would be a branch
+      # with one arm. The refutation pass it used to be withheld from no
+      # longer runs at all -- see the block above the telemetry step.
 
-      # claude-code-action writes both passes' logs to the SAME path
-      # (/home/runner/work/_temp/claude-execution-output.json), so the
-      # refutation pass overwrites pass 1's. Observed on run 67: EXEC_FILE held
-      # that one path twice, `denials` reported "none recorded" for a pass 1
-      # that had denials, and telemetry summed the second pass with itself --
-      # which is why a two-pass footer read "86 turns over 2 passes". Copy it
-      # aside while it still exists.
+      # Snapshotted rather than read in place. There is one pass now, so
+      # nothing overwrites it mid-job -- but claude-code-action writes to a
+      # fixed path (/home/runner/work/_temp/claude-execution-output.json)
+      # shared by every invocation in a job, and this repo has already been
+      # bitten by that: when a second pass existed it clobbered the first,
+      # `denials` reported "none recorded" for a pass that had denials, and
+      # telemetry summed one pass with itself into "86 turns over 2 passes".
+      # A copy costs nothing and makes the log independent of how many passes
+      # the file grows back to.
       - name: Keep the review pass's execution log
         if: always()
         env:
@@ -1158,100 +1123,38 @@ jobs:
             exit 1
           fi
 
-      # Only verify if the first pass actually found something. Most PRs
-      # produce no findings, and there is nothing to refute in an empty report.
-      - name: Anything to verify?
-        id: triage
-        env:
-          REFUTE_APPLIES: ${{ steps.route.outputs.refute }}
-          TIER: ${{ steps.route.outputs.tier }}
-        run: |
-          # Ask labels.py, the one place that knows what a severity heading
-          # looks like. This gate used to carry its own regex and the two
-          # drifted: the regex here was case-sensitive and rejected a space
-          # after `[`, where labels.py is neither. So "### [ Medium / ... ]"
-          # skipped verification, then got published WITH a severity label
-          # under a title indistinguishable from a verified review -- and the
-          # issue is the dedup marker, so the PR was never looked at again.
-          # That is what the publish guard below exists to prevent, reached by
-          # a route the guard cannot see. One reader, no drift.
-          #
-          # labels.py also ignores findings already marked REFUTED, which is
-          # the wanted behaviour here: pass 1 has nothing refuted yet, and a
-          # re-run over an already-verified file must not pay for a second
-          # verification pass.
-          #
-          # Deliberately no `|| true`: if labels.py is missing or broken the
-          # harness checkout is broken, which means the review ran without its
-          # skill. Fail the job loudly rather than quietly skip verification.
-          sevs=$(python3 .harness/scripts/labels.py review.md)
-          if [ "${REFUTE_APPLIES:-true}" != "true" ]; then
-            # A fleet pass already put every candidate to a panel of
-            # independent verifiers and counted the votes in JavaScript --
-            # three angles at deep, two at medium. A second single-model
-            # adversary would be paid for twice and would rewrite a report
-            # written to a different spec: the refutation skill rewrites
-            # review.md in place, and `## Coverage` is precisely the thing
-            # these pipelines exist to produce.
-            echo "$TIER: verification is the pipeline's own counted panel"
-          elif [ -s review.md ] && [ -n "$sevs" ]; then
-            echo "verify=true" >> "$GITHUB_OUTPUT"
-            echo "first pass produced findings, running verification"
-          else
-            echo "no severity-tagged findings, skipping verification"
-          fi
+      # THE ADVERSARIAL SECOND PASS IS GONE, and its absence is the point.
+      #
+      # This file was built around it: one reviewer reads the diff, then a
+      # second single-model session attacks whatever it found, default verdict
+      # REFUTED. That was the right shape while the review was one reviewer.
+      # Both tiers are now the agent fleet, and the fleet is already its own
+      # adversary -- every candidate goes to a panel whose votes are counted in
+      # JavaScript rather than argued in prose, with severity lowered and
+      # confidence capped by the count. A second single-model adversary on top
+      # would be paid for twice and would rewrite a report written to a
+      # different spec, throwing `## Coverage` away in the process.
+      #
+      # `.claude/skills/monero-review-refute/` is kept, and is not dead: it is
+      # what review-local.sh runs behind the single-reviewer fallback
+      # (TIER=single), which is the path for a session where the fleet cannot
+      # be dispatched. Nothing in CI reaches either of them.
 
-      # Adversarial second pass: attack every finding, default verdict REFUTED.
-      # Same capabilities as the first pass -- still nothing outward-facing.
+      # Footer with cost/tokens/duration. One pass now, on both tiers -- the
+      # adversarial second session is gone, so there is nothing to sum.
+      # Generated by the workflow, not the model, so the numbers can't be
+      # invented.
       #
-      # 200 turns, matching pass 1. Pass 1 only has to notice something
-      # suspicious; this pass has to establish that a finding is unreachable,
-      # which means chasing every caller through cscope and readtags until the
-      # claim either holds or dies. Running out here is also the more expensive
-      # failure: publish treats an incomplete verification as no review at all,
-      # files no issue, and the elapsed time counts a real attempt -- so
-      # MAX_ATTEMPTS of them retire the PR from the queue for good.
-      #
-      # Never on a FLEET tier -- deep or medium. The gate is written here, on
-      # the step it controls, rather than relying on `triage` alone declining
-      # to set `verify` -- because if this step ever did fire on a fleet
-      # report the damage is silent: the refutation skill rewrites review.md
-      # in place, and it would throw away `## Coverage`, the deliverable those
-      # pipelines exist to produce.
-      #
-      # It DOES fire on light and standard, whose reports now carry a
-      # `## Coverage` section and a stamp of their own. The refutation skill
-      # is told to carry both through verbatim; `Coverage` below re-checks the
-      # stamp AFTER this pass has run, so a rewrite that drops it is caught
-      # rather than published.
-      - id: refute
-        if: steps.triage.outputs.verify == 'true' && steps.route.outputs.refute == 'true'
-        uses: anthropics/claude-code-action@v1
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: "/monero-review-refute"
-          # The SAME model AND the same effort the review pass ran on, from
-          # the router -- not `inputs.model`, which is now `auto` by default
-          # and is not a model name. Matching them keeps the adversary exactly
-          # as capable as the reviewer it is attacking, which is the point of
-          # the pass: an adversary thinking less than the reviewer would refute
-          # by running out of patience rather than by reading a guard.
-          claude_args: |
-            --model ${{ steps.route.outputs.model }} ${{ steps.route.outputs.effort_arg }}
-            --max-turns 200
-            --allowedTools "${{ env.ALLOWED_TOOLS }}"
-
-      # Footer with cost/tokens/duration, summed across every pass that ran --
-      # two in the default shape, one in deep mode, and telemetry.py reports
-      # the count it actually found rather than assuming. Generated by the
-      # workflow, not the model, so the numbers can't be invented.
-      #
-      # In deep mode this understates the run. The execution log records the
-      # Lead's own conversation; the agent fleet it dispatched is not in it.
+      # THIS UNDERSTATES EVERY RUN, on both tiers. The execution log records
+      # the Lead's own conversation; the agent fleet it dispatched is not in
+      # it, and the fleet is nearly all of the bill. It was already true of
+      # deep and is now true of the queue's ordinary review as well, which
+      # matters more: the footer is the only per-run cost signal this repo
+      # publishes, and it is now a floor rather than a total.
       - name: Append run telemetry
         if: always()
         env:
-          EXEC_FILE: ${{ env.PASS1_EXEC }},${{ steps.refute.outputs.execution_file }}
+          EXEC_FILE: ${{ env.PASS1_EXEC }}
           MODEL: ${{ steps.route.outputs.model }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -1270,112 +1173,70 @@ jobs:
       - name: Refused tool calls
         if: always()
         env:
-          EXEC_FILE: ${{ env.PASS1_EXEC }},${{ steps.refute.outputs.execution_file }}
+          EXEC_FILE: ${{ env.PASS1_EXEC }}
         run: |
           [ -f .harness/scripts/denials.py ] || exit 0
           python3 .harness/scripts/denials.py | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # Whether the adversarial pass actually ran is part of the deliverable,
+      # Whether the review actually verified itself is part of the deliverable,
       # so the workflow says so -- like the telemetry above, and for the same
       # reason: a claim the model cannot make about itself. Of the first 51
       # published reviews, only two of the seven carrying findings showed any
-      # trace of pass 2 having run, so a reader had no way to tell a verified
-      # finding from a rubber-stamped one. Appended after the telemetry footer
-      # so both sit in one block under one rule.
+      # trace of a verification pass having run, so a reader had no way to tell
+      # a verified finding from a rubber-stamped one. Appended after the
+      # telemetry footer so both sit in one block under one rule.
       #
       # This step is also the single authority on whether the deliverable is
       # complete: `Publish findings` below reads its `state` rather than
-      # re-deriving one. State comes from review.md itself, NOT from the triage
-      # step, because pass 1 can exhaust its turn budget *after* writing
-      # findings -- the job fails, triage never runs, and reading triage's
-      # (empty) output would call that file "no findings" and publish
-      # unverified work under a complete-looking title. Same defect as a
-      # drifted regex, through a different door.
+      # re-deriving one. State comes from review.md itself, and specifically
+      # from the coverage stamp, never from a step outcome -- the pass can
+      # exhaust its turn budget *after* writing a good report, in which case
+      # the job fails and the file is still worth publishing.
       #
-      # DEEP MODE VERIFIES ITSELF, and this step has to know that or the whole
-      # pass is wasted. With the refutation step gated off, `steps.refute
-      # .outcome` is `skipped`, the success test below fails, and the else
-      # branch stamps a complete deep review NOT VERIFIED -- whereupon Publish
-      # files no issue, leaves no dedup marker, and exits GREEN. The findings
-      # would be computed over three hours and thrown away, and the failure is
-      # severity-selective: a deep review that found NOTHING would publish
-      # fine, so the mode would look healthy until the first run that found
-      # something.
+      # BOTH TIERS VERIFY THEMSELVES, and this step has to know that or the
+      # whole run is wasted. There is no second adversarial pass to succeed or
+      # fail any more, so a test on one would find nothing and stamp every
+      # complete review NOT VERIFIED -- whereupon Publish files no issue,
+      # leaves no dedup marker, and exits GREEN. The findings would be computed
+      # and thrown away, and the failure would be severity-selective: a review
+      # that found NOTHING would publish fine, so the queue would look healthy
+      # until the first run that found something.
       #
-      # What counts as evidence in deep mode is deliberately not
-      # `steps.claude.outcome`. The deep pipeline's own contract is a counted
-      # three-angle panel per candidate, and the report carries a machine-
-      # readable coverage stamp saying how many research cells ran and how
-      # many failed. That stamp is the evidence, for a reason worth spelling
-      # out: if every agent dies mid-run (a usage limit is the realistic
-      # case), the workflow still returns an empty findings list, the Lead
-      # still writes an honest no-findings report, and labels.py still finds
-      # no severities -- byte-for-byte the same machine-visible outcome as a
-      # genuine clean review. Publishing that files the dedup marker and the
-      # PR is never looked at again. The stamp is the only thing that can tell
-      # the two apart.
+      # What counts as evidence is deliberately not
+      # `steps.claude.outcome`. Each pipeline's contract is a counted panel per
+      # candidate -- three angles at deep, two at standard -- and the report
+      # carries a machine-readable coverage stamp saying how many research
+      # cells ran and how many failed. That stamp is the evidence, for a reason
+      # worth spelling out: if every agent dies mid-run (a usage limit is the
+      # realistic case), the workflow still returns an empty findings list, the
+      # Lead still writes an honest no-findings report, and labels.py still
+      # finds no severities -- byte-for-byte the same machine-visible outcome
+      # as a genuine clean review. Publishing that files the dedup marker and
+      # the PR is never looked at again. The stamp is the only thing that can
+      # tell the two apart, which is why it is checked against the execution
+      # log below rather than believed.
       #
-      # Note also that the `grep -q '**Verification'` test further down cannot
-      # do this job here: the deep report writes that exact string itself, so
-      # in deep mode it would pass vacuously and credit a refutation pass that
-      # never ran.
-      # Did the review account for every file the pull request changed?
+      # There is no separate coverage step here any more, and nothing is lost
+      # by that: it checked a single reviewer's self-reported file count
+      # against PR_FILES.md, and both tiers now settle coverage in JavaScript
+      # instead -- the mapper's partition is compared against the real
+      # changed-file list and whatever it left out is returned as
+      # `unaccounted` for the report to name. That is strictly the better
+      # check, and the gate below reads its result out of the stamp.
       #
-      # The fleet tiers settle this in JavaScript -- the mapper's placement is
-      # compared against the real changed-file list and whatever it left out is
-      # published as unaccounted. The single-reviewer tiers had no equivalent,
-      # and the hole is not cosmetic: a review that opened five of forty files
-      # and wrote "No findings." publishes exactly like a thorough one, and the
-      # issue it files IS the dedup record, so that pull request is never
-      # looked at again. A coverage hole there is permanent.
-      #
-      # AFTER the refutation pass, deliberately. That pass rewrites review.md
-      # wholesale and is told to carry `## Coverage` and the stamp through
-      # verbatim; checking here is what makes that an instruction with a
-      # consequence rather than a hope.
-      - name: Coverage
-        id: coverage
-        if: always()
-        env:
-          FLEET: ${{ steps.route.outputs.fleet }}
-        run: |
-          set -euo pipefail
-          # The fleet tiers carry their own, richer accounting and their own
-          # gate below. Nothing to do here.
-          if [ "${FLEET:-false}" = "true" ]; then
-            echo "state=skipped" >> "$GITHUB_OUTPUT"
-            echo "fleet tier: coverage is checked from the pipeline's stamp"
-            exit 0
-          fi
-          [ -s review.md ] || { echo "state=skipped" >> "$GITHUB_OUTPUT"; exit 0; }
-          # No `|| true`: if coverage.py is missing or broken the harness
-          # checkout is broken, and a broken checkout means the review ran
-          # without its skill. Fail loudly rather than quietly wave it through.
-          python3 .harness/scripts/coverage.py review.md PR_FILES.md >> "$GITHUB_OUTPUT"
+      # scripts/coverage.py and the `## Coverage` section in
+      # monero-security-review are kept for the single-reviewer fallback,
+      # which review-local.sh still runs. Nothing in CI calls them.
 
       - name: Verification status
         id: verified
         if: always()
         env:
           TIER: ${{ steps.route.outputs.tier }}
-          FLEET: ${{ steps.route.outputs.fleet }}
-          COVERAGE_STATE: ${{ steps.coverage.outputs.state }}
-          COVERAGE_NOTE: ${{ steps.coverage.outputs.note }}
-          # Whether a report that says NOTHING about its coverage is publishable.
-          # See the case below. Turn it on once stamps are appearing reliably:
-          #   gh variable set COVERAGE_REQUIRED --body 1 --repo <this repo>
-          COVERAGE_REQUIRED: ${{ vars.COVERAGE_REQUIRED }}
-          VERIFY_OUTCOME: ${{ steps.refute.outcome }}
-          # The review pass's own execution log, snapshotted above. Deep mode
-          # reads it as independent evidence that the agent fleet ran.
+          # The review pass's own execution log, snapshotted above. Read as
+          # independent evidence that the agent fleet ran -- the stamp is
+          # written by the model and is a claim; this is a record.
           PASS1_EXEC: ${{ env.PASS1_EXEC }}
-          # A step outcome of `success` is not proof the model ran. When
-          # claude-code-action declines itself -- a workflow-validation skip --
-          # it exits 0 having done nothing, and its execution_file output is
-          # empty. Requiring that output to be non-empty is what distinguishes
-          # "pass 2 attacked the findings" from "pass 2 was never invoked", and
-          # without it a skipped verification would stamp findings as verified.
-          REFUTE_EXEC: ${{ steps.refute.outputs.execution_file }}
         run: |
           set -euo pipefail
           if [ ! -s review.md ]; then
@@ -1390,218 +1251,136 @@ jobs:
             sevs=unknown
           fi
 
-          if [ "${FLEET:-false}" = "true" ]; then
-            # Last stamp in the file wins, so a re-run's report cannot be
-            # judged on an earlier one's numbers.
-            stamp=$(grep -o '<!-- deep-scan [^>]*-->' review.md | tail -1 || true)
-            field() { printf '%s' "$stamp" | sed -n "s/.*[[:space:]]$1=\([0-9]\{1,\}\).*/\1/p"; }
-            # 10# forces base 10. Without it a stamp reading `failedCells=08`
-            # is an octal literal, `$(( failed * 2 ))` dies with "value too
-            # great for base", and `set -e` takes the whole step down.
-            # `if`, not `[ -n "$v" ] && ...`: the && form returns 1 when the
-            # field is absent, and `cells=$(num cells)` then carries that
-            # status into an assignment, which `set -e` treats as fatal --
-            # turning the missing-stamp case from a reported "unverified"
-            # into a bare step failure with no footer saying why.
-            num() { v=$(field "$1"); if [ -n "$v" ]; then printf '%s' "$(( 10#$v ))"; fi; }
-            cells=$(num cells)
-            failed=$(num failedCells)
-            cands=$(num candidates)
-            conf=$(num confirmed)
-            refut=$(num refuted)
-            unver=$(num unverified)
-            # Optional: older stamps predate it, so an empty value is not
-            # an error and must not reach arithmetic. Reported, never gated
-            # on -- a deferral is a researcher doing the right thing, and the
-            # ones that matter (nobody settled them) are named in the report.
-            defer=$(num deferred)
-            # How many verifier angles the pipeline actually ran: 3 at deep,
-            # 2 at medium. Read rather than assumed, so the note below cannot
-            # tell a reader a medium finding faced three verifiers. Older
-            # stamps predate the field; 3 is the right default for them,
-            # because medium did not exist when they were written.
-            angles=$(num angles)
-            angles=${angles:-3}
-            # Which pipeline the report says it was. A `medium` dispatch whose
-            # Lead passed profile "deep" to the workflow would spend hours and
-            # several times the budget this tier was routed for, and the only
-            # trace would be the runtime. Older stamps carry no profile, and
-            # an absent one is not an error -- a disagreeing one is.
-            prof=$(printf '%s' "$stamp" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
+          # BOTH TIERS ARE THE FLEET, so there is one path through this step and no
+          # branch for a shape that no longer runs in CI. Last stamp in the file wins,
+          # so a re-run's report cannot be judged on an earlier one's numbers.
+          stamp=$(grep -o '<!-- deep-scan [^>]*-->' review.md | tail -1 || true)
+          field() { printf '%s' "$stamp" | sed -n "s/.*[[:space:]]$1=\([0-9]\{1,\}\).*/\1/p"; }
+          # 10# forces base 10. Without it a stamp reading `failedCells=08`
+          # is an octal literal, `$(( failed * 2 ))` dies with "value too
+          # great for base", and `set -e` takes the whole step down.
+          # `if`, not `[ -n "$v" ] && ...`: the && form returns 1 when the
+          # field is absent, and `cells=$(num cells)` then carries that
+          # status into an assignment, which `set -e` treats as fatal --
+          # turning the missing-stamp case from a reported "unverified"
+          # into a bare step failure with no footer saying why.
+          num() { v=$(field "$1"); if [ -n "$v" ]; then printf '%s' "$(( 10#$v ))"; fi; }
+          cells=$(num cells)
+          failed=$(num failedCells)
+          cands=$(num candidates)
+          conf=$(num confirmed)
+          refut=$(num refuted)
+          unver=$(num unverified)
+          # Optional: older stamps predate it, so an empty value is not
+          # an error and must not reach arithmetic. Reported, never gated
+          # on -- a deferral is a researcher doing the right thing, and the
+          # ones that matter (nobody settled them) are named in the report.
+          defer=$(num deferred)
+          # How many verifier angles the pipeline actually ran: 3 at deep,
+          # 2 at medium. Read rather than assumed, so the note below cannot
+          # tell a reader a medium finding faced three verifiers. Older
+          # stamps predate the field; 3 is the right default for them,
+          # because medium did not exist when they were written.
+          angles=$(num angles)
+          angles=${angles:-3}
+          # Which pipeline the report says it was. A `medium` dispatch whose
+          # Lead passed profile "deep" to the workflow would spend hours and
+          # several times the budget this tier was routed for, and the only
+          # trace would be the runtime. Older stamps carry no profile, and
+          # an absent one is not an error -- a disagreeing one is.
+          prof=$(printf '%s' "$stamp" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
 
-            # The pipeline has two halves and BOTH can die independently. The
-            # research half reads the diff; the verification half is what
-            # makes a surviving finding mean anything. Checking only the
-            # first was the original mistake here: healthy research plus a
-            # dead verifier fleet returns every candidate as `unverified` and
-            # an empty findings list, which reads from the outside exactly
-            # like a clean review -- and publishing it files the marker that
-            # retires the pull request for good.
-            # The stamp is written by the model, so on its own it is a claim,
-            # not evidence -- exactly what REFUTE_EXEC exists to avoid taking
-            # on trust on the default path. The execution log is the
-            # independent record: if it shows no Workflow or Agent tool call,
-            # the fleet was never dispatched and any stamp in the report was
-            # invented. Both key spellings are matched because the log's
-            # schema is not documented.
-            #
-            # VERIFIED against run 471's real execution log: the matcher
-            # hits `"name": "Workflow"` there. If a good deep run ever comes
-            # back "no trace", print exec-pass1.json from the run's artifact
-            # and check how a tool call is spelled, rather than loosening it.
-            fleet=no
-            if [ -n "${PASS1_EXEC:-}" ] && [ -f "${PASS1_EXEC:-}" ] &&
-               grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' "$PASS1_EXEC"; then
-              fleet=yes
-            fi
-
-            if [ -z "$stamp" ] || [ -z "$cells" ] || [ -z "$failed" ] || \
-               [ -z "$cands" ] || [ -z "$conf" ] || [ -z "$refut" ] || [ -z "$unver" ]; then
-              state=unverified
-              note="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
-            elif [ -n "$prof" ] && [ "$prof" != "$TIER" ]; then
-              state=unverified
-              note="**NOT VERIFIED** — this run was dispatched as \`$TIER\` but the report's coverage stamp says the \`$prof\` pipeline produced it. One of the two is wrong, and neither reading is safe to publish: the numbers describe a run nobody asked for."
-            elif [ "$fleet" != "yes" ]; then
-              state=unverified
-              note="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched. The numbers are not evidence of anything."
-            elif [ "$(( conf + refut + unver ))" -ne "$cands" ]; then
-              # Every candidate ends in exactly one of the three buckets, so
-              # this identity holds by construction in the pipeline. A stamp
-              # that fails it was not copied from a real `coverage` object --
-              # a template left unfilled, or numbers someone reasoned their
-              # way to. Either way it is not evidence.
-              state=unverified
-              note="**NOT VERIFIED** — the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
-            elif [ "$cells" -eq 0 ]; then
-              state=unverified
-              note="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
-            elif [ "$(( failed * 2 ))" -gt "$cells" ]; then
-              state=unverified
-              note="**NOT VERIFIED** — $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
-            elif [ "$cands" -gt 0 ] && [ "$(( unver * 2 ))" -gt "$cands" ]; then
-              state=unverified
-              note="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
-            elif [ "$cands" -eq 0 ] && [ "$(( failed * 4 ))" -gt "$cells" ]; then
-              # A no-findings deep review is the strongest claim this
-              # pipeline makes, and it is the one a reader is least able to
-              # check. The majority test above is too lenient for it: with
-              # zero candidates proposed there is no panel evidence at all,
-              # so the claim rests entirely on how much of the diff was
-              # actually read. Demand near-complete coverage for it --
-              # anything worse than a quarter of cells lost is not a clean
-              # bill of health, it is a thin one.
-              state=unverified
-              note="**NOT VERIFIED** — nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
-            else
-              state=fleet
-              covered="$(( cells - failed )) of $cells research cells reported"
-              # Report what the stamp says, attributed, rather than asserting
-              # the panel's behaviour as something this step established. It
-              # can see the numbers the report carries; it did not watch the
-              # verifiers work.
-              if [ "$cands" -eq 0 ]; then
-                note="the $TIER pipeline ran ($covered) and proposed no candidates, so no panel was needed. Coverage and Checked-and-clear below are what this result rests on."
-              elif [ -z "$sevs" ]; then
-                note="the $TIER pipeline ran ($covered). Its panel decided $(( conf + refut )) of $cands candidate(s) and confirmed none: the report records $refut refuted. Each candidate is put to $angles verifiers on separate angles and the votes are counted in code rather than argued in prose."
-              else
-                note="verified by the $TIER pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s) — $conf confirmed, $refut refuted. Each faced $angles verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered and confidence capped by the count. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
-              fi
-              if [ "$failed" != "0" ]; then
-                note="$note $failed cell(s) failed rather than reporting; the report names them."
-              fi
-              if [ "$unver" != "0" ]; then
-                note="$note $unver candidate(s) got no verdict from any angle and are named in the report as undecided, not as clean."
-              fi
-              # `if`, not `&&`: a false && chain as the last statement of this
-              # block returns 1 and `set -e` takes the whole step down.
-              if [ -n "$defer" ] && [ "$defer" != "0" ]; then
-                note="$note $defer observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
-              fi
-            fi
-
-            echo "state=$state" >> "$GITHUB_OUTPUT"
-            echo "verification state: $state (stamp: ${stamp:-none})"
-            printf '<sub>Verification: %s</sub>\n' "$note" >> review.md
-            exit 0
-          fi
-
-          if [ -z "$sevs" ]; then
-            state=none
-            note="first pass reported no findings, so there was nothing to attack."
-          elif [ "${VERIFY_OUTCOME:-}" = "success" ] && [ -n "${REFUTE_EXEC:-}" ]; then
-            state=verified
-            # Say only what is provable. A successful step with an execution
-            # file proves the adversarial pass *ran*; it does not prove it did
-            # the work. The refutation skill requires a per-finding
-            # "**Verification:**" note and keeps refuted candidates in a
-            # "## Refuted" section -- across the first 51 reviews neither
-            # appeared even once, so their presence is the only evidence a
-            # reader has, and their absence has to be said out loud rather
-            # than papered over by a confident stamp.
-            if grep -q '\*\*Verification' review.md; then
-              note="an independent adversarial pass ran and recorded per-finding verification notes; surviving findings are those it could not refute."
-            else
-              note="an independent adversarial pass ran, but recorded **no per-finding verification notes**, so there is no evidence of what it checked. Treat these findings as first-pass quality."
-            fi
-          else
-            state=unverified
-            if [ "${VERIFY_OUTCOME:-}" = "success" ]; then
-              why="reported success but never actually ran"
-            else
-              why="${VERIFY_OUTCOME:-did not run}"
-            fi
-            note="**NOT VERIFIED** — the adversarial pass did not complete (\`$why\`). Expect false positives."
-          fi
-
-          # COVERAGE IS A SECOND, INDEPENDENT GATE, and it binds hardest on the
-          # `none` branch above -- a no-findings report is the strongest claim
-          # this pass makes and the one a reader is least able to check, and it
-          # is also the one that files the issue retiring the pull request from
-          # the queue forever. A review that cannot say which files it read is
-          # not evidence about the code, whatever its adversarial pass did.
+          # The pipeline has two halves and BOTH can die independently. The
+          # research half reads the diff; the verification half is what
+          # makes a surviving finding mean anything. Checking only the
+          # first was the original mistake here: healthy research plus a
+          # dead verifier fleet returns every candidate as `unverified` and
+          # an empty findings list, which reads from the outside exactly
+          # like a clean review -- and publishing it files the marker that
+          # retires the pull request for good.
+          # The stamp is written by the model, so on its own it is a claim,
+          # not evidence. The execution log is the independent record: if it shows no Workflow or Agent tool call,
+          # the fleet was never dispatched and any stamp in the report was
+          # invented. Both key spellings are matched because the log's
+          # schema is not documented.
           #
-          # `skipped` is a fleet tier or an empty report, both handled
-          # elsewhere. `unchecked` means the harness wrote no changed-file
-          # list, which is the harness's fault and not the review's: it is
-          # reported in the footer and does not withhold the issue.
-          case "${COVERAGE_STATE:-skipped}" in
-            skipped) ;;
-            ok|unchecked) note="$note ${COVERAGE_NOTE:-}" ;;
-            missing)
-              # A report with no stamp at all is a NEW instruction not yet
-              # obeyed, which is a different thing from a report whose account
-              # of itself is wrong. Withholding on it from day one would stall
-              # the whole queue on the reviewer's compliance with a section
-              # that did not exist last week -- and this repo has watched
-              # exactly that happen before: the `**Verification:**` note and
-              # the `## Refuted` heading were both mandatory for 51 reviews
-              # before either appeared even once.
-              #
-              # So it is advisory until an operator says otherwise. The footer
-              # says loudly that the review did not state its coverage, which
-              # is visible on every published issue and is how you tell whether
-              # it is safe to flip the variable. Ratchet it, do not guess it.
-              if [ "${COVERAGE_REQUIRED:-}" = "1" ]; then
-                state=unverified
-                note="**NOT VERIFIED** — ${COVERAGE_NOTE} Nothing is filed for this pull request, so it stays in the queue and will be reviewed again."
-              else
-                note="$note **Coverage not stated** — ${COVERAGE_NOTE} Published anyway because \`COVERAGE_REQUIRED\` is not set."
-              fi
-              ;;
-            *)
-              # `mismatch`: the report gave an account of what it read and the
-              # account is wrong. That is never advisory. A review whose own
-              # arithmetic contradicts the changed-file list is not evidence
-              # about the code, and publishing it files the issue that retires
-              # this pull request from the queue for good.
-              state=unverified
-              note="**NOT VERIFIED** — ${COVERAGE_NOTE:-coverage could not be established.} Nothing is filed for this pull request, so it stays in the queue and will be reviewed again."
-              ;;
-          esac
+          # VERIFIED against run 471's real execution log: the matcher
+          # hits `"name": "Workflow"` there. If a good deep run ever comes
+          # back "no trace", print exec-pass1.json from the run's artifact
+          # and check how a tool call is spelled, rather than loosening it.
+          fleet=no
+          if [ -n "${PASS1_EXEC:-}" ] && [ -f "${PASS1_EXEC:-}" ] &&
+             grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' "$PASS1_EXEC"; then
+            fleet=yes
+          fi
+
+          if [ -z "$stamp" ] || [ -z "$cells" ] || [ -z "$failed" ] || \
+             [ -z "$cands" ] || [ -z "$conf" ] || [ -z "$refut" ] || [ -z "$unver" ]; then
+            state=unverified
+            note="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
+          elif [ -n "$prof" ] && [ "$prof" != "$TIER" ]; then
+            state=unverified
+            note="**NOT VERIFIED** — this run was dispatched as \`$TIER\` but the report's coverage stamp says the \`$prof\` pipeline produced it. One of the two is wrong, and neither reading is safe to publish: the numbers describe a run nobody asked for."
+          elif [ "$fleet" != "yes" ]; then
+            state=unverified
+            note="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched. The numbers are not evidence of anything."
+          elif [ "$(( conf + refut + unver ))" -ne "$cands" ]; then
+            # Every candidate ends in exactly one of the three buckets, so
+            # this identity holds by construction in the pipeline. A stamp
+            # that fails it was not copied from a real `coverage` object --
+            # a template left unfilled, or numbers someone reasoned their
+            # way to. Either way it is not evidence.
+            state=unverified
+            note="**NOT VERIFIED** — the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
+          elif [ "$cells" -eq 0 ]; then
+            state=unverified
+            note="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
+          elif [ "$(( failed * 2 ))" -gt "$cells" ]; then
+            state=unverified
+            note="**NOT VERIFIED** — $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+          elif [ "$cands" -gt 0 ] && [ "$(( unver * 2 ))" -gt "$cands" ]; then
+            state=unverified
+            note="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
+          elif [ "$cands" -eq 0 ] && [ "$(( failed * 4 ))" -gt "$cells" ]; then
+            # A no-findings deep review is the strongest claim this
+            # pipeline makes, and it is the one a reader is least able to
+            # check. The majority test above is too lenient for it: with
+            # zero candidates proposed there is no panel evidence at all,
+            # so the claim rests entirely on how much of the diff was
+            # actually read. Demand near-complete coverage for it --
+            # anything worse than a quarter of cells lost is not a clean
+            # bill of health, it is a thin one.
+            state=unverified
+            note="**NOT VERIFIED** — nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
+          else
+            state=fleet
+            covered="$(( cells - failed )) of $cells research cells reported"
+            # Report what the stamp says, attributed, rather than asserting
+            # the panel's behaviour as something this step established. It
+            # can see the numbers the report carries; it did not watch the
+            # verifiers work.
+            if [ "$cands" -eq 0 ]; then
+              note="the $TIER pipeline ran ($covered) and proposed no candidates, so no panel was needed. Coverage and Checked-and-clear below are what this result rests on."
+            elif [ -z "$sevs" ]; then
+              note="the $TIER pipeline ran ($covered). Its panel decided $(( conf + refut )) of $cands candidate(s) and confirmed none: the report records $refut refuted. Each candidate is put to $angles verifiers on separate angles and the votes are counted in code rather than argued in prose."
+            else
+              note="verified by the $TIER pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s) — $conf confirmed, $refut refuted. Each faced $angles verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered and confidence capped by the count. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
+            fi
+            if [ "$failed" != "0" ]; then
+              note="$note $failed cell(s) failed rather than reporting; the report names them."
+            fi
+            if [ "$unver" != "0" ]; then
+              note="$note $unver candidate(s) got no verdict from any angle and are named in the report as undecided, not as clean."
+            fi
+            # `if`, not `&&`: a false && chain as the last statement of this
+            # block returns 1 and `set -e` takes the whole step down.
+            if [ -n "$defer" ] && [ "$defer" != "0" ]; then
+              note="$note $defer observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
+            fi
+          fi
 
           echo "state=$state" >> "$GITHUB_OUTPUT"
-          echo "verification state: $state (coverage: ${COVERAGE_STATE:-skipped})"
+          echo "verification state: $state (stamp: ${stamp:-none})"
           printf '<sub>Verification: %s</sub>\n' "$note" >> review.md
 
       # How much work was waiting when this PR was picked. Taken from the
@@ -1651,8 +1430,9 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Empty on light and standard: those are the ordinary shape and an
-          # unlabelled issue is what "ordinary" looks like in the list.
+          # Empty on the standard tier: it is the ordinary shape, and an
+          # unlabelled issue is what "ordinary" looks like in the list. Only
+          # `deep` gets a label, because only `deep` is the exception.
           TIER_LABEL: ${{ steps.route.outputs.label }}
           VERIFY_STATE: ${{ steps.verified.outputs.state }}
         run: |
@@ -1699,21 +1479,21 @@ jobs:
           # checked, and the safe direction is to file nothing and retry.
           #
           # Written as an allowlist of publishable states rather than a test
-          # for the single string "unverified". The states are `verified`
-          # (the adversarial pass ran), `none` (nothing to attack), `fleet`
-          # (a counted panel -- deep's three angles or medium's two -- did the
-          # attacking) and `unverified`. An allowlist means the next state
-          # added here fails CLOSED -- it files nothing and the PR is
-          # retried -- rather than publishing unchecked findings under a
-          # complete-looking title because nobody remembered to update a
-          # negative test.
+          # for the single string "unverified". Two states publish: `fleet`
+          # (a counted panel -- deep's three angles or standard's two -- did
+          # the attacking) and `none` (review.md is empty, which the guard
+          # above has already returned on, kept here so the list is total).
+          # An allowlist means the next state added fails CLOSED -- it files
+          # nothing and the PR is retried -- rather than publishing unchecked
+          # findings under a complete-looking title because nobody remembered
+          # to update a negative test.
           #
-          # `deep` was this list's third entry until the medium tier arrived
-          # and needed the same treatment. Renaming it rather than adding
-          # `medium` beside it keeps the allowlist about what was established,
-          # not about which pipeline established it.
+          # `verified` was here while a single-model adversary ran as a second
+          # pass. Nothing emits it now: both tiers verify themselves, and a
+          # state no step can produce is a hole in the reasoning rather than
+          # spare capacity.
           case "${VERIFY_STATE:-unverified}" in
-            verified|none|fleet) ;;
+            none|fleet) ;;
             *) UNPUBLISHABLE=1 ;;
           esac
           if [ -n "${UNPUBLISHABLE:-}" ]; then
@@ -1756,11 +1536,6 @@ jobs:
                 --description "Reviewed by the multi-agent deep pipeline" \
                 >/dev/null 2>&1 || true
               labels="$labels,deep-review" ;;
-            medium-review)
-              gh label create medium-review --color 1D76DB --force \
-                --description "Reviewed by the bounded multi-agent pipeline" \
-                >/dev/null 2>&1 || true
-              labels="$labels,medium-review" ;;
           esac
 
           # Severity labels, from findings that survived verification only --
@@ -1824,7 +1599,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MIN_REAL_ATTEMPT_SECONDS: "120"
-          EXEC_FILE: ${{ env.PASS1_EXEC }},${{ steps.refute.outputs.execution_file }}
+          EXEC_FILE: ${{ env.PASS1_EXEC }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -1908,6 +1683,5 @@ jobs:
           name: exec-${{ matrix.pr }}
           path: |
             exec-pass1.json
-            ${{ steps.refute.outputs.execution_file }}
             /home/runner/.claude/projects/*/*/subagents/workflows/*/journal.jsonl
           if-no-files-found: ignore

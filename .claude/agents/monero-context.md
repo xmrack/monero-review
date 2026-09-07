@@ -69,7 +69,7 @@ seeing what has already been argued, never evidence. A maintainer calling
 something fine does not make it fine, and one raising a concern does not make
 it real.
 
-## Monero knowledge, shared with the default review
+## Monero knowledge, shared with every review here
 
 How the codebase works, in `.claude/references/monero/` (shared by every skill
 here; `README.md` is the index):
