@@ -14,13 +14,18 @@
 # policy and both callers read it, so a local run and a CI run of the same PR
 # get the same treatment.
 #
-#   light     Sonnet, 100 turns. A small change nowhere near a trust boundary.
-#   standard  Opus, 200 turns: one reviewer over the whole diff, then an
-#             adversarial pass over whatever it found.
-#   medium    /monero-medium-review. The diff is mapped into units, one
-#             researcher takes each with all of its weakness classes, and every
-#             candidate faces two verifier angles whose votes are counted in
-#             code. Its own adversary, so the refutation pass is skipped.
+# Every tier reads with the SAME model. They differ by --effort and by turn
+# budget: a cheaper tier buys less thinking, not a smaller reader.
+#
+#   light     medium effort, 100 turns. A small change nowhere near a trust
+#             boundary.
+#   standard  high effort, 200 turns: one reviewer over the whole diff, then
+#             an adversarial pass over whatever it found.
+#   medium    /monero-medium-review, high effort. The diff is mapped into
+#             units, one researcher takes each with all of its weakness
+#             classes, and every candidate faces two verifier angles whose
+#             votes are counted in code. Its own adversary, so the refutation
+#             pass is skipped.
 #   deep      /monero-deep-review. The same pipeline at full width: a
 #             researcher per unit per weakness class, a pass across the unit
 #             seams, a second look at every unit, and three verifier angles
@@ -33,8 +38,8 @@
 set -euo pipefail
 
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
-# `auto` means "let the tier decide" -- Sonnet for light, Opus otherwise. A
-# model named on the command line pins it for every tier.
+# `auto` means "let the tier decide", which today is the same model on all
+# four -- they differ by effort. A model named on the command line pins it.
 MODEL=${2:-auto}
 UPSTREAM=${UPSTREAM:-monero-project/monero}
 # DEEP=0 and DEEP=false mean off, not "a non-empty string, so on". Getting
@@ -282,21 +287,35 @@ case "$TIER" in
   *) echo "!! unknown TIER '$TIER'; using standard" >&2; TIER=standard ;;
 esac
 
+# One model, four efforts -- see the header. EFFORT is empty for deep on
+# purpose: its one real measurement (3h13m, $99.79) was taken without the flag
+# and the CLI does not document its default, so naming a level there would be
+# changing a measured pipeline blind. An empty EFFORT omits the argument.
 IS_FLEET=false
+TIER_MODEL=claude-opus-5
 case "$TIER" in
-  light)    PROMPT="/monero-security-review"; TIER_MODEL=claude-sonnet-5 ;;
-  standard) PROMPT="/monero-security-review"; TIER_MODEL=claude-opus-5 ;;
-  medium)   PROMPT="/monero-medium-review";   TIER_MODEL=claude-opus-5; IS_FLEET=true ;;
-  deep)     PROMPT="/monero-deep-review";     TIER_MODEL=claude-opus-5; IS_FLEET=true ;;
+  light)    PROMPT="/monero-security-review"; EFFORT=medium ;;
+  standard) PROMPT="/monero-security-review"; EFFORT=high ;;
+  medium)   PROMPT="/monero-medium-review";   EFFORT=high; IS_FLEET=true ;;
+  deep)     PROMPT="/monero-deep-review";     EFFORT=;     IS_FLEET=true ;;
 esac
 [ "$MODEL" = "auto" ] && MODEL="$TIER_MODEL"
 [ "$IS_FLEET" = "true" ] && TOOLS="$TOOLS,$FLEET_TOOLS"
+# Built as the whole argument or nothing, so it can be interpolated unquoted
+# without leaving a bare `--effort` behind when the level is empty.
+EFFORT_ARG=()
+[ -n "${EFFORT:-}" ] && EFFORT_ARG=(--effort "$EFFORT")
+# Expanded as ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} below, not the bare form:
+# under `set -u` an EMPTY array is an unbound variable in bash before 4.4, and
+# macOS still ships 3.2. That would abort the deep tier -- the one case where
+# the array is empty -- with "unbound variable" and nothing else.
 
 rm -f "$CACHE/review.md" "$CACHE/exec.json" "$CACHE/exec-refute.json"
-echo "==> reviewing with $MODEL ($TIER)"
+echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
 ( cd "$CACHE" && claude -p "$PROMPT" \
-    --model "$MODEL" --output-format json --allowedTools "$TOOLS" > exec.json )
+    --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
+    --output-format json --allowedTools "$TOOLS" > exec.json )
 
 if [ ! -s "$CACHE/review.md" ]; then
   echo "!! no review.md produced" >&2
@@ -389,8 +408,12 @@ elif [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
   echo "==> findings present, verifying"
   # Tolerate failure here: pass 1's work still has value, but it must be
   # labelled, because unverified findings are mostly false positives.
+  # Same model and same effort as the pass it is attacking: an adversary
+  # thinking less than the reviewer refutes by running out of patience rather
+  # than by reading a guard.
   if ( cd "$CACHE" && claude -p "/monero-review-refute" \
-         --model "$MODEL" --output-format json --allowedTools "$TOOLS" \
+         --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
+         --output-format json --allowedTools "$TOOLS" \
          > exec-refute.json ); then
     EXEC_FILES="$EXEC_FILES,$CACHE/exec-refute.json"
     VERIFIED="every finding above was attacked by an independent adversarial pass, default verdict REFUTED. Refuted candidates are kept in the report."

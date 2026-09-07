@@ -6,12 +6,19 @@ turns, whatever arrived. That is flat in the size of the change while coverage
 is not -- a two-file typo fix and a twenty-file wire-format rewrite cost the
 same and are served very differently. This routes instead:
 
-  light     a small change nowhere near a trust boundary. Sonnet, fewer turns.
+  light     a small change nowhere near a trust boundary. Same model, lower
+            effort, fewer turns.
   standard  the single-reviewer + adversary shape this repo was built around.
   medium    the bounded agent fan-out: mapped into units, a researcher per
             unit, two verifier angles per candidate, counted in code.
   deep      never chosen here. It is a human escalation, hours and ~7x the
             cost of a standard review, and `mode=deep` names one PR by number.
+
+EVERY TIER READS WITH THE SAME MODEL. The tiers differ by `--effort` and by
+turn budget, never by who is doing the reading -- this is consensus-critical
+financial software, a missed bug costs more than any review, and a smaller
+model reads the same diff with less of everything. Thinking tokens were 80% of
+the deep run's output bill, so effort is where the money actually is.
 
 Two callers, one policy:
 

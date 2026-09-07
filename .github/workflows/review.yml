@@ -9,39 +9,38 @@ on:
         default: sweep
         type: string
       model:
-        description: "Model. `auto` lets the tier pick: Sonnet for light, Opus for everything else."
+        description: "Model. `auto` is DEFAULT_MODEL for every tier -- the tiers differ by effort, not by model."
         required: false
-        # `auto`, and it has to be, because there is no longer ONE model a run
-        # uses -- the router picks per tier. A dropdown pinned to a real model
-        # would silently defeat that on every manual dispatch: the input is
-        # non-empty, so the router would see a pin and honour it, and a light
-        # PR dispatched by hand would quietly cost Opus money.
+        # EVERY TIER RUNS THE SAME MODEL. What varies is `--effort`, set by the
+        # router below. That is a deliberate choice and not an accident of
+        # configuration: this is consensus-critical financial software, a
+        # missed bug costs far more than a review does, and a cheaper model
+        # reads the same diff with less of everything. Effort buys back real
+        # money on the small diffs -- thinking was 80% of the deep run's output
+        # bill -- without changing who is doing the reading.
         #
-        # This replaces an older rule that the dropdown default MUST equal
-        # DEFAULT_MODEL, written when the two disagreed and the UI advertised
-        # a model no scheduled run ever used. The rule behind it still holds --
-        # the dropdown must not lie about what a run will use -- and `auto` is
-        # now the only honest way to say it. DEFAULT_MODEL remains the answer
-        # for every tier that is not `light`.
-        #
-        # Sonnet is back in the list. It was dropped when Opus became the only
-        # model this queue ran; the light tier runs it deliberately now
-        # (measured $1.02 median, $0.13 on a trivial diff), so a human wanting
-        # to pin it should be able to.
+        # `auto` therefore resolves to DEFAULT_MODEL on all four tiers today.
+        # It stays in the list rather than being simplified away because it is
+        # the honest spelling of "whatever the tier picks": if the tier table
+        # ever varies models again, a dropdown pinned to a literal would
+        # silently defeat it on every manual dispatch, which is exactly the
+        # failure the older "the dropdown must equal DEFAULT_MODEL" rule was
+        # written to prevent.
         default: auto
         type: choice
         options:
           - auto
           - claude-opus-5
           - claude-fable-5-1
-          - claude-sonnet-5
       # Which review runs.
       #
       #   default   route by tier -- scripts/tier.py sizes the change and picks
       #             light, standard or medium. This is what a `schedule` tick
       #             gets, and what a dispatch that leaves the box alone gets.
-      #   light     Sonnet, fewer turns. For a small change nowhere near a
-      #             trust boundary.
+      #   light     lower effort, fewer turns. For a small change nowhere near
+      #             a trust boundary. Same model as every other tier -- see
+      #             the `model` input above for why the tiers vary effort
+      #             rather than who is reading.
       #   standard  the two-pass reviewer+adversary shape this file was built
       #             around, pinned regardless of size.
       #   medium    the bounded agent fleet: mapped into units, one researcher
@@ -123,6 +122,12 @@ env:
   # fable simply reviews faster, check that a good short run is not being
   # charged as a failed attempt. The execution log is the stronger signal and
   # is consulted first, so this should not bite, but it is unverified.
+  #
+  # This is now the model for EVERY tier, not just the default one: the router
+  # varies `--effort` and the turn budget and leaves the reader alone. The
+  # Sonnet figures above are what the queue used to cost when it ran Sonnet
+  # outright; they are kept because they are the only measured comparison this
+  # repo has, not because any tier reaches for them.
   DEFAULT_MODEL: claude-opus-5
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
@@ -927,6 +932,26 @@ jobs:
             *) echo "unrecognised tier '$tier'; using standard"; tier=standard ;;
           esac
 
+          # ONE MODEL, FOUR EFFORTS. Every tier reads the diff with the same
+          # model; what a cheaper tier buys is less thinking and fewer turns,
+          # not a smaller reader. On consensus-critical financial software a
+          # missed bug costs more than any review, and the lever that actually
+          # moves the bill is thinking tokens -- 80% of the deep run's output
+          # spend -- which `--effort` controls directly.
+          #
+          # `light` sits at `medium` rather than `low`. The floor for reading a
+          # diff for exploitable defects is not the floor the flag offers, and
+          # a tier only reachable by a change that is small, short AND nowhere
+          # near a trust boundary has already had its risk argued down once.
+          #
+          # DEEP DELIBERATELY PASSES NO EFFORT. Its one real measurement --
+          # 3h13m and $99.79 on 9559 -- was taken without the flag, the CLI
+          # does not document its default, and there is no way from here to
+          # know whether naming a level would raise or lower it. An empty
+          # `effort` means the argument is omitted entirely below, so deep runs
+          # exactly as it was measured. Set it only alongside a fresh
+          # measurement to compare against.
+          #
           # Turns are not billed; tokens are, so headroom is free and running
           # out is not. The fleet tiers get more because the Lead spends turns
           # blocking on TaskOutput while the fleet works -- whether a
@@ -934,16 +959,20 @@ jobs:
           # here, and 300/400 is insurance against the answer being yes.
           case "$tier" in
             light)
-              model=claude-sonnet-5; turns=100; fleet=false; refute=true
+              model="$DEFAULT_MODEL"; effort=medium; turns=100; fleet=false; refute=true
               prompt=/monero-security-review; label= ;;
             standard)
-              model="$DEFAULT_MODEL"; turns=200; fleet=false; refute=true
+              model="$DEFAULT_MODEL"; effort=high; turns=200; fleet=false; refute=true
               prompt=/monero-security-review; label= ;;
             medium)
-              model="$DEFAULT_MODEL"; turns=300; fleet=true; refute=false
+              # The Lead only fixes the range, lists the files, calls Workflow
+              # and writes the report. Its researchers and verifiers carry
+              # their own effort, set to `high` by the workflow script for this
+              # profile -- this value does not reach them.
+              model="$DEFAULT_MODEL"; effort=high; turns=300; fleet=true; refute=false
               prompt=/monero-medium-review; label=medium-review ;;
             deep)
-              model="$DEFAULT_MODEL"; turns=400; fleet=true; refute=false
+              model="$DEFAULT_MODEL"; effort=; turns=400; fleet=true; refute=false
               prompt=/monero-deep-review; label=deep-review ;;
           esac
 
@@ -955,16 +984,25 @@ jobs:
             model="$WANT_MODEL"
           fi
 
+          # `effort_arg` is the whole argument or the empty string, so the
+          # caller interpolates one value and never has to build a flag out of
+          # a maybe-empty level. An empty string leaves the CLI on its own
+          # default, which is what deep wants.
+          effort_arg=""
+          [ -n "$effort" ] && effort_arg="--effort $effort"
+
           {
             echo "tier=$tier"
             echo "model=$model"
+            echo "effort=$effort"
+            echo "effort_arg=$effort_arg"
             echo "turns=$turns"
             echo "prompt=$prompt"
             echo "fleet=$fleet"
             echo "refute=$refute"
             echo "label=$label"
           } >> "$GITHUB_OUTPUT"
-          echo "::notice::tier=$tier model=$model turns=$turns prompt=$prompt"
+          echo "::notice::tier=$tier model=$model effort=${effort:-(cli default)} turns=$turns prompt=$prompt"
 
       # The changed-file list, on disk before the review starts. Two readers:
       # the reviewer, whose `## Coverage` section has to account for every path
@@ -1051,7 +1089,7 @@ jobs:
           # the one place the tier is decided. See the reasoning there for
           # why each tier gets the turn budget it does.
           claude_args: |
-            --model ${{ steps.route.outputs.model }}
+            --model ${{ steps.route.outputs.model }} ${{ steps.route.outputs.effort_arg }}
             --max-turns ${{ steps.route.outputs.turns }}
             --allowedTools "${{ env.ALLOWED_TOOLS }}${{ steps.route.outputs.fleet == 'true' && format(',{0}', env.FLEET_EXTRA_TOOLS) || '' }}"
 
@@ -1192,14 +1230,14 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: "/monero-review-refute"
-          # The SAME model the review pass ran on, from the router -- not
-          # `inputs.model`, which is now `auto` by default and is not a model
-          # name. Matching the two also keeps the adversary at least as
-          # capable as the reviewer it is attacking, which is the point of the
-          # pass: a light review on Sonnet is refuted on Sonnet, and a
-          # standard one on Opus is refuted on Opus.
+          # The SAME model AND the same effort the review pass ran on, from
+          # the router -- not `inputs.model`, which is now `auto` by default
+          # and is not a model name. Matching them keeps the adversary exactly
+          # as capable as the reviewer it is attacking, which is the point of
+          # the pass: an adversary thinking less than the reviewer would refute
+          # by running out of patience rather than by reading a guard.
           claude_args: |
-            --model ${{ steps.route.outputs.model }}
+            --model ${{ steps.route.outputs.model }} ${{ steps.route.outputs.effort_arg }}
             --max-turns 200
             --allowedTools "${{ env.ALLOWED_TOOLS }}"
 
