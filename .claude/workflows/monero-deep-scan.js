@@ -4,7 +4,8 @@ export const meta = {
   whenToUse: 'Started by the monero-deep-review skill, whose recipe resolves the range and computes the changed-file list first. args carry root, pr, changedFiles and optionally maxUnits. Do not invoke directly: without those it has nothing to review and will say so.',
   phases: [
     { title: 'Map', detail: 'split the changed files into units; every changed file placed or excluded with a reason' },
-    { title: 'Research', detail: 'one researcher per unit x weakness class, then the seams between units, then a gap pass' },
+    { title: 'Research', detail: 'one researcher per unit x weakness class, then the seams and a per-unit gap pass together' },
+    { title: 'Adjudicate', detail: 'observations a researcher deferred to another unit, settled by somebody' },
     { title: 'Verify', detail: 'three angles per candidate, counted here rather than in a model' },
     { title: 'Re-look', detail: 'candidates one vote short get an advocate, so a wrong refutation is not final' },
   ],
@@ -347,10 +348,18 @@ function harvest(r, tag, extra, kind) {
     researchAccount.push({ cell: tag, notFinished: r.notFinished })
     // A note that names a file:line AND defers to somebody else is a candidate
     // nobody has agreed to own. Keep it addressable rather than filed away.
-    for (const n of r.notFinished) {
-      const t = String(n)
-      if (DEFER_HINT.test(t) && /[A-Za-z0-9_./-]+\.(?:c|h|cpp|hpp|inl|cc)\b/.test(t)) {
-        deferred.push({ from: tag, kind: kind || 'cell', note: t })
+    //
+    // Except from the adjudicator itself, which is told to explain in
+    // notFinished why a deferral does not hold, naming the file and line that
+    // settles it -- prose that looks exactly like a deferral and is the
+    // opposite of one. Collecting it would put the sentence that settled an
+    // observation back on the list of things nobody settled.
+    if (kind !== 'deferred') {
+      for (const n of r.notFinished) {
+        const t = String(n)
+        if (DEFER_HINT.test(t) && /[A-Za-z0-9_./-]+\.(?:c|h|cpp|hpp|inl|cc)\b/.test(t)) {
+          deferred.push({ from: tag, kind: kind || 'cell', note: t })
+        }
       }
     }
   }
@@ -384,11 +393,23 @@ log('round 1: ' + byDefect.size + ' distinct candidate(s) from ' + cells.length 
 const knownSoFar = () => Array.from(byDefect.values())
   .map((c) => '  ' + c.file + ':' + c.line + ' (' + c.category + ') ' + c.title).join('\n') || '  (none)'
 
+// ROUND TWO: the seam pass and the per-unit gap pass go out TOGETHER.
+//
+// They used to be sequential, and the seam agent is a single agent -- so on a
+// 2-wide runner it held one slot and left the other idle for its whole run.
+// MEASURED on the first deep run: 1083s of wall clock at 1.00/2 occupancy,
+// 18 minutes of a 3h13m job spent half-idle. Nothing justified the ordering:
+// the gap pass reads knownSoFar() only for a do-not-re-report list, and
+// byDefect merges any duplicate anyway, keeping the worse severity.
+//
+// What the seam DOES feed is the deferral channel below, and that is why the
+// deferral adjudication is its own stage after this batch rather than a block
+// inside the gap prompt -- an unclaimed observation gets an agent of its own
+// instead of a footnote in somebody else's brief.
 let seamFresh = 0
 let seamRan = false
 let seamFailed = false
-if (units.length > 1) {
-  const seam = await agent(
+const seamThunk = () => agent(
     [CONTEXT, '',
      'Every other researcher on this change saw ONE unit of it. You see the whole',
      'change, and you are looking for exactly what they structurally could not: a',
@@ -408,8 +429,8 @@ if (units.length > 1) {
      knownSoFar(),
      '',
      'A single-unit defect is not your job to CHASE. It is your job to HAND ON:',
-     'put it in notFinished with its file, its line and what you think it does,',
-     'and the unit that owns it gets a second look with your note in hand.',
+     'put it in notFinished with its file, its line and what you think it does.',
+     'It is then given to an agent whose only job is to settle it.',
      'Deciding something is outside your pass is not deciding it is outside the',
      'review. Returning no candidates of your own is a fine answer.',
     ].join('\n'),
@@ -417,20 +438,12 @@ if (units.length > 1) {
     // the first real run. Its value is the boundary trace, not the tier.
     { label: 'research:seams', phase: 'Research', effort: 'high',
       schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
-  )
-  const got = harvest(seam, 'seams', { unit: 'seams', foundBy: 'cross-unit' }, 'seam')
-  seamFailed = got < 0
-  seamRan = !seamFailed
-  seamFresh = seamFailed ? 0 : got
-  log(seamFailed
-    ? 'seams: the pass returned nothing usable — reported as not run, NOT as a clean result'
-    : 'seams: ' + seamFresh + ' fresh candidate(s) crossing unit boundaries')
-}
+)
 
 // One gap pass per unit, told what has already been found there. A single round
 // of per-cell research reliably misses the tail: the lens assignment is a guess
 // the mapper made before anyone had read the code, and by now there is evidence.
-const gapFresh = await parallel(units.map((u) => () => agent(
+const gapThunk = (u) => () => agent(
   [CONTEXT, '',
    'A second look at ONE unit, after a first pass has already been made over it.',
    '',
@@ -449,14 +462,6 @@ const gapFresh = await parallel(units.map((u) => () => agent(
    'open, the "-" lines for deleted guards, and any class of defect this unit',
    'plainly has that is not in the list above.',
    'Returning nothing is the expected outcome when the first pass was thorough.',
-   '',
-   'CLAIMED BY NOBODY. Another researcher noticed each of these and declined to',
-   'file it because it looked like somebody else\'s unit. If one lands in yours,',
-   'it is yours: settle it and file it, or say in notFinished why it does not',
-   'hold. Do not defer it onward -- you are the last pass that can pick it up.',
-   deferred.length
-     ? deferred.map((d) => '  [' + d.from + '] ' + d.note).join('\n')
-     : '  (none)',
   ].join('\n'),
   // effort `high`, not the agent's default xhigh. MEASURED on the first real
   // run: the gap pass was 22.5% of the fleet's cost and returned one candidate,
@@ -465,7 +470,25 @@ const gapFresh = await parallel(units.map((u) => () => agent(
   // worth having and is not worth the top tier.
   { label: 'research:gap/' + u.name, phase: 'Research', effort: 'high',
     schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
-)))
+)
+
+// Dispatched as ONE batch so the single seam agent never holds a slot alone.
+// parallel() preserves input order, so the seam result is first when it ran.
+const applicable = units.length > 1
+const roundTwo = await parallel(
+  (applicable ? [seamThunk] : []).concat(units.map(gapThunk)),
+)
+const gapFresh = applicable ? roundTwo.slice(1) : roundTwo
+
+if (applicable) {
+  const got = harvest(roundTwo[0], 'seams', { unit: 'seams', foundBy: 'cross-unit' }, 'seam')
+  seamFailed = got < 0
+  seamRan = !seamFailed
+  seamFresh = seamFailed ? 0 : got
+  log(seamFailed
+    ? 'seams: the pass returned nothing usable — reported as not run, NOT as a clean result'
+    : 'seams: ' + seamFresh + ' fresh candidate(s) crossing unit boundaries')
+}
 // Best effort: a deferral is "claimed" once the unit it names got a second look
 // that produced a candidate. Coarse on purpose -- the point is to surface the
 // ones nobody engaged with at all, not to prove authorship.
@@ -475,20 +498,61 @@ gapFresh.forEach((r, i) => {
   const got = harvest(r, 'gap/' + units[i].name, { unit: units[i].name, foundBy: 'gap-pass' }, 'gap')
   if (got < 0) gapFailed += 1
   else gapCount += got
-  // A deferral naming any of this unit's paths has now had its second look.
-  if (got >= 0) {
-    for (const d of deferred) {
-      if ((units[i].paths || []).some((x) => d.note.includes(x.split('/').pop()))) d.claimed = true
-    }
-  }
 })
-const stillUnclaimed = deferred.filter((d) => !d.claimed).length
-if (deferred.length) {
-  log(deferred.length + ' deferred observation(s) handed to the gap pass; ' +
-      stillUnclaimed + ' still unclaimed and reported as such')
-}
 log('gap pass: ' + gapCount + ' fresh candidate(s) the first round missed' +
     (gapFailed ? ', and ' + gapFailed + ' unit(s) whose second look returned nothing usable' : ''))
+
+// ADJUDICATE. Every observation a researcher noticed and handed on because it
+// looked like somebody else's unit gets an agent whose only job is to settle
+// it. MEASURED on the first deep run: two such notes were written, neither was
+// adjudicated, and neither appeared in the report. One of them named a file, a
+// line, a mechanism and an impact, and would have been refuted in a paragraph
+// by anyone who looked -- but nobody did, and "nobody filed it" reads exactly
+// like "somebody checked it" from the outside.
+//
+// One agent each, only when there are any, at effort high. This is cheap: the
+// population is the handful of notes that matched the deferral shape, not the
+// researchAccount.
+let deferredSettled = 0
+let deferredFailed = 0
+if (deferred.length) {
+  phase('Adjudicate')
+  log(deferred.length + ' deferred observation(s) to settle')
+  const rulings = await parallel(deferred.map((d, i) => () => agent(
+    [CONTEXT, '',
+     'Another researcher noticed this while reading a different part of the',
+     'change, judged it somebody else\'s unit, and handed it on rather than',
+     'filing it. Nobody owns it. You do.',
+     '',
+     'The observation, verbatim, from ' + d.from + ':',
+     '  ' + d.note,
+     '',
+     'Settle it. Go to the file and line it names and read what is actually',
+     'there, including whatever the surrounding code does immediately after.',
+     'A claim like this is usually killed by the very next statement, and the',
+     'point of this pass is that somebody checks rather than assuming.',
+     '',
+     'File it as a candidate if all four legs hold. If it does not hold, return',
+     'no candidates and say why in notFinished, naming the line that settles it',
+     '-- that sentence is what gets published in its place.',
+     '',
+     'Already found, do not re-report these:',
+     knownSoFar(),
+    ].join('\n'),
+    { label: 'adjudicate:' + (i + 1), phase: 'Adjudicate', effort: 'high',
+      schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
+  )))
+  rulings.forEach((r, i) => {
+    const got = harvest(r, 'deferred/' + (i + 1), { unit: 'deferred', foundBy: 'adjudication' }, 'deferred')
+    if (got < 0) { deferredFailed += 1; return }
+    // Settled either way: filed as a candidate, or explained in notFinished.
+    deferred[i].claimed = true
+    deferred[i].ruling = got > 0 ? 'filed' : 'did-not-hold'
+    deferredSettled += 1
+  })
+  log('adjudication: ' + deferredSettled + ' of ' + deferred.length + ' settled' +
+      (deferredFailed ? ', ' + deferredFailed + ' returned nothing usable' : ''))
+}
 
 const candidates = Array.from(byDefect.values())
 candidates.forEach((c, i) => { c.id = 'C' + (i + 1) })
@@ -499,10 +563,14 @@ const coverageBase = {
   units, excluded, unaccounted, mapperFallback: !gotPartition,
   unitCeiling: UNIT_CEILING, unitsAllowed: MAX_UNITS,
   cells: cells.length, failedCells, researchAccount,
-  // Observations deferred to another unit. `deferredUnclaimed` are the ones no
-  // gap pass turned into a candidate -- the report has to name them, because
-  // "nobody filed it" is not the same as "somebody checked it".
+  // Observations a researcher deferred to another unit. Each one got its own
+  // adjudicator, whose ruling is on the entry: 'filed' (it became a candidate)
+  // or 'did-not-hold' (why is in researchAccount under deferred/<n>).
+  // `deferredUnclaimed` is what is left -- an adjudicator that returned nothing
+  // usable -- and the report has to name those, because "nobody filed it" is
+  // not the same as "somebody checked it".
   deferred, deferredUnclaimed: deferred.filter((d) => !d.claimed),
+  deferredSettled, deferredFailed,
   seamPassApplicable: units.length > 1, seamRan, seamFailed, seamFresh,
   gapFresh: gapCount, gapFailed,
   candidatesProposed: proposed.length, candidatesDistinct: candidates.length,
@@ -513,7 +581,7 @@ if (!candidates.length) {
     findings: [], refuted: [], unverified: [],
     coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
                 marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [] },
-    next: 'Nothing was proposed. Write review.md per the REPORT SPEC as a no-findings report, with Coverage carrying the units, the exclusions and their reasons, and any unaccounted files.',
+    next: 'Nothing was proposed. Write review.md per the REPORT SPEC as a no-findings report, with Coverage carrying the units, the exclusions and their reasons, and any unaccounted files. If coverage.deferred is non-empty, say what each deferred observation was and how its adjudicator ruled -- a no-findings report that silently drops an observation somebody wrote down is the exact failure this stage exists to prevent.',
   }
 }
 
@@ -660,5 +728,5 @@ return {
     severityLowered: findings.filter((r) => r.severityLowered)
       .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityLowered })),
   },
-  next: 'Write review.md per the REPORT SPEC. Publish the severities and confidences as returned -- they are already settled by the count. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, and the counts. For anything that has to be named individually use the lists, not the tallies: the top-level `unverified` array holds the candidates no panel decided (coverage.candidatesUnverified is its count, plus any whose panel threw, which are a count with no record), and coverage.researchAccount entries with failed:true are the passes that came back unusable. Say whether the seam pass ran at all: coverage.seamFailed true means nobody looked across the unit boundaries, which is a limit on the review and must never be published as a clean cross-unit result. Any id in coverage.anchorDoubted is a finding two verifiers could not find at its cited line: re-anchor it from the code or drop it, and say which. A finding carrying `rescued` was rejected by a majority and then saved on re-look: give the real split from its vote record and keep its confidence low.',
+  next: 'Write review.md per the REPORT SPEC. Publish the severities and confidences as returned -- they are already settled by the count. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, and the counts. For anything that has to be named individually use the lists, not the tallies: the top-level `unverified` array holds the candidates no panel decided (coverage.candidatesUnverified is its count, plus any whose panel threw, which are a count with no record), and coverage.researchAccount entries with failed:true are the passes that came back unusable. Say whether the seam pass ran at all: coverage.seamFailed true means nobody looked across the unit boundaries, which is a limit on the review and must never be published as a clean cross-unit result. Any id in coverage.anchorDoubted is a finding two verifiers could not find at its cited line: re-anchor it from the code or drop it, and say which. A finding carrying `rescued` was rejected by a majority and then saved on re-look: give the real split from its vote record and keep its confidence low. coverage.deferred holds the observations a researcher noticed and handed on rather than filing; each was given its own adjudicator and carries a `ruling`. Report a `did-not-hold` ruling with the reason the adjudicator gave -- it is in coverage.researchAccount under the matching deferred/<n> tag -- rather than dropping it silently; a `filed` one is already among the candidates and needs no separate mention. Every entry in coverage.deferredUnclaimed is one whose adjudicator came back unusable, so nothing looked at it: name those under Not covered, quoted with their file and line.',
 }

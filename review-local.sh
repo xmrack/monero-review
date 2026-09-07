@@ -282,6 +282,8 @@ if [ -n "$DEEP" ]; then
   CELLS=$(num cells);      FAILED=$(num failedCells)
   CANDS=$(num candidates); CONF=$(num confirmed)
   REFUT=$(num refuted);    UNVER=$(num unverified)
+  # Optional, so an absent field stays empty and never reaches arithmetic.
+  DEFER=$(num deferred)
   # The stamp is written by the model. The execution log is the independent
   # record that the fleet it describes was ever dispatched.
   FLEET=no
@@ -310,9 +312,19 @@ if [ -n "$DEEP" ]; then
   elif [ "$CANDS" -gt 0 ] && [ "$(( UNVER * 2 ))" -gt "$CANDS" ]; then
     echo "!! no panel verdict on $UNVER of $CANDS candidates -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $UNVER of $CANDS candidates. An empty findings list means the panel went silent, not that the candidates died honestly."
+  elif [ "$CANDS" -eq 0 ] && [ "$(( FAILED * 4 ))" -gt "$CELLS" ]; then
+    # The no-findings case has no panel evidence behind it at all, so it rests
+    # entirely on how much of the diff was read. The majority test above is too
+    # lenient for the strongest claim this pipeline makes.
+    echo "!! nothing proposed and $FAILED of $CELLS cells failed -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — nothing was proposed, but $FAILED of $CELLS research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
   else
     echo "==> deep pass verified itself ($(( CELLS - FAILED )) of $CELLS cells, $(( CONF + REFUT )) of $CANDS candidates decided)"
     VERIFIED="verified by the deep pipeline's own panel, which decided $(( CONF + REFUT )) of $CANDS candidate(s) — $CONF confirmed, $REFUT refuted. Each faced three verifiers on separate angles; the votes were counted in code rather than argued in prose. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
+    # `if`, not `&&`: a false && chain here would be the block's exit status.
+    if [ -n "$DEFER" ] && [ "$DEFER" != "0" ]; then
+      VERIFIED="$VERIFIED $DEFER observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
+    fi
   fi
 elif [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
   echo "==> findings present, verifying"

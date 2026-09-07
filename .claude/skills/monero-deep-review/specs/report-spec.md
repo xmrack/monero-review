@@ -28,6 +28,10 @@ single-unit change) and what crossing a boundary turned up, and what the
 per-unit second look found that the first round missed. Both are worth stating
 even at zero -- a zero from the seam pass is evidence about the change, and its
 absence is a limit on the review.
+Then the deferrals: every observation a researcher handed on rather than filing,
+and how the adjudicator that was given it ruled. One that did not hold is
+reported with the reason it did not; one nobody could settle is named under
+Not covered with its file and line.
 Then the counts: candidates proposed, candidates left after merging duplicates,
 how many stood up, how many were one vote short and re-looked, and how many of
 those the advocate rescued. Anything a researcher said it could not finish
@@ -127,16 +131,16 @@ object -- never a number you reasoned your way to.
 | `refuted` | the returned `refuted` array's length |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
-| `deferred` | `coverage.deferredUnclaimed.length` |
+| `deferred` | `coverage.deferredUnclaimed.length` -- the UNSETTLED ones, not `coverage.deferred.length` |
 
 `cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
 `researchAccount` is an exception log, not a roster: a pass is recorded there
 only when it failed outright or came back `notFinished`, and its entries span
-cells, the seam pass and the gap pass alike, distinguished by `kind`. On a
-clean run it is **empty**. `coverage.cells` is the number of research cells
-dispatched and `coverage.failedCells` counts only the `kind: "cell"` failures
-among them, so those two are the pair that can honestly be divided into each
-other -- which is exactly what the harness does.
+cells, the seam pass, the gap pass and the deferral adjudicators alike,
+distinguished by `kind`. On a clean run it is **empty**. `coverage.cells` is
+the number of research cells dispatched and `coverage.failedCells` counts only
+the `kind: "cell"` failures among them, so those two are the pair that can
+honestly be divided into each other -- which is exactly what the harness does.
 
 `confirmed + refuted + unverified` must equal `candidates`. That is not a rule
 imposed on you -- every candidate ends in exactly one of those three buckets,

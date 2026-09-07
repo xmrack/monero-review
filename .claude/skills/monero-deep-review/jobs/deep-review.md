@@ -158,14 +158,22 @@ Coverage is not a formality. It must name:
   `coverage.researchAccount` with `failed: true` name them;
 - any candidate no panel decided: the `unverified` list names them, and
   `coverage.candidatesUnverified` counts them;
+- **the deferrals, all of them.** `coverage.deferred` holds every observation a
+  researcher noticed, judged somebody else's unit, and handed on instead of
+  filing. Each got an adjudicator of its own and carries a `ruling`: `filed`
+  means it became a candidate and is already accounted for among the findings or
+  the refutations, and needs no separate mention; `did-not-hold` means somebody
+  read the code and it did not survive — say what it was and give the reason the
+  adjudicator returned, which is in `coverage.researchAccount` under the
+  matching `deferred/<n>` tag. Do not drop a `did-not-hold` silently: an
+  observation somebody wrote down and somebody else disposed of is exactly the
+  kind of thing the next reviewer will otherwise propose again;
 - **every entry in `coverage.deferredUnclaimed`**, quoted with its file and
-  line. These are observations a researcher noticed, judged somebody else's
-  unit, and handed on — and that nobody then picked up. They were never
-  refuted, because nothing looked at them. Publishing them under *Not covered*
-  is the honest place; burying them is how a real one gets lost. On the first
-  CI deep run exactly this happened: a claim naming a file, a line, a mechanism
-  and an impact went into a researcher's account, reached no panel, and
-  appeared nowhere in the report;
+  line, under *Not covered*. These are the deferrals whose adjudicator came back
+  unusable, so nothing ever looked at them. They were not refuted; they were
+  missed. On the first CI deep run — before this stage existed — exactly that
+  happened to both deferrals the run produced: one named a file, a line, a
+  mechanism and an impact, reached no panel, and appeared nowhere in the report;
 - `coverage.mapperFallback` when the partition was unusable and the whole change
   was read as one unit — complete, but blunter;
 - `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the cap

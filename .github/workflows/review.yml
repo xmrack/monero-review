@@ -302,31 +302,17 @@ jobs:
   review:
     needs: select
     if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]'
-    # THE SINGLE BIGGEST LEVER ON A DEEP RUN, and it is one label.
+    # Deliberately unchanged for the deep pass. `ubuntu-latest` on a PUBLIC
+    # repo is already the 4-vCPU tier, and the workflow runtime caps
+    # concurrent agents at min(16, max(2, vCPUs - 2)) -- which is 2 at both 2
+    # and 4 vCPUs, so no label reachable from here raises it. The first size
+    # that would is an 8-vCPU larger runner (cap 6), and those are
+    # organization/enterprise-only; this repo is owned by a user account.
     #
-    # The workflow runtime caps concurrent agents at min(16, max(2, vCPUs-2)).
-    # `ubuntu-latest` on a public repo is the 4-vCPU tier, giving a cap of 2 --
-    # the same as 2 vCPUs, so no label reachable today changes anything.
-    #
-    # MEASURED on the first deep run: max concurrency was exactly 2, never 3;
-    # 84.7% of the wall clock had both slots busy and the research phase ran at
-    # 1.98/2 occupancy. The pipeline wastes almost nothing internally. The
-    # 3h13m IS the cap. An 8-vCPU runner takes the cap to 6 and should take a
-    # comparable diff to roughly an hour.
-    #
-    # What it needs: larger runners are organization/enterprise-only, and this
-    # repo is owned by a user account. Move it to an organization on Team (a
-    # MAGIC Grants org would do), then Org Settings -> Actions -> Runners ->
-    # New GitHub-hosted runner, 8 vCPU Linux x64, name it `ubuntu-8core`, and
-    # change ONE thing here:
-    #
-    #     runs-on: ${{ inputs.mode == 'deep' && 'ubuntu-8core' || 'ubuntu-latest' }}
-    #
-    # Larger runners are billed even on public repos (~$0.022/min at 8 vCPU),
-    # so a 1-hour deep run costs about $1.30 of runner time against ~$100 of
-    # model time. The sweep stays on `ubuntu-latest`, which is free.
-    #
-    # Until that move happens the deep pass buys wall clock instead, below.
+    # MEASURED on the first deep run: concurrency was exactly 2, never 3, with
+    # 84.7% of the wall clock two-slots-busy and the research phase at 1.98/2.
+    # The pipeline wastes almost nothing internally; the 3h13m IS this cap. So
+    # the deep pass buys wall clock instead of parallelism, below.
     runs-on: ubuntu-latest
     # Raised alongside --max-turns 200: a large diff that needs 200 turns needs
     # the wall clock to spend them in, or the turn limit is just swapped for a
@@ -1144,6 +1130,11 @@ jobs:
             conf=$(num confirmed)
             refut=$(num refuted)
             unver=$(num unverified)
+            # Optional: older stamps predate it, so an empty value is not
+            # an error and must not reach arithmetic. Reported, never gated
+            # on -- a deferral is a researcher doing the right thing, and the
+            # ones that matter (nobody settled them) are named in the report.
+            defer=$(num deferred)
 
             # The pipeline has two halves and BOTH can die independently. The
             # research half reads the diff; the verification half is what
@@ -1225,6 +1216,11 @@ jobs:
               fi
               if [ "$unver" != "0" ]; then
                 note="$note $unver candidate(s) got no verdict from any angle and are named in the report as undecided, not as clean."
+              fi
+              # `if`, not `&&`: a false && chain as the last statement of this
+              # block returns 1 and `set -e` takes the whole step down.
+              if [ -n "$defer" ] && [ "$defer" != "0" ]; then
+                note="$note $defer observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
               fi
             fi
 
