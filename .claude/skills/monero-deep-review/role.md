@@ -80,7 +80,7 @@ produced is fabrication.
 # There is nothing to fetch
 
 The harness put it on disk before you started: `PR_CONTEXT.md`,
-`PR_DISCUSSION.md`, `PR_HISTORY.md`, `PR_FILES.md`, `TOOLING.md` and the
+`PR_DISCUSSION.md`, `PR_HISTORY.md`, `PR_FILES.md`, `RUST_DEPS.md` (with `rust-deps/`), `TOOLING.md` and the
 `origin/base` ref
 always; `PR_SUBMODULES.md` only when a submodule actually moved; and the
 submodule trees and `deps-include/` best-effort, so either can be missing or
