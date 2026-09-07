@@ -120,28 +120,28 @@ place in the ordinary queue.
 
 **What it costs, measured once.** On the carrot_core change upstream — 50
 files and +11398 lines, at the wide end of what upstream produces — it took
-**3h13m and $99.79**, against $13.56 for a default Opus
-review of a normal diff. It split that into 8 units and 22 research cells,
+**3h13m and $99.79**. It split that into 8 units and 22 research cells,
 proposed 4 candidates, and refuted all 4 unanimously. The runtime caps
 concurrent agents at two on any runner this repo can reach, so the fan-out is
-paid for in wall clock. Budget hours and about seven times a normal review;
-one sample is not a distribution, so read the telemetry footer on each run.
+paid for in wall clock. Budget hours, and read the telemetry footer on each
+run rather than treating one sample as a distribution.
 
-**The standard tier is unmeasured, and it is now the queue's running cost.**
-By construction it is the same pipeline with the seam pass, the per-unit second
-look, the third verifier angle and the top effort tier removed, and with one
-researcher per unit instead of one per unit per weakness class — on 9559's
-partition that is 6 agents where deep dispatched 15, and on an ordinary
-few-file diff it is three or four. Its cost scales with the change, where the
-single reviewer it replaced was flat at $13.56 however wide the diff. On a
-typical PR that should land in the same neighbourhood; on a wide one it will
-cost more, which is the case the old shape was covering badly.
+**What the standard tier costs.** One measurement so far — the first fleet run
+on the queue, 13 files, **$6.62 and 16m41s**, 5 units and 5 research cells with
+none failed. Set against the single reviewer it replaced, whose published
+footers run **$1.10** (1 file), **$2.18** (2), **$3.27** (5), **$4.12** (7) and
+**$18.10** (147 files, +8436/-6419), a 13-file diff at $6.62 sits about where
+that curve would put it. Both scale with the size of the change.
 
-**That is arithmetic on one sample, not a measurement**, and it applies to
-every pull request upstream opens rather than to the handful a human escalates.
-Run `./review-local.sh <n>` on a few real PRs and read the telemetry footers
-before letting the sweep run unattended — the same advice the deep tier got,
-and the reason its figure above is real rather than estimated.
+Two caveats worth keeping. That is one run at one diff size, and it is now the
+cost of *every* pull request upstream opens rather than of the handful a human
+escalates — so watch the footers as more land. And the wall clock roughly
+doubled, 7m32s to 16m41s: still inside the 30-minute tick, with less slack if
+the queue is deep.
+
+The dollar figure in the footer is the whole run, agents included — it comes
+from the CLI's `total_cost_usd`, not from the token columns beside it, which
+show only the Lead's own conversation.
 
 ## Where things are
 
@@ -178,7 +178,7 @@ and the reason its figure above is real rather than estimated.
   schema and the vote counting, which are exactly the parts that must not
   drift between them. `.claude/agents/monero-context.md` is the context
   contract every one of those agents opens with, so they start where the
-  default review starts.
+  standard review starts.
 - `scripts/select_prs.py` — picks the next PR, skipping ones already reviewed.
 - `scripts/dispatch.sh` and `scripts/drip.sh` — run reviews unattended on a
   timer. `dispatch.sh` runs the review on GitHub and files results as issues;

@@ -34,7 +34,7 @@ changed-file list. Those results are what you report.
 
 Do not stand in for it. Do not dispatch researchers or verifiers yourself, do
 not total the answers in your head, and never write a verification claim it did
-not hand you. The entire value of this skill over the default review is that
+not hand you. The entire value of this skill over a single reviewer is that
 the claim is arithmetic rather than an assertion; a report that says two angles
 agreed when nothing counted them is worth less than no report, because it looks
 the same as one that did.

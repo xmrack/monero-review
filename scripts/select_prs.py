@@ -53,16 +53,38 @@ WORTHLESS = re.compile(
     re.IGNORECASE,
 )
 
-# How many queued PRs one tick will classify. Every tick now probes up to this
-# many rather than stopping once BATCH is filled, so this is the routine cost,
-# not an exceptional one: one file listing each, twice an hour, against a
-# 1000/hour authenticated budget.
+# How many queued PRs one tick will classify. Every tick probes up to this many
+# rather than stopping once BATCH is filled, so this is the routine cost, not
+# an exceptional one: one file listing each, twice an hour, against a 1000/hour
+# authenticated budget.
 #
-# It also bounds how far the counters can see. A queue deeper than this leaves
-# the tail unclassified, which the `unprobed` output reports rather than
-# hiding -- raise this if the backlog outgrows it and the footer starts
-# carrying a large unclassified count.
-MAX_PROBES = 20
+# It also bounds how far the counters can see, and THAT is what this number is
+# really for. A queue deeper than this leaves the tail unclassified, which the
+# `unprobed` output reports rather than hiding.
+#
+# RAISED 20 -> 40, on the condition the old comment named. Measured across four
+# consecutive runs as the queue crossed the cap:
+#
+#     run   queue  probed  ready  docs  unclassified
+#     478      20      20      8    12       0
+#     479      27      20     15     5       7
+#     480      30      20     18     2      10
+#
+# `ready` appearing to more than double is an artifact, not a backlog. The
+# queue is sorted most-recently-updated first, and doc-only PRs are stale by
+# nature -- nobody pushes to a README -- so they sort to the bottom and are the
+# first to fall past the cap. Run 480's own log shows it: the only two docs it
+# found were probed 19th and 20th. So the docs did not go anywhere, they moved
+# from `docs` into `unclassified`, and the footer read "18 in line" where the
+# comparable earlier number was 8.
+#
+# A counter whose two visible buckets stop summing to the queue is worse than
+# no counter: it is read as a backlog spike by whoever looks at it. 40 restores
+# a true census at the depth seen so far. It is a ceiling, not a target -- the
+# cost is one API call per queued PR per tick, so 40 twice an hour is 80 of a
+# 1000/hour budget. If `unclassified` starts appearing again, raise it again,
+# and keep the table above going.
+MAX_PROBES = 40
 
 # Failed attempts at the same head SHA before the queue moves on. 2 gives a
 # transient failure one retry without letting a reliably-failing PR block

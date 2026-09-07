@@ -61,12 +61,13 @@ What the deep path does differently, and why each matters here:
   requires, not on the refutation pass having run;
 - it labels the published issue `deep-review`. The title is left alone -- it
   is the dedup contract `select_prs.py` and `status.py` parse -- so the label
-  is the only thing that tells a deep review from a default one at a glance.
+  is the only thing that tells a deep review from a standard one at a glance.
 
-**Measured once**, on the carrot_core change upstream (50 files,
-+11398/-3): 3h13m wall, $99.79 at API rates, 8 units, 22 research cells, 4
-candidates, all four refuted unanimously. A default Opus review of a normal
-diff on this queue recorded $13.56, so budget roughly seven times that and
+**Measured once**, on the carrot_core change upstream (50 files, +11398/-3):
+3h13m wall, $99.79 at API rates, 8 units, 22 research cells, 4 candidates, all
+four refuted unanimously. The standard tier's one measurement is $6.62 on 13
+files, and the single reviewer that preceded it ran $1.10 to $18.10 depending
+on the width of the diff -- so budget an order of magnitude above either, and
 hours rather than minutes. 9559 is at the wide end of what upstream produces,
 and one sample is not a distribution -- read the telemetry footer on each run
 rather than treating this as the number.
