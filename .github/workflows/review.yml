@@ -777,6 +777,28 @@ jobs:
           rm -rf .claude
           cp -r .harness/.claude .claude
 
+      # Rust dependencies pinned by git revision, which nothing else here
+      # reaches. `external/` is submodules and the submodule fetch covers them;
+      # a Cargo git dependency is neither a submodule nor vendored, so
+      # monero-oxide -- the crate behind every FCMP++ change -- has always been
+      # simply absent from the checkout.
+      #
+      # That cost coverage twice in one review (issue #509): whether
+      # `hash_grow` returns None or PANICS on an out-of-range offset was left
+      # unsettled, and a panic across an `extern "C"` boundary aborts the
+      # process, so the difference is a remote-crash finding versus nothing.
+      # It returns None. A reviewer can now establish that instead of saying it
+      # could not.
+      #
+      # Non-fatal, like every other dependency fetch here: RUST_DEPS.md records
+      # what landed, what was refused and what failed, and the review reports a
+      # gap rather than having one silently. The URL comes from the pull
+      # request, so the script holds an owner allowlist -- see its docstring.
+      - name: Fetch pinned Rust dependencies
+        continue-on-error: true
+        timeout-minutes: 10
+        run: python3 .harness/scripts/fetch_rust_deps.py .
+
       # TOOLS, NOT REQUIREMENTS. Every install here is best-effort and the
       # whole step is non-fatal: a flaky apt mirror must never cost a review.
       # What actually landed is written to TOOLING.md so the reviewer reads
@@ -874,6 +896,15 @@ jobs:
             done
             echo
             echo
+            if [ -d rust-deps ]; then
+              echo "Rust dependencies pinned by git revision, fetched at their"
+              echo "pinned commits:"
+              echo "- rust-deps/       (see RUST_DEPS.md for the URL, the commit"
+              echo "                    and which crates come from each)"
+              echo "  Untracked, so git ls-files and git grep cannot see them:"
+              echo "  use rg or find under rust-deps/."
+              echo
+            fi
             if [ -d deps-include ]; then
               echo "System headers readable from inside the tree:"
               echo "- deps-include/   (a copy of /usr/include: boost, openssl,"

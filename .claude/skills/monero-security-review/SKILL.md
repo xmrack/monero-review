@@ -171,6 +171,26 @@ under `deps-include/`. `TOOLING.md` says whether the copy is present.
 `git ls-files | grep <name>` locates any tracked file in the tree and, unlike
 `find`, cannot wander off it.
 
+**Rust dependencies pinned by git revision are readable too, at
+`rust-deps/`.** Monero's FCMP++ work is half Rust, and that half depends on
+monero-oxide by git revision rather than by crates.io version — so it is
+neither a submodule nor vendored in the tree, and nothing used to fetch it.
+`RUST_DEPS.md` names each pinned source, its commit, and which crates come from
+it; the source itself is under `rust-deps/<repo>/` at exactly that commit.
+
+This is not a nicety. A published review left two claims unsettled for want of
+it — whether `hash_grow` returns `None` or *panics* on an out-of-range offset,
+where a panic across an `extern "C"` boundary aborts the process, and whether
+`SELENE_CHUNK_WIDTH`/`HELIOS_CHUNK_WIDTH` match the pinned crate's generator
+counts. Both are a few minutes of reading now. When a finding turns on what a
+pinned crate does, go and read it.
+
+Untracked, so `git ls-files` and `git grep` cannot see it — use `rg` or `find`
+under `rust-deps/`. A source `RUST_DEPS.md` reports as **NOT FETCHED** (its URL
+is not on the harness's allowlist) or **FETCH FAILED** was read by nobody: put
+that under `Not covered` rather than reasoning about what the crate probably
+does.
+
 **Vendored dependencies are readable, but `git ls-files` cannot see them.**
 `external/rapidjson`, `external/randomx`, `external/supercop` and
 `external/gtest` are git submodules that the harness fetches at the PR head's

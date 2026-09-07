@@ -56,6 +56,17 @@ against master returns the whole branch divergence instead of the change
   started. Lines beginning `#` are not paths. It is what the run's coverage
   arithmetic is checked against, so it is the authoritative list -- if your
   own `git diff --name-only` disagrees with it, say so rather than picking one.
+- `RUST_DEPS.md` and `rust-deps/` — the Rust dependencies this pull request
+  pins by git revision, fetched at exactly those commits. monero-oxide is the
+  one that matters: every FCMP++ change depends on it, it is NOT a submodule
+  and NOT vendored in the tree, and before this existed a review simply could
+  not read it. `RUST_DEPS.md` names each source, its pinned commit, and which
+  crates come from it. Untracked, like `external/` and `deps-include/`, so
+  `git ls-files` and `git grep` cannot see them -- use `rg` or `find` under
+  `rust-deps/`.
+  A source `RUST_DEPS.md` reports as NOT FETCHED or FETCH FAILED was not read
+  by anybody: say so under Not covered rather than reasoning about what the
+  crate probably does.
 - `TOOLING.md` — which optional analysers this run has, and whether
   `deps-include/` landed. Read it rather than probing for binaries. It does not
   say whether the symbol index was built; check that yourself, below.

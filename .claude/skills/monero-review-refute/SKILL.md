@@ -41,6 +41,14 @@ verdict is REFUTED; a finding has to earn CONFIRMED.
   consumer it names.
 - `PR_DISCUSSION.md` — the upstream review discussion and the CI results for
   this head commit, if present. See below.
+- **`rust-deps/` and `RUST_DEPS.md`** — the Rust crates this PR pins by git
+  revision, fetched at those commits. monero-oxide is the one that matters:
+  every FCMP++ change turns on it, and it is neither a submodule nor vendored,
+  so "the crate probably bounds that" used to be an UNRESOLVED you could not
+  escape. Now it is a file you can cite. Untracked, so use `rg`/`find`, not
+  `git grep`. A source reported NOT FETCHED or FETCH FAILED was read by
+  nobody — that stays UNRESOLVED, and never REFUTED on what a crate probably
+  does.
 - **`Agent(monero-explore)`** — a read-only sub-agent that answers one mapping
   question in its own context and hands back the answer: who calls this, which
   paths reach that line, is there a check one frame up. Reachability is most of

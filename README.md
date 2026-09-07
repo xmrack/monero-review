@@ -179,6 +179,12 @@ show only the Lead's own conversation.
   drift between them. `.claude/agents/monero-context.md` is the context
   contract every one of those agents opens with, so they start where the
   standard review starts.
+- `scripts/fetch_rust_deps.py` — puts the Rust crates a PR pins by git
+  revision on disk at those commits, so a review can read them. monero-oxide
+  is the one that matters: every FCMP++ change depends on it, and it is neither
+  a submodule nor vendored, so it used to be unreadable and cost real coverage.
+  The URL comes from the pull request, so the script holds an owner allowlist
+  and reports anything it refuses in `RUST_DEPS.md` rather than fetching it.
 - `scripts/select_prs.py` — picks the next PR, skipping ones already reviewed.
 - `scripts/dispatch.sh` and `scripts/drip.sh` — run reviews unattended on a
   timer. `dispatch.sh` runs the review on GitHub and files results as issues;

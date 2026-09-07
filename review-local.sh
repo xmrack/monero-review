@@ -212,6 +212,18 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
   echo "----- END AUTHOR-SUPPLIED TEXT -----"
 } > "$CACHE/PR_HISTORY.md"
 
+# Rust dependencies pinned by git revision -- monero-oxide and anything like
+# it. Nothing else here reaches them: external/ is submodules, and a Cargo git
+# dependency is neither a submodule nor vendored in the tree. Non-fatal;
+# RUST_DEPS.md records what landed, what was refused by the URL allowlist and
+# what failed, so a review reports a gap instead of having one silently.
+#
+# Before TOOLING.md is written, so TOOLING.md can say whether it landed. It
+# also clears any rust-deps/ a previous run left: this checkout is reused
+# across pull requests, and a stale pin read as this PR's would be a wrong
+# citation with nothing to reveal it.
+python3 "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
+
 # Which optional tools this machine has. Tools, not requirements: the skills
 # read this and fall back rather than assuming. Install what you want with
 #   sudo apt install universal-ctags cscope ripgrep bc shellcheck
@@ -235,6 +247,15 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
     mkdir -p "$CACHE/deps-include"
     cp -r /usr/include/. "$CACHE/deps-include/" 2>/dev/null || true
   fi
+  if [ -d "$CACHE/rust-deps" ]; then
+    echo
+    echo "Rust dependencies pinned by git revision, at their pinned commits:"
+    echo "- rust-deps/      (RUST_DEPS.md has the URL, the commit and which"
+    echo "                   crates come from each)"
+    echo "  Untracked, so git ls-files and git grep cannot see them:"
+    echo "  use rg or find under rust-deps/."
+    echo
+  fi
   if [ -d "$CACHE/deps-include" ]; then
     echo
     echo "System headers readable from inside the tree:"
@@ -249,7 +270,9 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 } > "$CACHE/TOOLING.md"
 
 # Symbol index for precise cross-reference. Skipped silently if ctags/cscope
-# are absent -- `sudo apt install universal-ctags cscope` to enable.
+# are absent -- `sudo apt install universal-ctags cscope` to enable. It walks
+# src/ and contrib/ only, so rust-deps/ below is not indexed and does not
+# slow it down.
 bash "$HERE/scripts/build_index.sh" "$CACHE"
 
 TOOLS="Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
