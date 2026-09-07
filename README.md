@@ -17,12 +17,26 @@ whatever arrived. Cost was flat in the size of the change and coverage was not.
 So `scripts/tier.py` now sizes each PR from the file listing the selector
 already fetches — no extra API call — and routes it:
 
-| tier | what runs | roughly |
-| --- | --- | --- |
-| **light** | one reviewer, Sonnet, 100 turns, then the adversary | ≤2 files, <100 lines, nothing near a trust boundary |
-| **standard** | one reviewer, Opus, 200 turns, then the adversary | the ordinary case |
-| **medium** | the diff is mapped into units, one researcher per unit, two verifier angles per candidate, counted in code | ≥10 files, ≥800 lines, or a trust boundary in ≥4 files |
-| **deep** | the same pipeline at full width: a researcher per unit *per weakness class*, a cross-unit seam pass, a second look at every unit, three verifier angles, and an advocate for anything one vote short | never automatic — a human asks for it |
+| tier | what runs | effort | roughly |
+| --- | --- | --- | --- |
+| **light** | one reviewer, 100 turns, then the adversary | `medium` | ≤2 files, <100 lines, nothing near a trust boundary |
+| **standard** | one reviewer, 200 turns, then the adversary | `high` | the ordinary case |
+| **medium** | the diff is mapped into units, one researcher per unit, two verifier angles per candidate, counted in code | `high` | ≥10 files, ≥800 lines, or a trust boundary in ≥4 files |
+| **deep** | the same pipeline at full width: a researcher per unit *per weakness class*, a cross-unit seam pass, a second look at every unit, three verifier angles, and an advocate for anything one vote short | unset | never automatic — a human asks for it |
+
+**Every tier reads with the same model.** What a cheaper tier buys is less
+thinking and fewer turns, not a smaller reader. This is consensus-critical
+financial software: a missed bug costs far more than any review, and a smaller
+model reads the same diff with less of everything. Effort is also where the
+money actually is — thinking tokens were 80% of the deep run's output bill — so
+it is a real lever and not a token gesture. It is a *smaller* lever than
+swapping models would be, and the saving on the light tier is correspondingly
+modest.
+
+`deep` passes no effort at all, on purpose. Its one real measurement was taken
+without the flag, the CLI does not document its default, and naming a level
+would be changing a measured pipeline blind. Set it only alongside a fresh
+measurement to compare against.
 
 Nothing routes to `light` if it touches `src/cryptonote_*`, `src/ringct`,
 `src/crypto`, `src/serialization`, `src/rpc`, `src/p2p`, `src/wallet`,
@@ -54,7 +68,8 @@ gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
 ```
 
 `-f mode=light|standard|medium|deep` pins a tier there. Everything but `deep`
-also accepts `-f pr=sweep`.
+also accepts `-f pr=sweep`. `-f model=` pins the model over the tier's choice;
+it is `auto` by default, which is the same model on all four tiers.
 
 ## Every review says what it read
 
@@ -86,6 +101,7 @@ Two outcomes, deliberately different:
   ```bash
   gh variable set COVERAGE_REQUIRED --body 1 --repo xmrack/monero-review
   ```
+
 
   From then on a silent report is withheld like a wrong one.
 
