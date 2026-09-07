@@ -38,7 +38,7 @@ you report.
 
 Do not stand in for it. Do not dispatch researchers or verifiers yourself, do
 not total the answers in your head, and never write a verification claim it did
-not hand you. The entire value of this skill over the default review is that
+not hand you. The entire value of this skill over the standard review is that
 the claim is arithmetic rather than an assertion; a report that says three
 angles agreed when nothing counted them is worth less than no report, because
 it looks the same as one that did.
@@ -90,7 +90,8 @@ read.
 
 # Shell shapes
 
-The same sandbox as the default review, whose skill holds the full account. The
+The same sandbox as every other review here, whose full account is in
+`.claude/skills/monero-security-review/SKILL.md`. The
 ones that cost a turn: no redirect to a file, no `for`/`while`/`if` block, no
 `$(...)`, nothing outside the tree, no `git -C` (`cd` instead), and `g++ -E` as
 the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command

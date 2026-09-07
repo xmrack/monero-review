@@ -124,7 +124,7 @@ object -- never a number you reasoned your way to.
 | field | from |
 | --- | --- |
 | `units` | `coverage.units.length` |
-| `profile` | the literal `deep`. Checked against the mode the harness dispatched -- the same stamp shape carries `profile=medium` for the cheaper tier, and a report claiming the wrong one is treated as not having happened |
+| `profile` | the literal `deep`. Checked against the mode the harness dispatched -- the same stamp shape carries `profile=standard` for the cheaper tier, and a report claiming the wrong one is treated as not having happened |
 | `cells` | `coverage.cells` |
 | `failedCells` | `coverage.failedCells` |
 | `angles` | the literal `3`. The medium profile runs two, and the harness reads this rather than assuming |

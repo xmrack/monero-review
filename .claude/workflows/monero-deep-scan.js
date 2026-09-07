@@ -1,28 +1,30 @@
 export const meta = {
   name: 'monero-deep-scan',
-  description: 'Monero PR review by agent fleet: split the diff into units, examine each for its weakness classes, then put every candidate to a panel of verifiers and count their answers in code. Two profiles -- `deep` and the cheaper `medium`.',
-  whenToUse: 'Started by the monero-deep-review skill (profile `deep`) or the monero-medium-review skill (profile `medium`), whose recipes resolve the range and compute the changed-file list first. args carry root, pr, changedFiles and optionally profile and maxUnits. Do not invoke directly: without those it has nothing to review and will say so.',
+  description: 'Monero PR review by agent fleet: split the diff into units, examine each for its weakness classes, then put every candidate to a panel of verifiers and count their answers in code. Two profiles -- `standard`, which every review on the queue gets, and the far wider `deep`.',
+  whenToUse: 'Started by the monero-standard-review skill (profile `standard`) or the monero-deep-review skill (profile `deep`), whose recipes resolve the range and compute the changed-file list first. args carry root, pr, changedFiles and optionally profile and maxUnits. Do not invoke directly: without those it has nothing to review and will say so.',
   phases: [
     { title: 'Map', detail: 'split the changed files into units; every changed file placed or excluded with a reason' },
-    { title: 'Research', detail: 'deep: one researcher per unit x weakness class, then the seams and a per-unit gap pass together. medium: one researcher per unit carrying all of its classes, and no second round' },
+    { title: 'Research', detail: 'deep: one researcher per unit x weakness class, then the seams and a per-unit gap pass together. standard: one researcher per unit carrying all of its classes, and no second round' },
     { title: 'Adjudicate', detail: 'observations a researcher deferred to another unit, settled by somebody' },
-    { title: 'Verify', detail: 'three angles per candidate at deep, two at medium, counted here rather than in a model' },
+    { title: 'Verify', detail: 'three angles per candidate at deep, two at standard, counted here rather than in a model' },
     { title: 'Re-look', detail: 'deep only: candidates one vote short get an advocate, so a wrong refutation is not final' },
   ],
 }
 
-// TWO PROFILES, ONE SCRIPT, deliberately. The medium tier is the deep shape
-// with the expensive parts removed, and the parts it keeps -- the mapper's
-// coverage arithmetic, the candidate schema, the vote counting, the stamp --
-// are exactly the parts that must not drift between them. A second file would
-// have been a 700-line copy of code whose whole value is that it is checked
-// rather than asserted, and this repository has already been bitten twice by
+// TWO PROFILES, ONE SCRIPT, deliberately. `standard` is the deep shape with
+// the expensive parts removed, and the parts it keeps -- the mapper's coverage
+// arithmetic, the candidate schema, the vote counting, the stamp -- are
+// exactly the parts that must not drift between them. A second file would have
+// been a 700-line copy of code whose whole value is that it is checked rather
+// than asserted, and this repository has already been bitten twice by
 // hand-synced copies (the verification gate against labels.py, and the four
-// copies of the tool allowlist). The differences are gathered in MEDIUM below
+// copies of the tool allowlist). The differences are gathered in BOUNDED below
 // and nowhere else.
 //
-// What `medium` drops, and the measurement behind each, all from the one deep
-// run on 9559 (50 files, +11398/-3, 3h13m, $99.79):
+// `standard` is what every review on the queue now gets, so its cost is the
+// queue's running cost and every agent it does not dispatch is money back on
+// every pull request upstream opens. What it drops, and the measurement behind
+// each, all from the one deep run on 9559 (50 files, +11398/-3, 3h13m, $99.79):
 //   - per-lens research cells become ONE researcher per unit carrying all of
 //     that unit's classes. 22 cells became 8. Round-1 cells were 59.8% of the
 //     fleet's cost.
@@ -46,7 +48,7 @@ const CATEGORIES = [
 ]
 const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']   // worst first
 const CONFIDENCES = ['high', 'medium', 'low']              // most confident first
-// The full panel. `medium` runs a subset -- see ANGLES, resolved once the
+// The full panel. `standard` runs a subset -- see ANGLES, resolved once the
 // profile is known.
 const ALL_ANGLES = ['REACHABILITY', 'IMPACT', 'INTRODUCED']
 
@@ -152,30 +154,30 @@ const a = (args && typeof args === 'object') ? args : {}
 const ROOT = a.root
 const PR = a.pr
 const CHANGED = Array.isArray(a.changedFiles) ? a.changedFiles.filter(Boolean) : []
-// Anything that is not exactly 'medium' is the deep profile. Defaulting the
+// Anything that is not exactly 'standard' is the deep profile. Defaulting the
 // unrecognised value to the HEAVIER shape is deliberate: a typo in a dispatch
 // should cost money, not coverage.
-const PROFILE = a.profile === 'medium' ? 'medium' : 'deep'
-const MEDIUM = PROFILE === 'medium'
+const PROFILE = a.profile === 'standard' ? 'standard' : 'deep'
+const BOUNDED = PROFILE === 'standard'
 // Scale to the change. A two-file diff does not need eight units and three
 // lenses each; the cap the recipe passes is a ceiling, not a target. Medium
 // carries a lower ceiling because its whole premise is a bounded fan-out.
-const UNIT_CEILING = a.maxUnits || (MEDIUM ? 5 : 8)
+const UNIT_CEILING = a.maxUnits || (BOUNDED ? 5 : 8)
 const MAX_UNITS = Math.max(1, Math.min(UNIT_CEILING, Math.ceil(CHANGED.length / 2)))
-// Two angles at medium, three at deep. REACHABILITY and INTRODUCED are the
+// Two angles at standard, three at deep. REACHABILITY and INTRODUCED are the
 // two kept, because they are where candidates on this queue actually die:
 // "nothing untrusted gets there" and "origin/base does this too" between them
 // account for most refutations. IMPACT mostly moves a severity, and losing it
 // costs a grade rather than a verdict -- with two angles nothing can reach
 // three agreeing votes, so capConfidence below never returns `high` at
-// medium, which is the honest outcome and not an accident to fix.
-const ANGLES = MEDIUM ? ['REACHABILITY', 'INTRODUCED'] : ALL_ANGLES
-// Researchers and verifiers run one tier down at medium. Not a guess: the
+// standard, which is the honest outcome and not an accident to fix.
+const ANGLES = BOUNDED ? ['REACHABILITY', 'INTRODUCED'] : ALL_ANGLES
+// Researchers and verifiers run one tier down at standard. Not a guess: the
 // deep run's own accounting put thinking tokens at 80% of the output bill,
 // and its `high`-effort second-look passes read whole units perfectly well.
 // Spread rather than an `effort: undefined` key, so the deep path passes no
 // effort at all and keeps each agent's own frontmatter default.
-const EFFORT = MEDIUM ? { effort: 'high' } : {}
+const EFFORT = BOUNDED ? { effort: 'high' } : {}
 
 if (!ROOT || !CHANGED.length) {
   log('no checkout root or no changed files were supplied; there is nothing to review')
@@ -186,7 +188,7 @@ if (!ROOT || !CHANGED.length) {
   }
 }
 
-// Every agent starts from the same place the default reviewer does. Inlined so
+// Every agent starts from the same place a single reviewer would. Inlined so
 // a dispatch carries it even if .claude/agents/monero-context.md drifts; that
 // file is the fuller version and the two must agree.
 const CONTEXT = [
@@ -220,7 +222,7 @@ const CONTEXT = [
   'run has), and',
   'deps-include/ (a copy of /usr/include, which is itself outside the sandbox).',
   '',
-  'Monero knowledge, shared with the default review:',
+  'Monero knowledge, shared with every review here:',
   '  .claude/references/monero/    how the codebase works. README.md indexes it.',
   '    macros.md   READ BEFORE TRUSTING A GREP -- most control flow and every',
   '                wire-facing serializer here is macro-generated and has no',
@@ -308,7 +310,7 @@ if (unaccounted.length) {
 
 // A cell is one dispatch. At deep that is one unit under one lens, which is
 // what makes each researcher's context small and its attention undivided. At
-// medium it is one unit under ALL of its lenses: the context is still one
+// standard it is one unit under ALL of its lenses: the context is still one
 // unit rather than the whole diff -- which is the main thing the single-pass
 // review cannot have -- but the fan-out is the number of units rather than
 // their product with the lens list. On 9559 that is 8 dispatches instead of
@@ -316,7 +318,7 @@ if (unaccounted.length) {
 const cells = []
 for (const u of units) {
   const lenses = (u.lenses && u.lenses.length ? u.lenses : ['memory-safety'])
-  if (MEDIUM) cells.push({ unit: u, lens: lenses.join(', '), lenses })
+  if (BOUNDED) cells.push({ unit: u, lens: lenses.join(', '), lenses })
   else for (const lens of lenses) cells.push({ unit: u, lens, lenses: [lens] })
 }
 log(PROFILE + ': ' + units.length + ' unit(s), ' + excluded.length + ' exclusion(s), ' +
@@ -329,15 +331,15 @@ phase('Research')
 
 const researched = await parallel(cells.map((cell) => () => agent(
   [CONTEXT, '',
-   MEDIUM
+   BOUNDED
      ? 'Examine ONE unit of this change for the weakness classes named below.'
      : 'Examine ONE unit of this change for ONE class of weakness.',
    '',
    'Unit: ' + cell.unit.name,
    'What it does: ' + cell.unit.role,
    'Trust boundary: ' + cell.unit.boundary,
-   (MEDIUM ? 'Weakness classes: ' : 'Weakness class: ') + cell.lens,
-   MEDIUM
+   (BOUNDED ? 'Weakness classes: ' : 'Weakness class: ') + cell.lens,
+   BOUNDED
      ? 'Take them one at a time and finish each before starting the next, so a\nclass late in the list is not read through the theory an earlier one gave\nyou. Nobody else is covering this unit: there is no second round here.'
      : '',
    '',
@@ -361,7 +363,7 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'Reachability is the load-bearing half of every candidate you propose; it is',
    'the thing worth delegating.',
   ].join('\n'),
-  { label: 'research:' + cell.unit.name + (MEDIUM ? '' : '/' + cell.lens),
+  { label: 'research:' + cell.unit.name + (BOUNDED ? '' : '/' + cell.lens),
     phase: 'Research', ...EFFORT,
     schema: CANDIDATES_SCHEMA, agentType: 'monero-researcher' },
 )))
@@ -539,16 +541,16 @@ const gapThunk = (u) => () => agent(
 // Dispatched as ONE batch so the single seam agent never holds a slot alone.
 // parallel() preserves input order, so the seam result is first when it ran.
 //
-// ROUND TWO IS DEEP ONLY. It is the whole of what medium gives up on the
+// ROUND TWO IS DEEP ONLY. It is the whole of what standard gives up on the
 // research side, and the numbers say why: on the one deep run these two
 // passes were 28.1% of the fleet's cost (gap 22.5%, seam 5.6%) and returned
 // one candidate between them, which the panel then refuted unanimously,
 // against three from the round-1 cells at 59.8%. That is a real part of the
 // deep review and it is the first thing a cheaper tier should stop paying
-// for. What medium loses with it is named in its report rather than
+// for. What standard loses with it is named in its report rather than
 // implied: no cross-unit trace, and no second look at a unit whose lens
 // assignment was made before anyone had read the code.
-const roundTwoRuns = !MEDIUM
+const roundTwoRuns = !BOUNDED
 const applicable = roundTwoRuns && units.length > 1
 const roundTwo = roundTwoRuns
   ? await parallel((applicable ? [seamThunk] : []).concat(units.map(gapThunk)))
@@ -578,7 +580,7 @@ if (roundTwoRuns) {
   log('gap pass: ' + gapCount + ' fresh candidate(s) the first round missed' +
       (gapFailed ? ', and ' + gapFailed + ' unit(s) whose second look returned nothing usable' : ''))
 } else {
-  log('medium profile: no seam pass and no per-unit second look — the report says so')
+  log('standard profile: no seam pass and no per-unit second look — the report says so')
 }
 
 // ADJUDICATE. Every observation a researcher noticed and handed on because it
@@ -651,7 +653,7 @@ const coverageBase = {
   deferred, deferredUnclaimed: deferred.filter((d) => !d.claimed),
   deferredSettled, deferredFailed,
   profile: PROFILE,
-  // False at medium because the profile has no seam pass at all, and false at
+  // False at standard because the profile has no seam pass at all, and false at
   // deep on a single-unit change because there are no seams. `profile` is what
   // tells those two apart, and the report has to say which it was.
   seamPassApplicable: applicable, seamRan, seamFailed, seamFresh,
@@ -665,7 +667,7 @@ if (!candidates.length) {
   return {
     findings: [], refuted: [], unverified: [],
     coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
-                reLookApplicable: !MEDIUM,
+                reLookApplicable: !BOUNDED,
                 marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [] },
     next: 'Nothing was proposed. Write review.md per the REPORT SPEC as a no-findings report, with Coverage carrying the units, the exclusions and their reasons, and any unaccounted files. If coverage.deferred is non-empty, say what each deferred observation was and how its adjudicator ruled -- a no-findings report that silently drops an observation somebody wrote down is the exact failure this stage exists to prevent.',
   }
@@ -724,8 +726,9 @@ const judged = await parallel(candidates.map((c) => () => parallel(
     outcome: cast.length < 2 ? 'unverified' : (agreeing.length >= 2 ? 'holds' : 'refuted'),
     rejecting: cast.filter((v) => v.holds === false).length,
     severity,
-    // `high` needs three agreeing angles, so a two-angle medium panel caps
-    // every surviving finding at `medium` however sure its proposer was.
+    // `high` needs three agreeing angles, so the standard profile's two-angle
+    // panel caps every surviving finding at `medium` however sure its proposer
+    // was.
     // That is the intended reading of a cheaper tier and not a bug to round
     // away: two angles agreeing is genuinely weaker evidence than three.
     confidence: capConfidence(c.confidence, agreeing.length >= 3 ? 'high' : 'medium'),
@@ -747,16 +750,16 @@ if (dropped) log(dropped + ' candidate(s) failed verification outright and are r
 // refutations are left alone -- three independent noes is a real answer.
 //
 // DEEP ONLY, and not merely by economy: the stage is defined on a two-to-one
-// split, and a two-angle panel cannot produce one. A 1-1 medium panel is a
+// split, and a two-angle panel cannot produce one. A 1-1 standard panel is a
 // tie rather than a majority rejection, so sending an advocate at it would be
-// asking somebody to overturn a single vote. Medium publishes the split as it
-// stands and says in its report that no advocate ran.
-if (!MEDIUM) phase('Re-look')
+// asking somebody to overturn a single vote. The standard profile publishes
+// the split as it stands and says in its report that no advocate ran.
+if (!BOUNDED) phase('Re-look')
 
 // A genuine two-to-one: all three answered, one held it, two rejected it. Not
 // merely "one agreed" -- that also matches a panel where the other two went
 // silent, and the advocate would then be sent to disprove rejections nobody cast.
-const marginal = MEDIUM ? [] : results.filter((r) => r.outcome === 'refuted' && r.cast === 3 &&
+const marginal = BOUNDED ? [] : results.filter((r) => r.outcome === 'refuted' && r.cast === 3 &&
                                        r.agreeing === 1 && r.rejecting === 2)
 if (marginal.length) log(marginal.length + ' candidate(s) were one vote short; re-looking at those')
 
@@ -815,7 +818,7 @@ return {
   coverage: {
     ...coverageBase,
     candidatesUnverified: unverified.length + dropped,
-    reLookApplicable: !MEDIUM,
+    reLookApplicable: !BOUNDED,
     marginalReLooked: marginal.length,
     rescuedOnReLook: promoted,
     anchorDoubted: results.filter((r) => r.anchorDoubted >= 2).map((r) => r.candidate.id),

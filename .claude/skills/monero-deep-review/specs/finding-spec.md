@@ -51,7 +51,7 @@ something.
 
 # Severity
 
-The same ladder the default review uses, so a deep review's labels mean what
+The same ladder every review here uses, so a deep review's labels mean what
 every other issue in this repository's labels mean:
 
 - **CRITICAL** — consensus split, remote code execution, or fund theft.

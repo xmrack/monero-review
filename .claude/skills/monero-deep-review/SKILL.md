@@ -10,13 +10,13 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Workflow, TaskOutput, Agent(monero
 **This skill never runs on its own.** `disable-model-invocation: true` keeps it
 out of automatic selection: it runs when a human types `/monero-deep-review`,
 or when a dispatch names it. The scheduled sweep keeps using
-`monero-security-review`, and nothing here changes that skill or the pipeline
+`monero-standard-review`, and nothing here changes that skill or the pipeline
 built around it.
 
 ## Running it on GitHub Actions
 
 `.github/workflows/review.yml` takes a `mode` input. `mode=deep` dispatches
-this skill instead of `monero-security-review`, and it must name a PR by
+this skill instead of `monero-standard-review`, and it must name a PR by
 number — the workflow refuses `mode=deep` with `pr=sweep`, because this is an
 escalation a human chooses for a diff that earned it, not something to point
 at whatever the queue surfaced.
@@ -73,25 +73,24 @@ rather than treating this as the number.
 
 ## What this is, and when it is worth it
 
-The default review is one reviewer reading a whole diff, then one adversary
-attacking whatever it found. That shape is right for the queue: most PRs are
-small, and it costs one review's worth of budget.
+The standard review already partitions the diff and counts its verifiers'
+votes -- it is this same pipeline, run under `profile: "standard"`. What it
+does not do is the expensive half: it sends one researcher per unit rather than
+one per unit per weakness class, looks at no seams, takes no second pass over
+any unit, and asks two verifier angles rather than three.
 
-This is the other shape. The diff is partitioned into components, a researcher
-is dispatched per component *and* per category lens, and every candidate
-finding is then put to three independent verifiers -- one per refutation lens
--- whose votes are counted by the workflow's own code rather than argued out
-in prose. It costs several times a normal review and takes proportionately
-longer.
+This is that half, put back. It costs several times the standard review and
+takes proportionately longer, and the things it adds are precisely the ones
+whose absence a standard report has to declare.
 
 Use it when the diff earns that: a large or wide change, a consensus or
 crypto-touching rewrite, a submodule bump with real code behind it, a PR whose
-default review came back thin against an obviously risky change, or a
+standard review came back thin against an obviously risky change, or a
 re-review where the first pass and a human disagreed.
 
 Do not reach for it as a retry when a run failed for harness reasons. A
 timeout, a rate limit or a refused tool call is a harness problem; re-run the
-default review instead.
+standard review instead.
 
 ## The job
 
@@ -103,7 +102,7 @@ There is one job. Read its recipe and follow it as written:
 
 - [FINDING SPEC — the shape of a candidate finding](${CLAUDE_SKILL_DIR}/specs/finding-spec.md)
 - [REPORT SPEC — the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
-- Shared Monero references, which the default review also uses and which this
+- Shared Monero references, which every skill here uses and which this
   skill deliberately does not duplicate:
   - `.claude/references/monero/` -- how the codebase works: `README.md` is the
     index, `macros.md` and `flows.md` are the two every agent should have read
