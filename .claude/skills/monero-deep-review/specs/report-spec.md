@@ -76,7 +76,7 @@ majority and the reader is entitled to know it.>
 - <What could not be settled and why: a tool this run lacked, a claim needing
   a running binary, a submodule whose source was absent.>
 
-<!-- deep-scan units=<n> cells=<n> failedCells=<n> candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
+<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
 
 # Rules
@@ -124,8 +124,10 @@ object -- never a number you reasoned your way to.
 | field | from |
 | --- | --- |
 | `units` | `coverage.units.length` |
+| `profile` | the literal `deep`. Checked against the mode the harness dispatched -- the same stamp shape carries `profile=medium` for the cheaper tier, and a report claiming the wrong one is treated as not having happened |
 | `cells` | `coverage.cells` |
 | `failedCells` | `coverage.failedCells` |
+| `angles` | the literal `3`. The medium profile runs two, and the harness reads this rather than assuming |
 | `candidates` | `coverage.candidatesDistinct` |
 | `confirmed` | the returned `findings` array's length |
 | `refuted` | the returned `refuted` array's length |

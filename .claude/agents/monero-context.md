@@ -51,6 +51,11 @@ against master returns the whole branch divergence instead of the change
   ref`. Read this file instead of rediscovering that. It is the way to settle
   "was a guard added and then dropped during a rebase". Written by the GitHub
   harness only; absent under `review-local.sh`.
+- `PR_FILES.md` — the changed-file list, one path per line, written by the
+  harness from `git diff --name-only origin/base...HEAD` before anything
+  started. Lines beginning `#` are not paths. It is what the run's coverage
+  arithmetic is checked against, so it is the authoritative list -- if your
+  own `git diff --name-only` disagrees with it, say so rather than picking one.
 - `TOOLING.md` — which optional analysers this run has, and whether
   `deps-include/` landed. Read it rather than probing for binaries. It does not
   say whether the symbol index was built; check that yourself, below.

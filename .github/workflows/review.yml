@@ -9,37 +9,68 @@ on:
         default: sweep
         type: string
       model:
-        description: "Model"
+        description: "Model. `auto` lets the tier pick: Sonnet for light, Opus for everything else."
         required: false
-        # MUST match DEFAULT_MODEL below. This default only applies to a
-        # workflow_dispatch that omits the input; a `schedule` run has no
-        # inputs at all and falls through to DEFAULT_MODEL instead. When the
-        # two disagreed (dropdown claude-opus-5, fallback claude-sonnet-5) the
-        # UI advertised a model no scheduled run ever used, and the telemetry
-        # in every issue was the only place the truth appeared.
-        default: claude-opus-5
+        # `auto`, and it has to be, because there is no longer ONE model a run
+        # uses -- the router picks per tier. A dropdown pinned to a real model
+        # would silently defeat that on every manual dispatch: the input is
+        # non-empty, so the router would see a pin and honour it, and a light
+        # PR dispatched by hand would quietly cost Opus money.
+        #
+        # This replaces an older rule that the dropdown default MUST equal
+        # DEFAULT_MODEL, written when the two disagreed and the UI advertised
+        # a model no scheduled run ever used. The rule behind it still holds --
+        # the dropdown must not lie about what a run will use -- and `auto` is
+        # now the only honest way to say it. DEFAULT_MODEL remains the answer
+        # for every tier that is not `light`.
+        #
+        # Sonnet is back in the list. It was dropped when Opus became the only
+        # model this queue ran; the light tier runs it deliberately now
+        # (measured $1.02 median, $0.13 on a trivial diff), so a human wanting
+        # to pin it should be able to.
+        default: auto
         type: choice
         options:
+          - auto
           - claude-opus-5
           - claude-fable-5-1
-      # Which review runs. `default` is the two-pass reviewer+adversary shape
-      # this file was built around; `deep` swaps pass 1 for the multi-agent
-      # /monero-deep-review pipeline and turns pass 2 off, because that
-      # pipeline verifies its own findings with a counted three-angle panel.
+          - claude-sonnet-5
+      # Which review runs.
       #
-      # Every gate below is written `inputs.mode == 'deep'`, never
-      # `!= 'default'`. A `schedule` tick carries no inputs at all (see the
-      # cron comment below), so `inputs.mode` is the empty string there and
-      # the sweep stays on the default shape without a second guard. That is
-      # the same property `inputs.pr || 'sweep'` and `inputs.model ||
-      # env.DEFAULT_MODEL` already rely on.
+      #   default   route by tier -- scripts/tier.py sizes the change and picks
+      #             light, standard or medium. This is what a `schedule` tick
+      #             gets, and what a dispatch that leaves the box alone gets.
+      #   light     Sonnet, fewer turns. For a small change nowhere near a
+      #             trust boundary.
+      #   standard  the two-pass reviewer+adversary shape this file was built
+      #             around, pinned regardless of size.
+      #   medium    the bounded agent fleet: mapped into units, one researcher
+      #             per unit, two verifier angles per candidate, counted in
+      #             code. Several times cheaper than deep, and it reads the
+      #             change in pieces rather than all at once.
+      #   deep      the full fleet. A human escalation for a diff that earned
+      #             it; requires a PR number, never 'sweep'.
+      #
+      # `default` used to name the two-pass shape rather than the router. A
+      # dispatch that wants that shape specifically now says `standard`; the
+      # old spelling still works and now means "pick for me", which is what
+      # almost everyone dispatching it actually wanted.
+      #
+      # Every gate below is written `== 'deep'` or reads the `route` step's
+      # outputs, never `!= 'default'`. A `schedule` tick carries no inputs at
+      # all (see the cron comment below), so `inputs.mode` is the empty string
+      # there and the router decides, which is the wanted default. That is the
+      # same property `inputs.pr || 'sweep'` already relies on.
       mode:
-        description: "Review depth. deep = the multi-agent pipeline; requires a PR number above, never 'sweep'."
+        description: "Review depth. default = choose by size and reach. deep requires a PR number above, never 'sweep'."
         required: false
         default: default
         type: choice
         options:
           - default
+          - light
+          - standard
+          - medium
           - deep
 
   # Twice an hour, off the top of the hour.
@@ -128,17 +159,37 @@ env:
   # rather than the thing that binds:
   #   .claude/skills/monero-security-review/SKILL.md  (frontmatter)
   #   .claude/skills/monero-review-refute/SKILL.md    (frontmatter)
-  #   .claude/skills/monero-deep-review/SKILL.md      (frontmatter, + DEEP)
-  #   review-local.sh                                 (TOOLS, + DEEP_TOOLS)
-  ALLOWED_TOOLS: >-
-    Read,Grep,Glob,Write,Edit,Skill,Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)
-
-  # What the deep pass gets ON TOP of the list above, and nothing else gets.
+  #   .claude/skills/monero-deep-review/SKILL.md      (frontmatter, + FLEET)
+  #   .claude/skills/monero-medium-review/SKILL.md    (frontmatter, + FLEET)
+  #   review-local.sh                                 (TOOLS, + FLEET_TOOLS)
+  # `Agent(monero-explore)` is granted to the single-reviewer passes as well as
+  # the fleet ones, and it is the one Agent grant that belongs here rather than
+  # in FLEET_EXTRA_TOOLS below. The distinction that matters is not "does this
+  # fan out" but "does this delegate a JUDGEMENT": monero-explore answers
+  # "who calls this, what reaches that line" and is told in its own definition
+  # to rate nothing and decide nothing. It carries Read, Glob, Grep and Bash,
+  # judged against this same list, so it reaches nothing its caller could not.
   #
-  # `Workflow` runs .claude/workflows/monero-deep-scan.js; the four `Agent`
-  # entries are the fleet that script dispatches. Pass 1's and pass 2's
-  # skills were never written to supervise agents, so granting these to them
-  # would let a single-reviewer skill fan out unsupervised -- keep them here.
+  # What it buys is context. The reviewer's window is the scarce resource on a
+  # wide diff -- every cscope dump and 200-line sed stays in it for the rest of
+  # the run, so the files read last are read worst. MEASURED on the deep run:
+  # re-reading accumulated context was 36% of that run's bill, and the same
+  # agent, granted to every researcher, was dispatched ZERO times in 1,492 tool
+  # calls. Both skills now tell their reader to reach for it by name.
+  ALLOWED_TOOLS: >-
+    Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)
+
+  # What the FLEET passes get on top of the list above, and nothing else gets.
+  # Both of them: `deep` and the cheaper `medium`, which runs the same
+  # .claude/workflows/monero-deep-scan.js under `profile: "medium"` and
+  # therefore needs exactly the same grants.
+  #
+  # `Workflow` runs that script; the four `Agent` entries are the fleet it
+  # dispatches. The default review's skill and the refutation skill were never
+  # written to supervise a fleet, so granting these to them would let a
+  # single-reviewer skill fan out unsupervised -- keep them here. (The one
+  # Agent grant they DO get, `Agent(monero-explore)`, is in ALLOWED_TOOLS
+  # above, with the reasoning for why that one is different.)
   #
   # Four separate `Agent(name)` entries rather than one `Agent(a, b, c, d)`.
   # Rules in this list union -- that is exactly how the 76 `Bash(...)` rules
@@ -159,8 +210,8 @@ env:
   #
   # The agents themselves declare a bare `Bash` in their own frontmatter, so
   # their shell calls are judged against the session allowlist -- which is
-  # why the deep pass gets ALLOWED_TOOLS in full and not the shorter list in
-  # the deep skill's frontmatter.
+  # why a fleet pass gets ALLOWED_TOOLS in full and not the shorter list in
+  # its skill's frontmatter.
   #
   # `TaskOutput` is not decoration, it is what makes the deep pass finish at
   # all. MEASURED on run 469: the Workflow tool ALWAYS backgrounds -- it
@@ -182,7 +233,7 @@ env:
   # established here, so it is left alone. If a future run shows the fleet
   # terminated while the Lead was still working, that variable is the first
   # thing to try.
-  DEEP_EXTRA_TOOLS: "Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+  FLEET_EXTRA_TOOLS: "Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
 
 # One review at a time, repo-wide. Rapid ticks collapse into a single pending
 # run rather than stacking, and no two runs can pick the same PR concurrently.
@@ -194,6 +245,15 @@ env:
 # is in flight lose the first one silently (observed: run 57, cancelled 7s in,
 # and PR 10819 went unreviewed as a result). Dispatch one PR at a time and wait,
 # or pass several to one dispatch and let the matrix carry them.
+#
+# The MEDIUM tier deliberately does NOT get its own group, though it is a
+# fleet pass and can run for an hour or more. It is a sweep tier -- the router
+# sends the queue there unattended -- so a medium run and a default run are the
+# same queue doing the same job, and putting them in separate groups would let
+# both pick the same pull request and review it twice. Losing a tick or two
+# while a medium review runs is the ordinary cost of a longer review, and it is
+# the cost this repo already pays for every run that outlasts the 30-minute
+# tick interval.
 #
 # A deep run gets its OWN group. It is a multi-hour, manually dispatched
 # escalation, and in the shared group it would discard every sweep tick that
@@ -258,6 +318,18 @@ jobs:
       docs: ${{ steps.pick.outputs.docs }}
       unprobed: ${{ steps.pick.outputs.unprobed }}
       open: ${{ steps.pick.outputs.open }}
+      # Which review the picked PR(s) get: light, standard or medium. Decided
+      # HERE rather than in the review job because `timeout-minutes` is a
+      # job-level key -- it is evaluated before any step runs, so it can read
+      # a `needs` output and cannot read a step output. A medium run needs
+      # hours where a light one should fail fast, and that is the difference
+      # this output exists to carry.
+      #
+      # scripts/tier.py holds the policy; select_prs.py feeds it the file
+      # listing it already fetched for the doc-only probe, so routing the
+      # sweep costs no extra API call. The by-number path below has no
+      # selector run behind it, so it probes the one PR itself.
+      tier: ${{ steps.pick.outputs.tier }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -283,6 +355,13 @@ jobs:
           fi
           if [[ "$WANT" =~ ^[0-9]+$ ]]; then
             echo "prs=[\"$WANT\"]" >> "$GITHUB_OUTPUT"
+            # One API call, so a dispatch by number is routed like a swept one
+            # rather than always getting the middle tier by accident. Non-fatal
+            # and it fails toward `standard` on its own: a run that cannot
+            # reach the API must not be downgraded to the cheap review because
+            # of it. `mode` still overrides whatever comes out.
+            python3 scripts/tier.py --pr "$WANT" >> "$GITHUB_OUTPUT" || \
+              echo "tier=standard" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Kill switch: `gh variable set REVIEW_PAUSED --body 1` stops sweeps.
@@ -335,7 +414,22 @@ jobs:
     # not a distribution: a diff materially wider than 9559 could still run
     # out, and the failure mode is a cancellation, so nothing is published and
     # nothing is charged to the PR.
-    timeout-minutes: ${{ inputs.mode == 'deep' && 350 || 120 }}
+    #
+    # THREE VALUES NOW, because the tier decides how long a run can honestly
+    # need. The medium fleet is roughly a third of deep's agents at the same
+    # concurrency of 2, so a five-unit change is around eight waves rather
+    # than twenty -- call it an hour, and 240 leaves real headroom without
+    # approaching the 6-hour job kill. light and standard keep the tight 120:
+    # they finish in 4-24 minutes and a hung one should fail fast.
+    #
+    # `inputs.mode` is checked BESIDE the router's answer, not instead of it.
+    # A human pinning `-f mode=medium` on a PR the router called `standard`
+    # still needs the longer clock, and reading only `needs.select.outputs.tier`
+    # would give them 120 minutes and a cancellation two thirds of the way in.
+    timeout-minutes: >-
+      ${{ (inputs.mode == 'deep' && 350)
+       || ((inputs.mode == 'medium' || needs.select.outputs.tier == 'medium') && 240)
+       || 120 }}
     permissions:
       contents: read
       issues: write
@@ -804,6 +898,96 @@ jobs:
         continue-on-error: true
         run: bash .harness/scripts/build_index.sh .
 
+      # WHICH REVIEW THIS RUN IS, resolved once, in one place. Every step
+      # below reads these outputs rather than re-deriving the decision from
+      # `inputs.mode` -- that expression was already repeated in five places
+      # when there were two shapes, and there are four now.
+      #
+      # Precedence: an explicit `mode` pins the tier; otherwise the router's
+      # answer from the select job; otherwise `standard`, which is where every
+      # unknown falls. Note the direction of that fallback -- an unrecognised
+      # or missing tier gets the shape this queue has always used, never the
+      # cheap one. Being wrong toward more review costs money; being wrong
+      # toward less costs coverage, and coverage here is permanent, because
+      # the issue a run files is the record that retires the pull request.
+      - name: Route this review
+        id: route
+        env:
+          MODE: ${{ inputs.mode || 'default' }}
+          ROUTED: ${{ needs.select.outputs.tier }}
+          WANT_MODEL: ${{ inputs.model }}
+        run: |
+          set -euo pipefail
+          case "$MODE" in
+            deep|light|standard|medium) tier="$MODE" ;;
+            *)                          tier="${ROUTED:-standard}" ;;
+          esac
+          case "$tier" in
+            light|standard|medium|deep) ;;
+            *) echo "unrecognised tier '$tier'; using standard"; tier=standard ;;
+          esac
+
+          # Turns are not billed; tokens are, so headroom is free and running
+          # out is not. The fleet tiers get more because the Lead spends turns
+          # blocking on TaskOutput while the fleet works -- whether a
+          # subagent's turns are charged to the parent's budget is not settled
+          # here, and 300/400 is insurance against the answer being yes.
+          case "$tier" in
+            light)
+              model=claude-sonnet-5; turns=100; fleet=false; refute=true
+              prompt=/monero-security-review; label= ;;
+            standard)
+              model="$DEFAULT_MODEL"; turns=200; fleet=false; refute=true
+              prompt=/monero-security-review; label= ;;
+            medium)
+              model="$DEFAULT_MODEL"; turns=300; fleet=true; refute=false
+              prompt=/monero-medium-review; label=medium-review ;;
+            deep)
+              model="$DEFAULT_MODEL"; turns=400; fleet=true; refute=false
+              prompt=/monero-deep-review; label=deep-review ;;
+          esac
+
+          # An explicit model overrides the tier's pick. `auto` is the
+          # dropdown's default and means "do not override"; a `schedule` tick
+          # sends no inputs at all, so this is empty there.
+          if [ -n "${WANT_MODEL:-}" ] && [ "$WANT_MODEL" != "auto" ]; then
+            echo "model pinned to $WANT_MODEL by the dispatch, over the tier's $model"
+            model="$WANT_MODEL"
+          fi
+
+          {
+            echo "tier=$tier"
+            echo "model=$model"
+            echo "turns=$turns"
+            echo "prompt=$prompt"
+            echo "fleet=$fleet"
+            echo "refute=$refute"
+            echo "label=$label"
+          } >> "$GITHUB_OUTPUT"
+          echo "::notice::tier=$tier model=$model turns=$turns prompt=$prompt"
+
+      # The changed-file list, on disk before the review starts. Two readers:
+      # the reviewer, whose `## Coverage` section has to account for every path
+      # in it, and scripts/coverage.py, which checks that it did before
+      # anything is published. Precomputing it means the reviewer copies a
+      # total rather than deriving one, so the gate is about whether every file
+      # was accounted for and not about arithmetic.
+      #
+      # Three dots. `origin/base..HEAD` would give the branch divergence
+      # instead of the change -- measured at 353 files for a two-file backport.
+      - name: Pre-compute the changed-file list
+        run: |
+          set -euo pipefail
+          {
+            echo "# Files changed by this pull request, from"
+            echo "# git diff --name-only origin/base...HEAD"
+            echo "# Lines starting with # are not paths."
+            git diff --name-only origin/base...HEAD
+          } > PR_FILES.md
+          # `|| true`: grep -c exits 1 on a zero count, which `set -e` would
+          # take as a step failure on an empty diff.
+          echo "$(grep -cve '^#' -e '^$' PR_FILES.md || true) changed file(s)"
+
       - run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
       # No GitHub tools, no network: Claude reads the diff and writes review.md.
@@ -842,11 +1026,15 @@ jobs:
           # budget. Anthropic's own remote runner sets it; claude-code-action
           # does not.
           #
-          # Deep only, deliberately. A deep run is hours of work by dozens of
+          # Deep only, deliberately -- and that now excludes `medium`, which
+          # is a fleet pass too. A deep run is hours of work by dozens of
           # agents and losing it to a limit reset ten minutes away is pure
           # waste. A scheduled sweep is the opposite: it should fail fast and
           # let the next tick retry, and a sweep sleeping for hours would
-          # hold a runner and the concurrency group for nothing.
+          # hold a runner and the concurrency group for nothing. Medium is a
+          # sweep tier -- the router sends the queue there unattended -- so it
+          # follows the sweep's rule, not deep's, however much it looks like
+          # deep in every other respect.
           #
           # UNMEASURED HERE, and it is an internal variable rather than a
           # documented interface. Two things to watch on the first deep run
@@ -858,18 +1046,14 @@ jobs:
           CLAUDE_CODE_RETRY_WATCHDOG: ${{ inputs.mode == 'deep' && '1' || '' }}
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          prompt: ${{ inputs.mode == 'deep' && '/monero-deep-review' || '/monero-security-review' }}
-          # Turns: 200 for the default pass, as before. 400 for deep, and the
-          # extra 200 is insurance against an unresolved question rather than
-          # a measured need -- the Lead itself does very little (fix the
-          # range, list the files, call Workflow, write the report), but
-          # whether a subagent's turns are charged to the parent's budget is
-          # not settled here. If they are, 200 would die mid-fleet. Turns are
-          # not billed; tokens are, so the headroom costs nothing.
+          prompt: ${{ steps.route.outputs.prompt }}
+          # Model, turns and prompt all come from the `route` step, which is
+          # the one place the tier is decided. See the reasoning there for
+          # why each tier gets the turn budget it does.
           claude_args: |
-            --model ${{ inputs.model || env.DEFAULT_MODEL }}
-            --max-turns ${{ inputs.mode == 'deep' && 400 || 200 }}
-            --allowedTools "${{ env.ALLOWED_TOOLS }}${{ inputs.mode == 'deep' && format(',{0}', env.DEEP_EXTRA_TOOLS) || '' }}"
+            --model ${{ steps.route.outputs.model }}
+            --max-turns ${{ steps.route.outputs.turns }}
+            --allowedTools "${{ env.ALLOWED_TOOLS }}${{ steps.route.outputs.fleet == 'true' && format(',{0}', env.FLEET_EXTRA_TOOLS) || '' }}"
 
       # NB: env.ALLOWED_TOOLS is the list that BINDS, and it is now the single
       # copy in this file -- both passes reference it. The `allowed-tools:`
@@ -878,9 +1062,13 @@ jobs:
       # same drift that let the verification gate and labels.py disagree;
       # change them together, and see the ALLOWED_TOOLS comment for the list.
       #
-      # Only the deep pass gets DEEP_EXTRA_TOOLS appended. Do not widen that
-      # to the refutation pass below: its skill dispatches no agents, and a
-      # grant it cannot use is a grant nobody is checking.
+      # Only a FLEET pass -- deep or medium -- gets FLEET_EXTRA_TOOLS appended,
+      # and `steps.route.outputs.fleet` is the single place that is decided.
+      # Do not widen it to the refutation pass below: its skill dispatches no
+      # fleet, and a grant it cannot use is a grant nobody is checking. (It
+      # does get `Agent(monero-explore)`, which is in ALLOWED_TOOLS and
+      # therefore in every pass; the comment there says why that one is not
+      # the same kind of grant.)
 
       # claude-code-action writes both passes' logs to the SAME path
       # (/home/runner/work/_temp/claude-execution-output.json), so the
@@ -937,7 +1125,8 @@ jobs:
       - name: Anything to verify?
         id: triage
         env:
-          MODE: ${{ inputs.mode || 'default' }}
+          REFUTE_APPLIES: ${{ steps.route.outputs.refute }}
+          TIER: ${{ steps.route.outputs.tier }}
         run: |
           # Ask labels.py, the one place that knows what a severity heading
           # looks like. This gate used to carry its own regex and the two
@@ -958,15 +1147,15 @@ jobs:
           # harness checkout is broken, which means the review ran without its
           # skill. Fail the job loudly rather than quietly skip verification.
           sevs=$(python3 .harness/scripts/labels.py review.md)
-          if [ "${MODE:-default}" = "deep" ]; then
-            # The deep pipeline already put every candidate to three
-            # independent verifiers and counted the votes in JavaScript. A
-            # second single-model adversary would be paid for twice and would
-            # rewrite a report written to a different spec -- the refutation
-            # skill rewrites review.md in place keeping only the header block
-            # and Checked-and-clear, which drops `## Coverage`, the thing the
-            # deep pipeline exists to produce.
-            echo "deep mode: verification is the pipeline's own counted panel"
+          if [ "${REFUTE_APPLIES:-true}" != "true" ]; then
+            # A fleet pass already put every candidate to a panel of
+            # independent verifiers and counted the votes in JavaScript --
+            # three angles at deep, two at medium. A second single-model
+            # adversary would be paid for twice and would rewrite a report
+            # written to a different spec: the refutation skill rewrites
+            # review.md in place, and `## Coverage` is precisely the thing
+            # these pipelines exist to produce.
+            echo "$TIER: verification is the pipeline's own counted panel"
           elif [ -s review.md ] && [ -n "$sevs" ]; then
             echo "verify=true" >> "$GITHUB_OUTPUT"
             echo "first pass produced findings, running verification"
@@ -985,20 +1174,32 @@ jobs:
       # files no issue, and the elapsed time counts a real attempt -- so
       # MAX_ATTEMPTS of them retire the PR from the queue for good.
       #
-      # Never in deep mode. The gate is written here, on the step it
-      # controls, rather than relying on `triage` alone declining to set
-      # `verify` -- because if this step ever did fire on a deep report the
-      # damage is silent: the refutation skill rewrites review.md in place
-      # keeping only the header block and Checked-and-clear, which throws away
-      # `## Coverage`, the deliverable the deep pipeline exists to produce.
+      # Never on a FLEET tier -- deep or medium. The gate is written here, on
+      # the step it controls, rather than relying on `triage` alone declining
+      # to set `verify` -- because if this step ever did fire on a fleet
+      # report the damage is silent: the refutation skill rewrites review.md
+      # in place, and it would throw away `## Coverage`, the deliverable those
+      # pipelines exist to produce.
+      #
+      # It DOES fire on light and standard, whose reports now carry a
+      # `## Coverage` section and a stamp of their own. The refutation skill
+      # is told to carry both through verbatim; `Coverage` below re-checks the
+      # stamp AFTER this pass has run, so a rewrite that drops it is caught
+      # rather than published.
       - id: refute
-        if: steps.triage.outputs.verify == 'true' && inputs.mode != 'deep'
+        if: steps.triage.outputs.verify == 'true' && steps.route.outputs.refute == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: "/monero-review-refute"
+          # The SAME model the review pass ran on, from the router -- not
+          # `inputs.model`, which is now `auto` by default and is not a model
+          # name. Matching the two also keeps the adversary at least as
+          # capable as the reviewer it is attacking, which is the point of the
+          # pass: a light review on Sonnet is refuted on Sonnet, and a
+          # standard one on Opus is refuted on Opus.
           claude_args: |
-            --model ${{ inputs.model || env.DEFAULT_MODEL }}
+            --model ${{ steps.route.outputs.model }}
             --max-turns 200
             --allowedTools "${{ env.ALLOWED_TOOLS }}"
 
@@ -1013,7 +1214,7 @@ jobs:
         if: always()
         env:
           EXEC_FILE: ${{ env.PASS1_EXEC }},${{ steps.refute.outputs.execution_file }}
-          MODEL: ${{ inputs.model || env.DEFAULT_MODEL }}
+          MODEL: ${{ steps.route.outputs.model }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # always() means this runs even if the harness checkout never happened
@@ -1080,11 +1281,52 @@ jobs:
       # do this job here: the deep report writes that exact string itself, so
       # in deep mode it would pass vacuously and credit a refutation pass that
       # never ran.
+      # Did the review account for every file the pull request changed?
+      #
+      # The fleet tiers settle this in JavaScript -- the mapper's placement is
+      # compared against the real changed-file list and whatever it left out is
+      # published as unaccounted. The single-reviewer tiers had no equivalent,
+      # and the hole is not cosmetic: a review that opened five of forty files
+      # and wrote "No findings." publishes exactly like a thorough one, and the
+      # issue it files IS the dedup record, so that pull request is never
+      # looked at again. A coverage hole there is permanent.
+      #
+      # AFTER the refutation pass, deliberately. That pass rewrites review.md
+      # wholesale and is told to carry `## Coverage` and the stamp through
+      # verbatim; checking here is what makes that an instruction with a
+      # consequence rather than a hope.
+      - name: Coverage
+        id: coverage
+        if: always()
+        env:
+          FLEET: ${{ steps.route.outputs.fleet }}
+        run: |
+          set -euo pipefail
+          # The fleet tiers carry their own, richer accounting and their own
+          # gate below. Nothing to do here.
+          if [ "${FLEET:-false}" = "true" ]; then
+            echo "state=skipped" >> "$GITHUB_OUTPUT"
+            echo "fleet tier: coverage is checked from the pipeline's stamp"
+            exit 0
+          fi
+          [ -s review.md ] || { echo "state=skipped" >> "$GITHUB_OUTPUT"; exit 0; }
+          # No `|| true`: if coverage.py is missing or broken the harness
+          # checkout is broken, and a broken checkout means the review ran
+          # without its skill. Fail loudly rather than quietly wave it through.
+          python3 .harness/scripts/coverage.py review.md PR_FILES.md >> "$GITHUB_OUTPUT"
+
       - name: Verification status
         id: verified
         if: always()
         env:
-          MODE: ${{ inputs.mode || 'default' }}
+          TIER: ${{ steps.route.outputs.tier }}
+          FLEET: ${{ steps.route.outputs.fleet }}
+          COVERAGE_STATE: ${{ steps.coverage.outputs.state }}
+          COVERAGE_NOTE: ${{ steps.coverage.outputs.note }}
+          # Whether a report that says NOTHING about its coverage is publishable.
+          # See the case below. Turn it on once stamps are appearing reliably:
+          #   gh variable set COVERAGE_REQUIRED --body 1 --repo <this repo>
+          COVERAGE_REQUIRED: ${{ vars.COVERAGE_REQUIRED }}
           VERIFY_OUTCOME: ${{ steps.refute.outcome }}
           # The review pass's own execution log, snapshotted above. Deep mode
           # reads it as independent evidence that the agent fleet ran.
@@ -1110,7 +1352,7 @@ jobs:
             sevs=unknown
           fi
 
-          if [ "${MODE:-default}" = "deep" ]; then
+          if [ "${FLEET:-false}" = "true" ]; then
             # Last stamp in the file wins, so a re-run's report cannot be
             # judged on an earlier one's numbers.
             stamp=$(grep -o '<!-- deep-scan [^>]*-->' review.md | tail -1 || true)
@@ -1135,6 +1377,19 @@ jobs:
             # on -- a deferral is a researcher doing the right thing, and the
             # ones that matter (nobody settled them) are named in the report.
             defer=$(num deferred)
+            # How many verifier angles the pipeline actually ran: 3 at deep,
+            # 2 at medium. Read rather than assumed, so the note below cannot
+            # tell a reader a medium finding faced three verifiers. Older
+            # stamps predate the field; 3 is the right default for them,
+            # because medium did not exist when they were written.
+            angles=$(num angles)
+            angles=${angles:-3}
+            # Which pipeline the report says it was. A `medium` dispatch whose
+            # Lead passed profile "deep" to the workflow would spend hours and
+            # several times the budget this tier was routed for, and the only
+            # trace would be the runtime. Older stamps carry no profile, and
+            # an absent one is not an error -- a disagreeing one is.
+            prof=$(printf '%s' "$stamp" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
 
             # The pipeline has two halves and BOTH can die independently. The
             # research half reads the diff; the verification half is what
@@ -1165,7 +1420,10 @@ jobs:
             if [ -z "$stamp" ] || [ -z "$cells" ] || [ -z "$failed" ] || \
                [ -z "$cands" ] || [ -z "$conf" ] || [ -z "$refut" ] || [ -z "$unver" ]; then
               state=unverified
-              note="**NOT VERIFIED** — the deep pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
+              note="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
+            elif [ -n "$prof" ] && [ "$prof" != "$TIER" ]; then
+              state=unverified
+              note="**NOT VERIFIED** — this run was dispatched as \`$TIER\` but the report's coverage stamp says the \`$prof\` pipeline produced it. One of the two is wrong, and neither reading is safe to publish: the numbers describe a run nobody asked for."
             elif [ "$fleet" != "yes" ]; then
               state=unverified
               note="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched. The numbers are not evidence of anything."
@@ -1179,7 +1437,7 @@ jobs:
               note="**NOT VERIFIED** — the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
             elif [ "$cells" -eq 0 ]; then
               state=unverified
-              note="**NOT VERIFIED** — the deep pass dispatched no research cells at all, so nothing was examined."
+              note="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
             elif [ "$(( failed * 2 ))" -gt "$cells" ]; then
               state=unverified
               note="**NOT VERIFIED** — $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
@@ -1198,18 +1456,18 @@ jobs:
               state=unverified
               note="**NOT VERIFIED** — nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
             else
-              state=deep
+              state=fleet
               covered="$(( cells - failed )) of $cells research cells reported"
               # Report what the stamp says, attributed, rather than asserting
               # the panel's behaviour as something this step established. It
               # can see the numbers the report carries; it did not watch the
               # verifiers work.
               if [ "$cands" -eq 0 ]; then
-                note="the deep pipeline ran ($covered) and proposed no candidates, so no panel was needed. Coverage and Checked-and-clear below are what this result rests on."
+                note="the $TIER pipeline ran ($covered) and proposed no candidates, so no panel was needed. Coverage and Checked-and-clear below are what this result rests on."
               elif [ -z "$sevs" ]; then
-                note="the deep pipeline ran ($covered). Its panel decided $(( conf + refut )) of $cands candidate(s) and confirmed none: the report records $refut refuted. Each candidate is put to three verifiers on separate angles and the votes are counted in code rather than argued in prose."
+                note="the $TIER pipeline ran ($covered). Its panel decided $(( conf + refut )) of $cands candidate(s) and confirmed none: the report records $refut refuted. Each candidate is put to $angles verifiers on separate angles and the votes are counted in code rather than argued in prose."
               else
-                note="verified by the deep pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s) — $conf confirmed, $refut refuted. Each faced three verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered and confidence capped by the count. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
+                note="verified by the $TIER pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s) — $conf confirmed, $refut refuted. Each faced $angles verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered and confidence capped by the count. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
               fi
               if [ "$failed" != "0" ]; then
                 note="$note $failed cell(s) failed rather than reporting; the report names them."
@@ -1258,8 +1516,54 @@ jobs:
             note="**NOT VERIFIED** — the adversarial pass did not complete (\`$why\`). Expect false positives."
           fi
 
+          # COVERAGE IS A SECOND, INDEPENDENT GATE, and it binds hardest on the
+          # `none` branch above -- a no-findings report is the strongest claim
+          # this pass makes and the one a reader is least able to check, and it
+          # is also the one that files the issue retiring the pull request from
+          # the queue forever. A review that cannot say which files it read is
+          # not evidence about the code, whatever its adversarial pass did.
+          #
+          # `skipped` is a fleet tier or an empty report, both handled
+          # elsewhere. `unchecked` means the harness wrote no changed-file
+          # list, which is the harness's fault and not the review's: it is
+          # reported in the footer and does not withhold the issue.
+          case "${COVERAGE_STATE:-skipped}" in
+            skipped) ;;
+            ok|unchecked) note="$note ${COVERAGE_NOTE:-}" ;;
+            missing)
+              # A report with no stamp at all is a NEW instruction not yet
+              # obeyed, which is a different thing from a report whose account
+              # of itself is wrong. Withholding on it from day one would stall
+              # the whole queue on the reviewer's compliance with a section
+              # that did not exist last week -- and this repo has watched
+              # exactly that happen before: the `**Verification:**` note and
+              # the `## Refuted` heading were both mandatory for 51 reviews
+              # before either appeared even once.
+              #
+              # So it is advisory until an operator says otherwise. The footer
+              # says loudly that the review did not state its coverage, which
+              # is visible on every published issue and is how you tell whether
+              # it is safe to flip the variable. Ratchet it, do not guess it.
+              if [ "${COVERAGE_REQUIRED:-}" = "1" ]; then
+                state=unverified
+                note="**NOT VERIFIED** — ${COVERAGE_NOTE} Nothing is filed for this pull request, so it stays in the queue and will be reviewed again."
+              else
+                note="$note **Coverage not stated** — ${COVERAGE_NOTE} Published anyway because \`COVERAGE_REQUIRED\` is not set."
+              fi
+              ;;
+            *)
+              # `mismatch`: the report gave an account of what it read and the
+              # account is wrong. That is never advisory. A review whose own
+              # arithmetic contradicts the changed-file list is not evidence
+              # about the code, and publishing it files the issue that retires
+              # this pull request from the queue for good.
+              state=unverified
+              note="**NOT VERIFIED** — ${COVERAGE_NOTE:-coverage could not be established.} Nothing is filed for this pull request, so it stays in the queue and will be reviewed again."
+              ;;
+          esac
+
           echo "state=$state" >> "$GITHUB_OUTPUT"
-          echo "verification state: $state"
+          echo "verification state: $state (coverage: ${COVERAGE_STATE:-skipped})"
           printf '<sub>Verification: %s</sub>\n' "$note" >> review.md
 
       # How much work was waiting when this PR was picked. Taken from the
@@ -1309,7 +1613,9 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MODE: ${{ inputs.mode || 'default' }}
+          # Empty on light and standard: those are the ordinary shape and an
+          # unlabelled issue is what "ordinary" looks like in the list.
+          TIER_LABEL: ${{ steps.route.outputs.label }}
           VERIFY_STATE: ${{ steps.verified.outputs.state }}
         run: |
           set -euo pipefail
@@ -1356,14 +1662,20 @@ jobs:
           #
           # Written as an allowlist of publishable states rather than a test
           # for the single string "unverified". The states are `verified`
-          # (the adversarial pass ran), `none` (nothing to attack), `deep`
-          # (the deep pipeline's own counted panel did the attacking) and
-          # `unverified`. An allowlist means the next state added here fails
-          # CLOSED -- it files nothing and the PR is retried -- rather than
-          # publishing unchecked findings under a complete-looking title
-          # because nobody remembered to update a negative test.
+          # (the adversarial pass ran), `none` (nothing to attack), `fleet`
+          # (a counted panel -- deep's three angles or medium's two -- did the
+          # attacking) and `unverified`. An allowlist means the next state
+          # added here fails CLOSED -- it files nothing and the PR is
+          # retried -- rather than publishing unchecked findings under a
+          # complete-looking title because nobody remembered to update a
+          # negative test.
+          #
+          # `deep` was this list's third entry until the medium tier arrived
+          # and needed the same treatment. Renaming it rather than adding
+          # `medium` beside it keeps the allowlist about what was established,
+          # not about which pipeline established it.
           case "${VERIFY_STATE:-unverified}" in
-            verified|none|deep) ;;
+            verified|none|fleet) ;;
             *) UNPUBLISHABLE=1 ;;
           esac
           if [ -n "${UNPUBLISHABLE:-}" ]; then
@@ -1400,12 +1712,18 @@ jobs:
           # of this deliberately -- select_prs.py and status.py parse it as
           # the dedup record, so it is a contract and not a place to describe
           # things.
-          if [ "${MODE:-default}" = "deep" ]; then
-            gh label create deep-review --color 5319E7 --force \
-              --description "Reviewed by the multi-agent deep pipeline" \
-              >/dev/null 2>&1 || true
-            labels="$labels,deep-review"
-          fi
+          case "${TIER_LABEL:-}" in
+            deep-review)
+              gh label create deep-review --color 5319E7 --force \
+                --description "Reviewed by the multi-agent deep pipeline" \
+                >/dev/null 2>&1 || true
+              labels="$labels,deep-review" ;;
+            medium-review)
+              gh label create medium-review --color 1D76DB --force \
+                --description "Reviewed by the bounded multi-agent pipeline" \
+                >/dev/null 2>&1 || true
+              labels="$labels,medium-review" ;;
+          esac
 
           # Severity labels, from findings that survived verification only --
           # refuted ones stay in the report but must not tag the issue.

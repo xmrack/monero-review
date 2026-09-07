@@ -23,7 +23,11 @@ pass `pr: null` rather than guessing; the workflow handles it.
 
 ## 2. List the changed files
 
-`git diff --name-only origin/base...HEAD`
+`PR_FILES.md` already holds them, one path per line (lines starting `#` are
+not paths), written by the harness from `git diff --name-only
+origin/base...HEAD` before you started. Read it rather than re-deriving it, and
+if it is absent run that command yourself and say in the report that the
+harness did not provide the list.
 
 Hand this list to the workflow exactly as git printed it. Do not filter it,
 reorder it by what looks important, or trim it to something manageable. The

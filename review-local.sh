@@ -2,31 +2,53 @@
 # Review an upstream Monero PR locally, using the same skill the workflow uses.
 # No GitHub Actions, no secrets, no runner -- just your authenticated claude CLI.
 #
-#   ./review-local.sh 9876              # review PR 9876 with Opus
+#   ./review-local.sh 9876              # review PR 9876, tier chosen for you
 #   ./review-local.sh 9876 claude-fable-5-1
-#   DEEP=1 ./review-local.sh 9876       # the multi-agent deep review instead
+#   TIER=medium ./review-local.sh 9876  # pin a tier
+#   DEEP=1 ./review-local.sh 9876       # the full multi-agent deep review
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 #
-# DEEP=1 runs /monero-deep-review: the diff is partitioned, a researcher runs
-# per component per weakness class, and every candidate faces three
-# independent verifiers whose votes are counted in code. It replaces the
-# two-pass shape rather than adding to it -- the pipeline is its own
-# adversary, so the refutation pass is skipped. Budget hours and several times
-# a normal review's cost. Concurrency is capped at min(16, max(2, CPUs - 2)),
-# so a machine with more cores finishes proportionally sooner; this is also
-# the cheapest place to measure what a deep run really costs before spending
-# a CI runner's afternoon on one.
+# FOUR TIERS, and by default the script picks one from the size and reach of
+# the diff, exactly as the workflow's router does -- scripts/tier.py holds the
+# policy and both callers read it, so a local run and a CI run of the same PR
+# get the same treatment.
+#
+#   light     Sonnet, 100 turns. A small change nowhere near a trust boundary.
+#   standard  Opus, 200 turns: one reviewer over the whole diff, then an
+#             adversarial pass over whatever it found.
+#   medium    /monero-medium-review. The diff is mapped into units, one
+#             researcher takes each with all of its weakness classes, and every
+#             candidate faces two verifier angles whose votes are counted in
+#             code. Its own adversary, so the refutation pass is skipped.
+#   deep      /monero-deep-review. The same pipeline at full width: a
+#             researcher per unit per weakness class, a pass across the unit
+#             seams, a second look at every unit, and three verifier angles
+#             per candidate. Budget hours and several times a normal review.
+#
+# Concurrency for the two fleet tiers is capped at min(16, max(2, CPUs - 2)),
+# so a machine with more cores finishes proportionally sooner. This is the
+# cheapest place to measure what either of them really costs before spending a
+# CI runner's afternoon on one.
 set -euo pipefail
 
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
-MODEL=${2:-claude-opus-5}
+# `auto` means "let the tier decide" -- Sonnet for light, Opus otherwise. A
+# model named on the command line pins it for every tier.
+MODEL=${2:-auto}
 UPSTREAM=${UPSTREAM:-monero-project/monero}
 # DEEP=0 and DEEP=false mean off, not "a non-empty string, so on". Getting
 # that wrong starts a multi-hour pipeline for someone who typed the obvious
-# way to turn it off.
+# way to turn it off. MEDIUM is read the same way.
 DEEP=${DEEP:-}
 case "$DEEP" in 0|false|no|off) DEEP="" ;; esac
+MEDIUM=${MEDIUM:-}
+case "$MEDIUM" in 0|false|no|off) MEDIUM="" ;; esac
+# TIER pins one outright and overrides both flags. Validated after the
+# checkout exists, since the automatic answer needs the diff.
+TIER=${TIER:-}
+[ -n "$DEEP" ] && TIER=deep
+[ -z "$DEEP" ] && [ -n "$MEDIUM" ] && TIER=medium
 
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number" >&2; exit 1; }
 
@@ -225,24 +247,53 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # are absent -- `sudo apt install universal-ctags cscope` to enable.
 bash "$HERE/scripts/build_index.sh" "$CACHE"
 
-TOOLS="Read,Grep,Glob,Write,Edit,Skill,Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
+TOOLS="Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
 
-# The deep pass needs these on top, and nothing else does. Kept identical to
-# DEEP_EXTRA_TOOLS in .github/workflows/review.yml -- four separate
+# The two FLEET tiers need these on top, and nothing else does. Kept identical
+# to FLEET_EXTRA_TOOLS in .github/workflows/review.yml -- four separate
 # Agent(name) entries rather than one Agent(a, b, c, d), because this string
 # is comma-split and a comma inside parentheses is a parser question nobody
-# has answered.
-DEEP_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+# has answered. (Agent(monero-explore) appears in both: every tier gets it,
+# because it answers mapping questions and decides nothing.)
+FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
 
-if [ -n "$DEEP" ]; then
-  PROMPT="/monero-deep-review"
-  TOOLS="$TOOLS,$DEEP_TOOLS"
-else
-  PROMPT="/monero-security-review"
+# The changed-file list, on disk before the review starts. The reviewer's
+# Coverage section has to account for every path in it and scripts/coverage.py
+# checks that it did -- so the reviewer copies a total rather than deriving
+# one. Three dots: origin/base..HEAD would be the branch divergence.
+{
+  echo "# Files changed by this pull request, from"
+  echo "# git diff --name-only origin/base...HEAD"
+  echo "# Lines starting with # are not paths."
+  ( cd "$CACHE" && git diff --name-only origin/base...HEAD )
+} > "$CACHE/PR_FILES.md"
+
+# Which review this is. An explicit TIER (or DEEP/MEDIUM above) wins; otherwise
+# ask the same classifier the workflow's router asks. Fail toward `standard`,
+# never toward the cheap tier: being wrong about size costs money, being wrong
+# about coverage costs a review.
+if [ -z "$TIER" ]; then
+  TIER=$( cd "$CACHE" && python3 "$HERE/scripts/tier.py" --diff 2>/dev/null \
+            | sed -n 's/^tier=//p' )
+  TIER=${TIER:-standard}
 fi
+case "$TIER" in
+  light|standard|medium|deep) ;;
+  *) echo "!! unknown TIER '$TIER'; using standard" >&2; TIER=standard ;;
+esac
+
+IS_FLEET=false
+case "$TIER" in
+  light)    PROMPT="/monero-security-review"; TIER_MODEL=claude-sonnet-5 ;;
+  standard) PROMPT="/monero-security-review"; TIER_MODEL=claude-opus-5 ;;
+  medium)   PROMPT="/monero-medium-review";   TIER_MODEL=claude-opus-5; IS_FLEET=true ;;
+  deep)     PROMPT="/monero-deep-review";     TIER_MODEL=claude-opus-5; IS_FLEET=true ;;
+esac
+[ "$MODEL" = "auto" ] && MODEL="$TIER_MODEL"
+[ "$IS_FLEET" = "true" ] && TOOLS="$TOOLS,$FLEET_TOOLS"
 
 rm -f "$CACHE/review.md" "$CACHE/exec.json" "$CACHE/exec-refute.json"
-echo "==> reviewing with $MODEL${DEEP:+ (deep)}"
+echo "==> reviewing with $MODEL ($TIER)"
 T0=$(date +%s)
 ( cd "$CACHE" && claude -p "$PROMPT" \
     --model "$MODEL" --output-format json --allowedTools "$TOOLS" > exec.json )
@@ -261,13 +312,12 @@ VERIFIED="**NOT VERIFIED** — the adversarial pass did not complete. Expect fal
 # labels.py is the one place that knows what a severity heading looks like;
 # asking it here keeps this gate from drifting away from the workflow's, which
 # is how unverified findings got published once already.
-if [ -n "$DEEP" ]; then
-  # The deep pipeline is its own adversary: every candidate faced three
-  # independent verifiers and the votes were counted in code. Running
-  # /monero-review-refute over that would pay for a second adversary and
-  # rewrite a report written to a different spec -- it keeps only the header
-  # block and Checked-and-clear, dropping the Coverage section the deep
-  # pipeline exists to produce.
+if [ "$IS_FLEET" = "true" ]; then
+  # A fleet pipeline is its own adversary: every candidate faced a panel of
+  # independent verifiers -- three angles at deep, two at medium -- and the
+  # votes were counted in code. Running /monero-review-refute over that would
+  # pay for a second adversary and rewrite a report written to a different
+  # spec, dropping the Coverage section these pipelines exist to produce.
   #
   # Read the report's coverage stamp for the same reason the workflow does:
   # if the agent fleet dies mid-run the pipeline still returns no findings,
@@ -284,6 +334,12 @@ if [ -n "$DEEP" ]; then
   REFUT=$(num refuted);    UNVER=$(num unverified)
   # Optional, so an absent field stays empty and never reaches arithmetic.
   DEFER=$(num deferred)
+  # How many angles the panel actually ran, and which pipeline says it ran.
+  # Older stamps predate both; 3 is the right default for them because medium
+  # did not exist when they were written, and an absent profile is not an
+  # error -- a disagreeing one is.
+  ANGLES=$(num angles); ANGLES=${ANGLES:-3}
+  PROF=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
   # The stamp is written by the model. The execution log is the independent
   # record that the fleet it describes was ever dispatched.
   FLEET=no
@@ -295,8 +351,11 @@ if [ -n "$DEEP" ]; then
   # counts. Same checks the workflow runs, in the same order.
   if [ -z "$CELLS" ] || [ -z "$FAILED" ] || [ -z "$CANDS" ] || \
      [ -z "$CONF" ] || [ -z "$REFUT" ] || [ -z "$UNVER" ]; then
-    echo "!! deep report carries no readable coverage stamp -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the deep pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran."
+    echo "!! $TIER report carries no readable coverage stamp -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran."
+  elif [ -n "$PROF" ] && [ "$PROF" != "$TIER" ]; then
+    echo "!! ran as $TIER but the stamp says $PROF -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — this run was started as \`$TIER\` but the report's coverage stamp says the \`$PROF\` pipeline produced it. The numbers describe a run nobody asked for."
   elif [ "$FLEET" != "yes" ]; then
     echo "!! execution log records no Workflow/Agent call -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched."
@@ -304,8 +363,8 @@ if [ -n "$DEEP" ]; then
     echo "!! coverage stamp does not add up -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — the coverage stamp does not add up ($CONF + $REFUT + $UNVER is not $CANDS), so it was not taken from a real pipeline result."
   elif [ "$CELLS" -eq 0 ]; then
-    echo "!! deep pass dispatched no research cells -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the deep pass dispatched no research cells at all, so nothing was examined."
+    echo "!! $TIER pass dispatched no research cells -- UNVERIFIED" >&2
+    VERIFIED="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
   elif [ "$(( FAILED * 2 ))" -gt "$CELLS" ]; then
     echo "!! $FAILED of $CELLS research cells failed -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — $FAILED of $CELLS research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
@@ -319,8 +378,8 @@ if [ -n "$DEEP" ]; then
     echo "!! nothing proposed and $FAILED of $CELLS cells failed -- UNVERIFIED" >&2
     VERIFIED="**NOT VERIFIED** — nothing was proposed, but $FAILED of $CELLS research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
   else
-    echo "==> deep pass verified itself ($(( CELLS - FAILED )) of $CELLS cells, $(( CONF + REFUT )) of $CANDS candidates decided)"
-    VERIFIED="verified by the deep pipeline's own panel, which decided $(( CONF + REFUT )) of $CANDS candidate(s) — $CONF confirmed, $REFUT refuted. Each faced three verifiers on separate angles; the votes were counted in code rather than argued in prose. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
+    echo "==> $TIER pass verified itself ($(( CELLS - FAILED )) of $CELLS cells, $(( CONF + REFUT )) of $CANDS candidates decided)"
+    VERIFIED="verified by the $TIER pipeline's own panel, which decided $(( CONF + REFUT )) of $CANDS candidate(s) — $CONF confirmed, $REFUT refuted. Each faced $ANGLES verifiers on separate angles; the votes were counted in code rather than argued in prose. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
     # `if`, not `&&`: a false && chain here would be the block's exit status.
     if [ -n "$DEFER" ] && [ "$DEFER" != "0" ]; then
       VERIFIED="$VERIFIED $DEFER observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
@@ -344,6 +403,29 @@ elif [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
 else
   echo "==> no findings, skipping verification"
   VERIFIED="first pass reported no findings, so there was nothing to attack."
+fi
+
+# COVERAGE, on the single-reviewer tiers, and after the refutation pass so a
+# rewrite that dropped the section is caught rather than missed. The fleet
+# tiers carry their own accounting in the stamp above.
+#
+# It binds hardest on the no-findings branch: that is the strongest claim a
+# review makes, the one a reader can least check, and in CI it is the one that
+# files the issue retiring the pull request from the queue for good. Locally
+# nothing is retired, so this reports rather than withholds -- but it reports
+# in the same words the workflow uses, so a local run and a CI run of the same
+# report read alike.
+if [ "$IS_FLEET" != "true" ]; then
+  COV=$(python3 "$HERE/scripts/coverage.py" "$CACHE/review.md" "$CACHE/PR_FILES.md")
+  COV_STATE=$(printf '%s\n' "$COV" | sed -n 's/^state=//p')
+  COV_NOTE=$(printf '%s\n' "$COV" | sed -n 's/^note=//p')
+  case "$COV_STATE" in
+    ok|unchecked) VERIFIED="$VERIFIED $COV_NOTE" ;;
+    *)
+      echo "!! coverage: $COV_NOTE" >&2
+      VERIFIED="**NOT VERIFIED** — $COV_NOTE In CI this withholds the issue and the pull request stays in the queue."
+      ;;
+  esac
 fi
 
 # Same footer the workflow appends: model, wall clock, turns, tokens, cost.

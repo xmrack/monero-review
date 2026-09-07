@@ -1,7 +1,7 @@
 ---
 name: monero-security-review
 description: Security review of the changes in a Monero pull request.
-allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
+allowed-tools: Read, Grep, Glob, Write, Edit, Skill, Agent(monero-explore), Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
 ---
 
 You are reviewing one pull request against `monero-project/monero` for
@@ -286,6 +286,12 @@ A run that reaches for redirects on a large diff spends its whole budget being
 refused and produces nothing — measured: 21 refusals, 18 of them redirects, 12
 turns, no report. Take the diff a path at a time instead.
 
+`PR_FILES.md` is the changed-file list, one path per line, written by the
+harness from `git diff --name-only origin/base...HEAD` before you started. It
+is what your `## Coverage` section has to account for, in full — see Output.
+Read it early: knowing the shape of the change before you open anything is
+what stops the last few files being read by an exhausted context.
+
 Read `PR_CONTEXT.md` first — the PR title and description. Stated intent is
 leverage: "does this do what it claims, and what *else* does it do" is a much
 sharper question than reading the diff cold. A change described as a pure
@@ -416,6 +422,31 @@ reads those files.
   this codebase turn out to be unreachable. Read it before reporting anything.
 
 ## Tools
+
+### `Agent(monero-explore)` — ask, instead of reading it all yourself
+
+A read-only sub-agent that answers one mapping question in its own context and
+hands you back the answer: who calls this function, which paths reach this
+line, where does this configuration value get set, is there a check one frame
+up. It makes no security judgements and rates nothing — the conclusion stays
+yours. It has the same tools and the same sandbox you do, so it can reach
+nothing you cannot.
+
+**Use it for reachability.** That is where your context goes: a `cscope -L3`
+on a widely-called function, a `sed -n '200,400p'` to see one guard, an `rg`
+across `src/` — each of those lands in your window and stays there for the
+rest of the run, and by the tail of a wide diff you are reading the last files
+through everything you have already read. Delegating the lookup keeps the
+sprawl out and brings the answer in.
+
+The evidence this is worth insisting on comes from the deep pipeline, where
+the same agent was granted to every researcher: it was dispatched **zero times
+in 1,492 tool calls**, while re-reading accumulated context was **36% of that
+run's bill**. Agents do not reach for it on their own. Reach for it.
+
+It is not free and it is not always right — it is another model reading the
+same tree, so a hit is evidence and a miss is inconclusive, exactly like
+cscope. Ask it the question; verify anything a finding rests on.
 
 A symbol index may be present in the checkout. Prefer it over grep for
 cross-reference — grep is unreliable in C++ with overloads, templates, and
@@ -650,6 +681,14 @@ not carry a fact the reader can verify, cut it.
 **Boundaries:** <which trust boundaries the diff reaches, or "none reachable">
 **Result:** <2 findings: 1 MEDIUM, 1 LOW> — or "No findings."
 
+## Coverage
+
+<Every changed file, in one of two states. Reviewed: name it, or group several
+under one line with a count. Excluded: name it with the reason you did not read
+it for defects. Group where grouping is honest -- "4 CMakeLists.txt: target
+rename only" is fine, "the build files" is not, because a reader cannot check
+it. Nothing may be in neither state.>
+
 ## Findings
 
 ### [SEVERITY / CONFIDENCE] Short title
@@ -669,7 +708,47 @@ not carry a fact the reader can verify, cut it.
 
 ## Not covered
 - <what you could not check, and why>
+
+<!-- scan files=<n> reviewed=<n> excluded=<n> -->
 ```
+
+### `## Coverage` and the stamp are not optional
+
+They are the only thing separating a thorough review from one that opened five
+files out of forty and wrote "No findings." Those two reports look identical
+from the outside, and the issue this run files IS the dedup record -- so the
+second one retires that pull request from the queue permanently, on the
+strength of a review that never happened.
+
+`PR_FILES.md` holds the changed-file list, one path per line, written by the
+harness from `git diff --name-only origin/base...HEAD` before you started.
+**Take the total from there.** You are not being asked to count the diff; you
+are being asked to account for a list somebody else counted.
+
+Then the stamp, as the last line of the file:
+
+| field | what it is |
+| --- | --- |
+| `files` | the number of paths in `PR_FILES.md`, copied |
+| `reviewed` | how many of them you read for defects |
+| `excluded` | how many you deliberately did not, each with its reason above |
+
+`reviewed + excluded` must equal `files`, and `files` must equal the real
+count. `scripts/coverage.py` checks both against `PR_FILES.md` before anything
+is published, and a report that fails either check is treated as no review at
+all: nothing is filed, and the pull request stays in the queue to be reviewed
+again. That is the intended outcome and not a punishment -- a review that
+cannot say what it read is not evidence about the code.
+
+Excluding files is ordinary and expected. A `CMakeLists.txt` that renames a
+target, a translation file, a test fixture that no production path reaches --
+say so in one clause each and move on. What is not allowed is silence: a file
+you never opened and never mentioned is the failure this section exists to
+make visible.
+
+If `PR_FILES.md` is absent, derive the list yourself with
+`git diff --name-only origin/base...HEAD`, still write the section and the
+stamp, and say in `Not covered` that the harness did not provide the list.
 
 Length budgets, because a report nobody finishes protects nobody:
 
@@ -683,6 +762,11 @@ Length budgets, because a report nobody finishes protects nobody:
 - **Checked and clear:** one line per area, each ending in a citation. On a
   clean PR this section *is* the report, so it earns its lines — but they are
   bullets, not paragraphs.
+- **Coverage:** a short list, and grouping is what keeps it short. A fifty-file
+  diff does not get fifty lines; it gets a handful of groups whose counts add
+  up. `Checked and clear` says what you *established*; `Coverage` says what you
+  *opened*. They are different questions and a file can appear in one without
+  the other.
 
 If nothing meets the bar, omit `Findings`, say "No findings." in the header,
 and let `Checked and clear` carry the weight.
