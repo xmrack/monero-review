@@ -72,7 +72,7 @@ majority and the reader is entitled to know it.>
 - <What could not be settled and why: a tool this run lacked, a claim needing
   a running binary, a submodule whose source was absent.>
 
-<!-- deep-scan units=<n> cells=<n> failedCells=<n> candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> -->
+<!-- deep-scan units=<n> cells=<n> failedCells=<n> candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
 
 # Rules
@@ -127,6 +127,7 @@ object -- never a number you reasoned your way to.
 | `refuted` | the returned `refuted` array's length |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
+| `deferred` | `coverage.deferredUnclaimed.length` |
 
 `cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
 `researchAccount` is an exception log, not a roster: a pass is recorded there

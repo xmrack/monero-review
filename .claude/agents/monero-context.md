@@ -36,11 +36,21 @@ against master returns the whole branch divergence instead of the change
 - `PR_DISCUSSION.md` — upstream review comments and CI status for this head.
 - `PR_HISTORY.md` — recent commit history of each changed file.
 - `PR_SUBMODULES.md` — written by the GitHub harness, and only when this PR
-  actually moves a submodule. Read it before reaching into a submodule's
-  history. Its absence is NOT proof of no bump: `review-local.sh` never writes
+  actually moves a submodule. It carries the bump range AND each moved
+  submodule's own `git log`, because that history is otherwise unreadable:
+  `git -C`, `git --git-dir=`, `GIT_DIR=` and `cd <sub> && git` are all refused
+  here, the last two by a hooks-safety heuristic rather than the allowlist, so
+  there is no spelling that works. Read the file; do not spend turns proving
+  that. Its absence is NOT proof of no bump: `review-local.sh` never writes
   it at all, so on a local run there is nothing here either way. Settle it
   from the diff -- `git diff origin/base...HEAD --submodule=log` -- rather
   than reading an absent file as an answer.
+- `PR_COMMITS.md` — the patch of each commit *within* this pull request, taken
+  from the GitHub API. This is a blobless clone: `git log` lists the PR's own
+  commits but `git show <intermediate-sha>` dies with `upload-pack: not our
+  ref`. Read this file instead of rediscovering that. It is the way to settle
+  "was a guard added and then dropped during a rebase". Written by the GitHub
+  harness only; absent under `review-local.sh`.
 - `TOOLING.md` — which optional analysers this run has, and whether
   `deps-include/` landed. Read it rather than probing for binaries. It does not
   say whether the symbol index was built; check that yourself, below.

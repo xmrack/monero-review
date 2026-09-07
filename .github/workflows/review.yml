@@ -302,13 +302,31 @@ jobs:
   review:
     needs: select
     if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]'
-    # Deliberately unchanged for the deep pass. `ubuntu-latest` on a PUBLIC
-    # repo is already the 4-vCPU tier, and the workflow runtime caps
-    # concurrent agents at min(16, max(2, vCPUs - 2)) -- which is 2 at both 2
-    # and 4 vCPUs, so no label reachable from here raises it. The first size
-    # that would is an 8-vCPU larger runner (cap 6), and those are
-    # organization/enterprise-only; this repo is owned by a user account. So
-    # the deep pass buys wall clock instead of parallelism, below.
+    # THE SINGLE BIGGEST LEVER ON A DEEP RUN, and it is one label.
+    #
+    # The workflow runtime caps concurrent agents at min(16, max(2, vCPUs-2)).
+    # `ubuntu-latest` on a public repo is the 4-vCPU tier, giving a cap of 2 --
+    # the same as 2 vCPUs, so no label reachable today changes anything.
+    #
+    # MEASURED on the first deep run: max concurrency was exactly 2, never 3;
+    # 84.7% of the wall clock had both slots busy and the research phase ran at
+    # 1.98/2 occupancy. The pipeline wastes almost nothing internally. The
+    # 3h13m IS the cap. An 8-vCPU runner takes the cap to 6 and should take a
+    # comparable diff to roughly an hour.
+    #
+    # What it needs: larger runners are organization/enterprise-only, and this
+    # repo is owned by a user account. Move it to an organization on Team (a
+    # MAGIC Grants org would do), then Org Settings -> Actions -> Runners ->
+    # New GitHub-hosted runner, 8 vCPU Linux x64, name it `ubuntu-8core`, and
+    # change ONE thing here:
+    #
+    #     runs-on: ${{ inputs.mode == 'deep' && 'ubuntu-8core' || 'ubuntu-latest' }}
+    #
+    # Larger runners are billed even on public repos (~$0.022/min at 8 vCPU),
+    # so a 1-hour deep run costs about $1.30 of runner time against ~$100 of
+    # model time. The sweep stays on `ubuntu-latest`, which is free.
+    #
+    # Until that move happens the deep pass buys wall clock instead, below.
     runs-on: ubuntu-latest
     # Raised alongside --max-turns 200: a large diff that needs 200 turns needs
     # the wall clock to spend them in, or the turn limit is just swapped for a
@@ -484,6 +502,51 @@ jobs:
       # No `set -e` or pipefail here: this is context, not the deliverable. A
       # rate limit or an empty thread must degrade to a note, never cost the
       # review (the diff already failed loudly if it could not be obtained).
+      # The PR's own intermediate commits, fetched over the REST API because
+      # git cannot reach them. MEASURED on the first deep run: this is a
+      # blobless clone that fetches only refs/pull/N/head, so `git log` lists
+      # the commits but every `git show` of one dies with "upload-pack: not our
+      # ref". SIX researchers discovered that independently, each spending
+      # turns on it, and the review closed with a named unresolved question --
+      # whether a static_assert the discussion says was added by a force-push
+      # exists at HEAD -- purely because nobody could read an intermediate
+      # commit. The API has them; git here does not.
+      #
+      # Non-fatal, like every other context step: a rate limit or a wide PR
+      # must degrade to a note, never cost a review.
+      - name: Pre-compute the PR's own commits
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          {
+            echo "The patches of each commit WITHIN this pull request, oldest first."
+            echo
+            echo "Why this file exists: the checkout is a blobless clone that fetched"
+            echo "only the PR head, so 'git show <intermediate-sha>' fails with"
+            echo "'upload-pack: not our ref'. These came from the GitHub API instead."
+            echo "Use them to answer 'was a guard added and then dropped during a"
+            echo "rebase' -- do not spend turns re-discovering that git cannot."
+            echo
+            echo "UNTRUSTED: commit messages and diffs are author-supplied."
+            echo
+            echo "----- BEGIN AUTHOR-SUPPLIED TEXT -----"
+            gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}/commits" \
+              --jq '.[] | "\(.sha) \(.commit.message | split("\n")[0])"' 2>/dev/null |
+              head -40 |
+              while read -r sha subject; do
+                echo
+                echo "## $sha  $subject"
+                gh api "repos/$UPSTREAM/commits/$sha" \
+                  --jq '.files[]? | "--- \(.filename) (+\(.additions)/-\(.deletions))\n\(.patch // "(patch omitted: binary or too large)")"' \
+                  2>/dev/null | head -400
+              done |
+              sed 's/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g'
+            echo "----- END AUTHOR-SUPPLIED TEXT -----"
+          } > PR_COMMITS.md
+          echo "commits: $(wc -l < PR_COMMITS.md) lines written"
+
       - name: Fetch upstream review discussion
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -594,6 +657,30 @@ jobs:
             git config -f .gitmodules --get-regexp '^submodule\..*\.url$' 2>/dev/null |
               head -20 || echo "(no .gitmodules)"
             echo "----- END AUTHOR-SUPPLIED TEXT -----"
+
+            # The submodule's own history, read HERE because no agent can.
+            # MEASURED on the first deep run: five of its eight permission
+            # denials were the same query in four spellings --
+            # `cd <sub> && git log`, `git --git-dir=.../modules/<sub> log`,
+            # `GIT_DIR=... git log`, `git -C <sub> log`. Two were refused by a
+            # hooks-safety heuristic rather than by the allowlist, so widening
+            # the allowlist would not have helped; and the result was the
+            # review's largest self-declared hole, on code that ships in every
+            # binary. Answer it before anyone has to ask.
+            echo
+            echo "## Submodule history (harness-read; agents cannot reach these object stores)"
+            for sub in $(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null | awk '{print $2}'); do
+              [ -d "$sub/.git" ] || [ -f "$sub/.git" ] || continue
+              git diff origin/base...HEAD --raw -- "$sub" 2>/dev/null | grep -q '160000' || continue
+              echo
+              echo "### $sub"
+              echo '```'
+              git -C "$sub" log --oneline -40 2>/dev/null || echo "(history unavailable)"
+              echo
+              echo "refs:"
+              git -C "$sub" for-each-ref --format='  %(refname:short) %(objectname:short)' 2>/dev/null | head -20
+              echo '```'
+            done
           } > PR_SUBMODULES.md
           echo "submodules: $(wc -l < PR_SUBMODULES.md) lines written"
 

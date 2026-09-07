@@ -158,10 +158,29 @@ Coverage is not a formality. It must name:
   `coverage.researchAccount` with `failed: true` name them;
 - any candidate no panel decided: the `unverified` list names them, and
   `coverage.candidatesUnverified` counts them;
+- **every entry in `coverage.deferredUnclaimed`**, quoted with its file and
+  line. These are observations a researcher noticed, judged somebody else's
+  unit, and handed on — and that nobody then picked up. They were never
+  refuted, because nothing looked at them. Publishing them under *Not covered*
+  is the honest place; burying them is how a real one gets lost. On the first
+  CI deep run exactly this happened: a claim naming a file, a line, a mechanism
+  and an impact went into a researcher's account, reached no panel, and
+  appeared nowhere in the report;
 - `coverage.mapperFallback` when the partition was unusable and the whole change
   was read as one unit — complete, but blunter;
 - `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the cap
   scales with the size of the change.
+
+When Coverage names a researcher's account and promises the reader what is in
+it — "three things it could not read to the bottom" — reproduce those items.
+Do not point at an account and then print a different, more general list; that
+sentence is a promise a reader will try to cash.
+
+Give the file arithmetic so it can be checked: every unit's file list either
+names every path or gives a count and names none, and Coverage states the total
+accounted for against `coverage.unaccounted`. "4 x CMakeLists.txt" when there
+are five makes the table sum to 49 of 50, and a reader adding it up cannot tell
+a prose slip from a coverage hole.
 
 Keep `refuted` in the report. It is most of what this pipeline produces and it
 is how the next reviewer avoids buying a panel for the same idea twice.
