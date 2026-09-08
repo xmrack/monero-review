@@ -181,8 +181,21 @@ Give the file arithmetic so it can be checked: every unit's file list either
 names every path or gives a count and names none, and Coverage states the total
 accounted for against `coverage.unaccounted`.
 
+A finding carrying `merged` is several confirmed candidates a merge agent read
+as **one defect**. Write it as one `### [SEVERITY]` entry: **Where.** lists every
+site in `merged.sites`, the Verification line gives the vote per site, and one
+line of `merged.sameDefectBecause` says why they are the same bug. Never split it
+back into one entry per site and never drop a site — the first makes the stamp's
+`published` wrong, the second loses a place the fix has to hold. Coverage reports
+the stage from `coverage.mergeGroups`, `coverage.mergeClusters` and
+`coverage.mergeFailed`; a non-zero `mergeFailed` means a possible duplicate is
+still in the report and the reader is told why.
+
 Keep `refuted` in the report. It is most of what this pipeline produces and it
-is how the next reviewer avoids buying a panel for the same idea twice.
+is how the next reviewer avoids buying a panel for the same idea twice. Nothing
+merges that list upstream, so two candidates killed by the same line may share
+one bullet naming both sites — but only when the refutation is genuinely the
+same one, and never by dropping a site.
 
 End the file with the coverage stamp the REPORT SPEC describes. The harness
 reads it and refuses to publish a run whose research mostly failed, or whose
@@ -195,7 +208,8 @@ you actually passed in step 4.
 ## 6. Say what happened
 
 A few sentences: what was reviewed, how many candidates were proposed, how many
-stood up, and where `review.md` is. Claim no more verification than `coverage`
+stood up, how many of those were published as one entry with another, and where
+`review.md` is. Claim no more verification than `coverage`
 supports, and say plainly that this was the standard tier, not the deep one.
 
 If `coverage.unaccounted` is not empty, lead with that rather than the findings.

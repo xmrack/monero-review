@@ -8,6 +8,7 @@ export const meta = {
     { title: 'Adjudicate', detail: 'observations a researcher deferred to another unit, settled by somebody' },
     { title: 'Verify', detail: 'three angles per candidate at deep, two at standard, counted here rather than in a model' },
     { title: 'Re-look', detail: 'deep only: candidates one vote short get an advocate, so a wrong refutation is not final' },
+    { title: 'Merge', detail: 'findings that survived and look like one defect reported twice, grouped so the report says it once; skipped entirely when nothing is even a candidate for it' },
   ],
 }
 
@@ -148,6 +149,30 @@ const ADVOCATE_SCHEMA = {
     decidingLine: { type: 'string' },
   },
   required: ['rebutted', 'reasoning', 'decidingLine'],
+}
+
+// The merge stage returns a PARTITION of one nominated group and nothing else.
+// It carries no severity, no anchors and no votes: those are assembled below
+// from the members, so a merge cannot quietly downgrade a finding, move it off
+// its line, or invent agreement the panel never reached. All the model decides
+// is which ids belong together and how to say why.
+const MERGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    groups: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          memberIds: { type: 'array', items: { type: 'string' } },
+          title: { type: 'string' },
+          sameDefectBecause: { type: 'string' },
+        },
+        required: ['memberIds', 'title'],
+      },
+    },
+  },
+  required: ['groups'],
 }
 
 const a = (args && typeof args === 'object') ? args : {}
@@ -676,7 +701,12 @@ if (!candidates.length) {
     findings: [], refuted: [], unverified: [],
     coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
                 reLookApplicable: !BOUNDED,
-                marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [] },
+                marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [],
+                // Present and zero rather than absent: the stamp asks for all
+                // three on every report, and a field the Lead has to invent a
+                // value for is how a stamp stops being copied from a result.
+                confirmed: 0, published: 0, merged: 0,
+                mergeApplicable: false, mergeClusters: 0, mergeFailed: 0, mergeGroups: [] },
     next: 'Nothing was proposed. Write review.md per the REPORT SPEC as a no-findings report, with Coverage carrying the units, the exclusions and their reasons, and any unaccounted files. If coverage.deferred is non-empty, say what each deferred observation was and how its adjudicator ruled -- a no-findings report that silently drops an observation somebody wrote down is the exact failure this stage exists to prevent.',
   }
 }
@@ -811,15 +841,253 @@ advocated.forEach((adv, i) => {
 })
 if (promoted.length) log(promoted.length + ' candidate(s) survived on re-look; published at low confidence with the split recorded')
 
-const findings = results.filter((r) => r.outcome === 'holds')
+const holds = results.filter((r) => r.outcome === 'holds')
 const refuted = results.filter((r) => r.outcome === 'refuted')
 const unverified = results.filter((r) => r.outcome === 'unverified')
+
+// MERGE. The last stage before the report, and the only one that changes how
+// many entries a reader is shown rather than which ones.
+//
+// byDefect above already merges the exact duplicate: same file, same symbol,
+// same line, same category. That key is deliberately strict, because it runs
+// BEFORE verification and a wrong merge there would put one panel's verdict on
+// two defects. What it cannot catch is the same defect reached from two
+// directions -- one researcher citing the read and another the arithmetic two
+// lines below it, or an unvalidated field filed once as an overflow and once
+// as a resource exhaustion. Those arrive as separate candidates, buy separate
+// panels, survive separately, and are published as separate findings. To a
+// maintainer that is one bug printed three times, and the cost is not only the
+// reading: a report that looks padded is a report whose real finding is
+// weighed as though it were one of three.
+//
+// So this runs on what SURVIVED, not on what was proposed. Two reasons, both
+// load-bearing. Merging before the panel would save verifier money and would
+// also mean a single verdict deciding a group somebody assembled on a guess.
+// And merging after means every member arrives with its own independent
+// panel behind it, so a merge that turns out wrong has cost the report a
+// heading, not a verdict.
+//
+// Nothing here can lose a finding. The group is a partition checked in code,
+// severity is the worst of the members computed in code, and every member's
+// file, line and vote record is carried into the entry that replaces it.
+const NEAR_TITLE = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+// A component bigger than this is chunked. Merges across the chunk boundary
+// are then missed, which is a bounded loss and logged -- the alternative is a
+// prompt holding every finding on a large diff, which is how a merge agent
+// starts pattern-matching instead of reading.
+const MAX_GROUP = 12
+
+// Union-find over a deliberately LOOSE relation. Sharing a file, a symbol or a
+// title is a reason to look, never a reason to merge: the agent is told so in
+// as many words, and two overflows in one file are routinely two overflows.
+// Nominating too widely costs one agent's attention; nominating too narrowly
+// leaves the bloat in place, which is the thing being fixed.
+const parent = holds.map((_, i) => i)
+const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+const union = (x, y) => { const a = find(x), b = find(y); if (a !== b) parent[b] = a }
+for (let i = 0; i < holds.length; i += 1) {
+  for (let j = i + 1; j < holds.length; j += 1) {
+    const A = holds[i].candidate, B = holds[j].candidate
+    const sameFile = !!A.file && A.file === B.file
+    const sameSymbol = !!A.symbol && A.symbol === B.symbol
+    const ta = NEAR_TITLE(A.title), tb = NEAR_TITLE(B.title)
+    if (sameFile || sameSymbol || (!!ta && ta === tb)) union(i, j)
+  }
+}
+const components = new Map()
+holds.forEach((_, i) => {
+  const root = find(i)
+  if (!components.has(root)) components.set(root, [])
+  components.get(root).push(i)
+})
+const clusters = []
+let chunked = 0
+for (const comp of components.values()) {
+  if (comp.length < 2) continue
+  if (comp.length <= MAX_GROUP) { clusters.push(comp); continue }
+  chunked += 1
+  for (let i = 0; i < comp.length; i += MAX_GROUP) clusters.push(comp.slice(i, i + MAX_GROUP))
+}
+if (chunked) log(chunked + ' nominated group(s) exceeded ' + MAX_GROUP + ' findings and were split; a duplicate spanning the split is not merged')
+
+// Skipped outright when nothing is even a candidate for merging, which is the
+// ordinary case on this queue: most reports carry nought or one finding. The
+// stage then costs nothing at all, which is what makes it affordable on the
+// tier that runs on every pull request.
+let mergeGroups = []
+let mergeFailed = 0
+const mergeApplicable = clusters.length > 0
+if (mergeApplicable) {
+  phase('Merge')
+  log(clusters.length + ' group(s) of findings nominated as possibly one defect: ' +
+      clusters.map((c) => c.length).join(', ') + ' member(s)')
+}
+
+const describe = (r) => [
+  '  [' + r.candidate.id + '] ' + r.candidate.title,
+  '      where:            ' + r.candidate.file + ':' + r.candidate.line + ' in ' + r.candidate.symbol,
+  '      category:         ' + r.candidate.category + ', severity ' + r.severity,
+  '      untrusted input:  ' + r.candidate.untrustedInput,
+  '      which reaches:    ' + r.candidate.reaches,
+  '      missing guard:    ' + r.candidate.missingGuard,
+  '      reasoning:        ' + r.candidate.rationale,
+].join('\n')
+
+const rulingsPerCluster = mergeApplicable
+  ? await parallel(clusters.map((cl) => () => agent(
+      [CONTEXT, '',
+       'These findings all survived an adversarial panel. Their verdicts are',
+       'closed and you are not reopening them. The one question left is how many',
+       'DEFECTS they are, because a reader is about to be shown each of them',
+       'under a heading of its own.',
+       '',
+       'They were nominated together mechanically -- they share a file, a symbol',
+       'or nearly a title. That is why you are looking; it is not evidence. Merge',
+       'two only when ONE CHANGE AT ONE PLACE would fix both, and go read the code',
+       'to answer that rather than comparing the two write-ups.',
+       '',
+       'The findings:',
+       cl.map((i) => describe(holds[i])).join('\n\n'),
+       '',
+       'Return a partition: every id above in exactly one group. A finding that',
+       'merges with nothing is a group of one carrying its own title, and that is',
+       'the ordinary answer. For a group of more than one, give the title the',
+       'merged entry will carry and one sentence naming the shared CAUSE -- not',
+       'the shared location.',
+       '',
+       'You do not set severity, anchors or votes. This run takes the worst',
+       'severity in each group, keeps every member\'s file and line as a site of',
+       'the one defect, and keeps every member\'s vote record. So grouping does',
+       'not discard anything, and leaving a finding out of every group does not',
+       'delete it -- it is restored on its own.',
+      ].join('\n'),
+      { label: 'merge:' + cl.map((i) => holds[i].candidate.id).join('+'),
+        phase: 'Merge', ...EFFORT,
+        schema: MERGE_SCHEMA, agentType: 'monero-merger' },
+    )))
+  : []
+
+// THE PARTITION CHECK, in code. The mapper's placement arithmetic exists
+// because a model asked to account for everything sometimes does not; this is
+// the same guarantee at the other end of the pipeline, and it matters more here
+// because the thing that would go missing is a confirmed finding rather than a
+// file nobody read.
+const grouped = new Map()          // index in `holds` -> group it landed in
+rulingsPerCluster.forEach((ruling, ci) => {
+  const cluster = clusters[ci]
+  const byId = new Map(cluster.map((i) => [holds[i].candidate.id, i]))
+  if (!ruling || !Array.isArray(ruling.groups)) {
+    mergeFailed += 1
+    return   // every member falls through to the singleton restore below
+  }
+  for (const g of ruling.groups) {
+    const members = []
+    for (const rawId of (g.memberIds || [])) {
+      const idx = byId.get(String(rawId).trim())
+      // Unknown to this cluster, or already placed by an earlier group: either
+      // way the first placement wins and the duplicate is dropped, so no
+      // finding can be published twice under two titles.
+      if (idx === undefined || grouped.has(idx)) continue
+      members.push(idx)
+    }
+    if (!members.length) continue
+    const entry = { members, title: g.title, sameDefectBecause: g.sameDefectBecause || '' }
+    for (const idx of members) grouped.set(idx, entry)
+  }
+})
+if (mergeFailed) log(mergeFailed + ' nominated group(s) returned nothing usable; their findings are published unmerged, which is the safe direction')
+
+// Anything the agent did not place -- a dropped id, a failed cluster, a
+// finding in no cluster at all -- is its own group. Order follows `holds`, so
+// a restored finding keeps its place rather than being appended at the end.
+const assembled = []
+const emitted = new Set()
+holds.forEach((r, i) => {
+  const entry = grouped.get(i)
+  if (!entry) { assembled.push({ members: [i], title: null, sameDefectBecause: '' }); return }
+  if (emitted.has(entry)) return
+  emitted.add(entry)
+  assembled.push(entry)
+})
+// Counted over what was actually NOMINATED. A finding no cluster contained was
+// never offered to the stage and is not a restore; saying otherwise would put a
+// warning in the log on every ordinary run.
+const restored = clusters.reduce((n, cl) => n + cl.filter((i) => !grouped.has(i)).length, 0)
+if (restored) log(restored + ' nominated finding(s) came back in no group and are published on their own')
+
+const findings = assembled.map((entry) => {
+  const members = entry.members.map((i) => holds[i])
+  if (members.length === 1) return members[0]
+  // The primary carries the anchors and the vote line: the worst severity,
+  // then the most agreeing angles, then the earliest candidate. It is always a
+  // real member, so `file`, `line`, `symbol` and `category` on the published
+  // entry are a candidate's own and not a summary of several.
+  const primary = members.slice().sort((x, y) =>
+    sevRank(x.severity) - sevRank(y.severity) ||
+    y.agreeing - x.agreeing ||
+    String(x.candidate.id).localeCompare(String(y.candidate.id), undefined, { numeric: true }))[0]
+  // Worst severity in the group, computed here. A merge must never be able to
+  // downgrade: the panel is the only thing allowed to lower a severity, and it
+  // has already had its say on each member separately.
+  const severity = members.reduce((s, m) => worseSeverity(s, m.severity), members[0].severity)
+  // Confidence goes the other way: the LEAST confident member. A merge is one
+  // agent's assertion that these are one defect, and a group is only as sound
+  // as its weakest member. It is never published -- it orders the list and
+  // nothing else -- so there is no cost to being conservative with it.
+  const confidence = members.reduce((c, m) => capConfidence(c, m.confidence), members[0].confidence)
+  // The primary wins when it carries one, so `rescued` and `rescuedMemberId`
+  // always describe the same member. Taking them from two different members
+  // would attribute one site's advocate to another site's split.
+  const rescuedFrom = primary.rescued ? primary : members.find((m) => m.rescued)
+  return {
+    ...primary,
+    severity,
+    confidence,
+    // Carried so the report discloses it even when the rescued member is not
+    // the primary: a merged entry containing anything the panel rejected and
+    // an advocate restored has to say so.
+    rescued: rescuedFrom ? rescuedFrom.rescued : undefined,
+    rescuedMemberId: rescuedFrom ? rescuedFrom.candidate.id : undefined,
+    merged: {
+      title: entry.title || primary.candidate.title,
+      sameDefectBecause: entry.sameDefectBecause,
+      // Every member's anchor, so nothing loses its line. The report prints
+      // these as the sites of one defect under one **Where.**
+      sites: members.map((m) => ({
+        id: m.candidate.id,
+        file: m.candidate.file,
+        line: m.candidate.line,
+        symbol: m.candidate.symbol,
+        category: m.candidate.category,
+        severity: m.severity,
+        title: m.candidate.title,
+        agreeing: m.agreeing,
+        cast: m.cast,
+        votes: m.votes,
+      })),
+    },
+  }
+})
+
+const mergedAway = holds.length - findings.length
+mergeGroups = findings.filter((f) => f.merged).map((f) => ({
+  title: f.merged.title,
+  sameDefectBecause: f.merged.sameDefectBecause,
+  memberIds: f.merged.sites.map((s) => s.id),
+}))
+if (mergeApplicable) {
+  log(mergedAway
+    ? mergedAway + ' finding(s) folded into another: ' + holds.length + ' confirmed candidate(s) publish as ' + findings.length + ' entr(y/ies)'
+    : 'nothing merged: all ' + holds.length + ' confirmed candidate(s) are separate defects')
+}
+
 findings.sort((x, y) => sevRank(x.severity) - sevRank(y.severity) ||
                         CONFIDENCES.indexOf(x.confidence) - CONFIDENCES.indexOf(y.confidence))
 findings.forEach((f, i) => { f.id = 'F' + (i + 1) })
 
 if (unverified.length) log(unverified.length + ' candidate(s) got no answer from any angle')
-log(findings.length + ' stood up, ' + refuted.length + ' taken apart')
+log(holds.length + ' stood up, ' + refuted.length + ' taken apart' +
+    (mergedAway ? ', published as ' + findings.length + ' after merging' : ''))
 
 return {
   findings, refuted, unverified,
@@ -830,11 +1098,33 @@ return {
     marginalReLooked: marginal.length,
     rescuedOnReLook: promoted,
     anchorDoubted: results.filter((r) => r.anchorDoubted >= 2).map((r) => r.candidate.id),
-    // Built from what actually publishes, and after the re-look promotions --
-    // otherwise a refuted candidate turns up here and the Lead is told to
-    // annotate a finding that is not in the report.
+    // THE THREE THE STAMP IS BUILT FROM, and they are not interchangeable.
+    // `confirmed` counts CANDIDATES whose panel said holds, so it is unmoved by
+    // the merge and `confirmed + refuted + unverified == candidates` still
+    // holds by construction -- the harness checks that identity and a merge
+    // that shifted it would read as a fabricated stamp. `published` counts the
+    // entries actually written under `## Findings`, and `merged` is what the
+    // difference is: `published + merged == confirmed`, which the harness also
+    // checks. Do not derive `confirmed` from the length of `findings` any more.
+    confirmed: holds.length,
+    published: findings.length,
+    merged: mergedAway,
+    // The stage itself, so the report can say what happened rather than the
+    // reader inferring it from a count. `mergeApplicable` false means nothing
+    // was even nominated -- no agent ran, and that is not the same as an agent
+    // running and finding nothing to merge, which is `mergeGroups` empty.
+    // Three counts and they are not the same thing. `mergeClusters` is how
+    // many groups were NOMINATED and sent to an agent; `mergeFailed` is how
+    // many of those came back unusable, whose findings therefore publish
+    // unmerged and may leave a duplicate in the report; `mergeGroups` is what
+    // was actually merged, one entry per published finding that has more than
+    // one site.
+    mergeApplicable, mergeClusters: clusters.length, mergeFailed, mergeGroups,
+    // Built from what actually publishes, and after the re-look promotions and
+    // the merge -- otherwise a refuted candidate turns up here and the Lead is
+    // told to annotate a finding that is not in the report.
     severityLowered: findings.filter((r) => r.severityLowered)
       .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityLowered })),
   },
-  next: 'Write review.md per the REPORT SPEC. Publish the severities as returned -- they are already settled by the count. Do NOT publish a confidence: the heading is `### [SEVERITY] Title`, and the Verification line carries the vote instead. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, and the counts. For anything that has to be named individually use the lists, not the tallies: the top-level `unverified` array holds the candidates no panel decided (coverage.candidatesUnverified is its count, plus any whose panel threw, which are a count with no record), and coverage.researchAccount entries with failed:true are the passes that came back unusable. Say whether the seam pass ran at all: coverage.seamFailed true means nobody looked across the unit boundaries, which is a limit on the review and must never be published as a clean cross-unit result. Any id in coverage.anchorDoubted is a finding two verifiers could not find at its cited line: re-anchor it from the code or drop it, and say which. A finding carrying `rescued` was rejected by a majority and then saved on re-look: say so plainly and give the real split from its vote record, which is what the old `low` confidence was standing in for. coverage.deferred holds the observations a researcher noticed and handed on rather than filing; each was given its own adjudicator and carries a `ruling`. Report a `did-not-hold` ruling with the reason the adjudicator gave -- it is in coverage.researchAccount under the matching deferred/<n> tag -- rather than dropping it silently; a `filed` one is already among the candidates and needs no separate mention. Every entry in coverage.deferredUnclaimed is one whose adjudicator came back unusable, so nothing looked at it: name those under Not covered, quoted with their file and line.',
+  next: 'Write review.md per the REPORT SPEC. Publish the severities as returned -- they are already settled by the count. A finding carrying `merged` is several confirmed candidates that a merge agent read as ONE defect: write it as ONE `### [SEVERITY]` entry whose **Where.** lists every site in `merged.sites` (each `file:line in symbol`), give the reason from `merged.sameDefectBecause`, and put the vote for each site on the Verification line. Never split it back out, and never publish a site as a finding of its own -- it is already inside that entry. The stamp counts CANDIDATES, not entries: `confirmed` is coverage.confirmed and NOT the length of `findings`, `published` is coverage.published, `merged` is coverage.merged, and both `confirmed + refuted + unverified == candidates` and `published + merged == confirmed` are checked by the harness. Do NOT publish a confidence: the heading is `### [SEVERITY] Title`, and the Verification line carries the vote instead. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, and the counts. For anything that has to be named individually use the lists, not the tallies: the top-level `unverified` array holds the candidates no panel decided (coverage.candidatesUnverified is its count, plus any whose panel threw, which are a count with no record), and coverage.researchAccount entries with failed:true are the passes that came back unusable. Say whether the seam pass ran at all: coverage.seamFailed true means nobody looked across the unit boundaries, which is a limit on the review and must never be published as a clean cross-unit result. Any id in coverage.anchorDoubted is a finding two verifiers could not find at its cited line: re-anchor it from the code or drop it, and say which. A finding carrying `rescued` was rejected by a majority and then saved on re-look: say so plainly and give the real split from its vote record, which is what the old `low` confidence was standing in for. coverage.deferred holds the observations a researcher noticed and handed on rather than filing; each was given its own adjudicator and carries a `ruling`. Report a `did-not-hold` ruling with the reason the adjudicator gave -- it is in coverage.researchAccount under the matching deferred/<n> tag -- rather than dropping it silently; a `filed` one is already among the candidates and needs no separate mention. Every entry in coverage.deferredUnclaimed is one whose adjudicator came back unusable, so nothing looked at it: name those under Not covered, quoted with their file and line.',
 }

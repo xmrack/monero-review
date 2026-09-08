@@ -283,7 +283,7 @@ TOOLS="Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Ba
 # is comma-split and a comma inside parentheses is a parser question nobody
 # has answered. (Agent(monero-explore) appears in both: every tier gets it,
 # because it answers mapping questions and decides nothing.)
-FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-explore)"
 
 # The changed-file list, on disk before the review starts. The reviewer's
 # Coverage section has to account for every path in it and scripts/coverage.py
