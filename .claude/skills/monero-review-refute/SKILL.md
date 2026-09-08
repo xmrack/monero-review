@@ -376,7 +376,7 @@ so the rest of the section cannot be lost to a re-typing.
 **Compress as you verify.** A first pass tends to narrate: it explains what it
 tried, in what order, and how confident it feels. Strip that. What survives is
 the claim, the citation, and the reason the obvious refutation failed. If you
-cannot state a finding's mechanism in a dozen lines, you have not finished
+cannot state a finding's mechanism in eighteen lines, you have not finished
 reducing it.
 
 ```markdown
@@ -389,7 +389,7 @@ reducing it.
 **Fix.** …
 **Why it is new.** …
 **Checked against.** anchor holds at `file.cpp:123`, then what you attacked it
-with, and the `file:line` that failed to kill it. One or two sentences.
+with, and the `file:line` that failed to kill it. Two or three sentences.
 
 ## Refuted
 - ~~Title~~: the guard, with `file:line`.

@@ -775,16 +775,18 @@ deciding whether to read on.>
 
 `path/to/file.cpp:123` · `function_name` · one reviewer, no panel
 
-**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why
-nothing stops it, with the chain from entry point to sink
-(`handle_notify_new_transactions` → `parse_tx` → `resize`), and a citation for
-each step. Or: "not reachable today", in one clause.>
+**Defect.** <At most 5 sentences and at most 120 words: the untrusted input,
+what it reaches, and why nothing stops it, with every frame of the chain from
+entry point to sink (`handle_notify_new_transactions` → `parse_tx` →
+`resize`), and a citation for each step. Or: "not reachable today", in one
+clause.>
 
-**Impact.** <One sentence. What someone gets.>
+**Impact.** <At most 2 sentences. What someone gets, and the clause that makes
+it worse, or narrower, than it sounds.>
 **Needs:** <what has to hold, or "nothing">
 
-**Fix.** <At most 3 sentences. The file and the function to change, and the
-change. At the cause, not at one caller.>
+**Fix.** <At most 4 sentences and at most 100 words. The file and the function
+to change, and the change. At the cause, not at one caller.>
 
 **Why it is new.** <At most 2 sentences. What the diff did, and what
 `origin/base` reads.>

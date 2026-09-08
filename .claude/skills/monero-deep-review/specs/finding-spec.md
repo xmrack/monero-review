@@ -40,7 +40,7 @@ everything around it while chasing it.
 
 # The fix, and why it has to come from you
 
-`fix` is required. One or two sentences naming **the file, the function, and
+`fix` is required. Two or three sentences naming **the file, the function, and
 what changes**.
 
 You are the only agent in this run that can write it. You have read the guards,

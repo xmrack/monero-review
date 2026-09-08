@@ -51,12 +51,12 @@ you claim cannot weigh what you cite.
 
 `path/to/file.cpp:123` · `function_name` · <n>/2 angles agreed
 
-**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why nothing stops it. A citation for each. One line.>
+**Defect.** <At most 5 sentences and at most 120 words: the untrusted input, what it reaches, why nothing stops it, and every frame the input crosses on the way. A citation for each. One line.>
 
-**Impact.** <One sentence. What someone gets.>
+**Impact.** <At most 2 sentences. What someone gets, and the clause that makes it worse, or narrower, than it sounds.>
 **Needs:** <what has to hold: a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line. The break above this label is deliberate, and it is the only one in the block.>
 
-**Fix.** <At most 3 sentences. The file and the function to change, and the change. At the cause, not at one caller. One line.>
+**Fix.** <At most 4 sentences and at most 100 words. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
 **Why it is new.** <At most 2 sentences. What the diff did, and what `origin/base` reads. One line.>
 
@@ -139,24 +139,32 @@ never "thoroughly verified" or "confirmed by an independent panel". The value
 of this shape over one reviewer is that the number came out of a program;
 adjectives are how it stops being worth more.
 
-**Defect.** Three sentences at most. The untrusted input, what it reaches, why
-nothing stops it, each with a line you read. This is question 1 and it is
-answered in plain words before any evidence: not "an analysis of the call graph
-indicates" but "a peer's crafted response reads past the end of the buffer".
+**Defect.** Five sentences at most, and at most 120 words. The untrusted
+input, what it reaches, why nothing stops it, each with a line you read. Spend
+the room on the route rather than on adjectives: an input that crosses three
+frames before it does damage needs those frames named, and a chain compressed
+into one clause is a chain the reader cannot check. This is question 1 and it
+is answered in plain words before any evidence: not "an analysis of the call
+graph indicates" but "a peer's crafted response reads past the end of the
+buffer".
 
-**Impact.** One sentence, then `Needs:`. What someone gets, concretely: funds,
-a crash, a key, a chain split, a deanonymised user. `Needs:` carries the
-preconditions, and it is the line that decides whether a MEDIUM is this
-afternoon's problem or next month's. State the condition plainly: a flag by its
-real spelling, an attacker position, a victim action.
+**Impact.** Two sentences at most, then `Needs:`. What someone gets,
+concretely: funds, a crash, a key, a chain split, a deanonymised user. The
+second sentence is for the clause one sentence has to drop, which is usually
+why the consequence is worse, or narrower, than the first sentence makes it
+sound. `Needs:` carries the preconditions, and it is the line that decides
+whether a MEDIUM is this afternoon's problem or next month's. State the
+condition plainly: a flag by its real spelling, an attacker position, a victim
+action.
 
-**Fix.** Three sentences at most, and it must survive being read alone. Name
-the file, name the function, say what changes. "Validate the length" is not a
-fix; "reject the packet in `handle_notify_new_transactions` before the resize
-at `:412`, since every other field is already checked there" is. Fix the cause:
-if two callers are wrong because a helper is permissive, the helper is the fix.
-Where the honest answer is that the right fix is a design question, say that in
-one clause and give the local change that stops the bleeding.
+**Fix.** Four sentences at most and at most 100 words, and it must survive
+being read alone. Name the file, name the function, say what changes.
+"Validate the length" is not a fix; "reject the packet in
+`handle_notify_new_transactions` before the resize at `:412`, since every
+other field is already checked there" is. Fix the cause: if two callers are
+wrong because a helper is permissive, the helper is the fix. Where the honest
+answer is that the right fix is a design question, say that in one clause and
+give the local change that stops the bleeding.
 
 **Why it is new.** Two sentences at most. The `+` line that created it or the
 `-` line that removed the guard, and what `origin/base` reads. This is the
@@ -173,8 +181,12 @@ anchor you re-checked, a duplicate that could not be merged) goes in Coverage's
 Order findings by severity, then by how many angles agreed. People stop reading
 partway down.
 
-A finding is about twelve lines. One that needs more is usually two findings,
-or one that has not finished being reduced.
+A finding is about eighteen lines. One that needs more is usually two
+findings, or one that has not finished being reduced.
+
+Every cap above is a ceiling, not a target. A finding that says everything in
+six lines is finished at six; the room is there for a route with more than one
+hop in it, not to be filled.
 
 # Severity, and no confidence word
 

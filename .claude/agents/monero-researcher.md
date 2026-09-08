@@ -97,7 +97,7 @@ that writes the report has read your JSON. When this field did not exist the
 Lead invented a remedy from the other fields, and the reports said "validate
 the length": the defect restated, which is not a change a maintainer can make.
 
-Name the file, name the function, say what changes, in one or two sentences.
+Name the file, name the function, say what changes, in two or three sentences.
 Fix the cause: if two callers are wrong because a helper is permissive, the
 helper is the fix. Where the real fix is a design decision that is not yours to
 make, say so in a clause and give the local change that stops the bleeding.

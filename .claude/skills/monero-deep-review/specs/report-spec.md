@@ -52,14 +52,14 @@ though they will.
 `path/to/file.cpp:123` · `function_name` · <n>/3 angles agreed
 <For a finding carrying `merged`: one such line per site in `merged.sites`, each with that site's own vote, then a final line reading `Same defect because: <merged.sameDefectBecause>`. These breaks ARE deliberate: one site per line.>
 
-**Panel split.** <Only for a finding carrying `rescued`. At most 2 sentences: that the panel rejected it two to one and an advocate restored it, what the two rejections relied on, and the line the advocate showed they were wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
+**Panel split.** <Only for a finding carrying `rescued`. At most 3 sentences: that the panel rejected it two to one and an advocate restored it, what the two rejections relied on, and the line the advocate showed they were wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
 
-**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why nothing stops it. A citation for each. One line.>
+**Defect.** <At most 5 sentences and at most 120 words: the untrusted input, what it reaches, why nothing stops it, and every frame the input crosses on the way. A citation for each. One line.>
 
-**Impact.** <One sentence. What someone gets.>
+**Impact.** <At most 2 sentences. What someone gets, and the clause that makes it worse, or narrower, than it sounds.>
 **Needs:** <what has to hold: a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line. The break above this label is deliberate, and it is the only one in the block.>
 
-**Fix.** <At most 3 sentences. The file and the function to change, and the change. At the cause, not at one caller. One line.>
+**Fix.** <At most 4 sentences and at most 100 words. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
 **Why it is new.** <At most 2 sentences. What the diff did, and what `origin/base` reads. One line.>
 
@@ -144,24 +144,32 @@ never "thoroughly verified" or "confirmed by an independent panel". The value
 of this shape over one reviewer is that the number came out of a program;
 adjectives are how it stops being worth more.
 
-**Defect.** Three sentences at most. The untrusted input, what it reaches, why
-nothing stops it, each with a line you read. This is question 1 and it is
-answered in plain words before any evidence: not "an analysis of the call graph
-indicates" but "a peer's crafted response reads past the end of the buffer".
+**Defect.** Five sentences at most, and at most 120 words. The untrusted
+input, what it reaches, why nothing stops it, each with a line you read. Spend
+the room on the route rather than on adjectives: an input that crosses three
+frames before it does damage needs those frames named, and a chain compressed
+into one clause is a chain the reader cannot check. This is question 1 and it
+is answered in plain words before any evidence: not "an analysis of the call
+graph indicates" but "a peer's crafted response reads past the end of the
+buffer".
 
-**Impact.** One sentence, then `Needs:`. What someone gets, concretely: funds,
-a crash, a key, a chain split, a deanonymised user. `Needs:` carries the
-preconditions, and it is the line that decides whether a MEDIUM is this
-afternoon's problem or next month's. State the condition plainly: a flag by its
-real spelling, an attacker position, a victim action.
+**Impact.** Two sentences at most, then `Needs:`. What someone gets,
+concretely: funds, a crash, a key, a chain split, a deanonymised user. The
+second sentence is for the clause one sentence has to drop, which is usually
+why the consequence is worse, or narrower, than the first sentence makes it
+sound. `Needs:` carries the preconditions, and it is the line that decides
+whether a MEDIUM is this afternoon's problem or next month's. State the
+condition plainly: a flag by its real spelling, an attacker position, a victim
+action.
 
-**Fix.** Three sentences at most, and it must survive being read alone. Name
-the file, name the function, say what changes. "Validate the length" is not a
-fix; "reject the packet in `handle_notify_new_transactions` before the resize
-at `:412`, since every other field is already checked there" is. Fix the cause:
-if two callers are wrong because a helper is permissive, the helper is the fix.
-Where the honest answer is that the right fix is a design question, say that in
-one clause and give the local change that stops the bleeding.
+**Fix.** Four sentences at most and at most 100 words, and it must survive
+being read alone. Name the file, name the function, say what changes.
+"Validate the length" is not a fix; "reject the packet in
+`handle_notify_new_transactions` before the resize at `:412`, since every
+other field is already checked there" is. Fix the cause: if two callers are
+wrong because a helper is permissive, the helper is the fix. Where the honest
+answer is that the right fix is a design question, say that in one clause and
+give the local change that stops the bleeding.
 
 **Why it is new.** Two sentences at most. The `+` line that created it or the
 `-` line that removed the guard, and what `origin/base` reads. This is the
@@ -172,7 +180,7 @@ and a reader who doubts it needs nothing else.
 workflow returned `rescued`. A finding the panel rejected two to one and an
 advocate restored is one a maintainer must be told about, in plain words, above
 the claim rather than in a footnote below it. The `<n>/3` on the locator line
-says a minority agreed but not that anybody went back. Two sentences.
+says a minority agreed but not that anybody went back. Three sentences.
 
 **Nothing else gets a block.** No **Notes.**, no **Discussion.** An exception
 the reader must know about (a severity the panel brought down, an anchor you
@@ -184,8 +192,12 @@ re-checked, a duplicate that could not be merged) goes in Coverage's
 Order findings by severity, then by how many angles agreed. People stop reading
 partway down.
 
-A finding is about twelve lines. One that needs more is usually two findings,
-or one that has not finished being reduced.
+A finding is about eighteen lines. One that needs more is usually two
+findings, or one that has not finished being reduced.
+
+Every cap above is a ceiling, not a target. A finding that says everything in
+six lines is finished at six; the room is there for a route with more than one
+hop in it, not to be filled.
 
 # Severity, and no confidence word
 
@@ -248,8 +260,8 @@ throws away the expensive part.
 One line each: the proposal, what killed it, the `file:line`. Not the story of
 how it was considered. Two proposals killed by the same line may share one
 bullet naming both sites, but only when the refutation is genuinely the same
-one, and never by dropping a site. Nothing merges the refuted list upstream, so that
-is yours to do.
+one, and never by dropping a site. Nothing merges the refuted list upstream,
+so that is yours to do.
 
 Emit the heading even when nothing was refuted (`- none`). `labels.py` stops
 reading there, and a report without it has no stopping point.
