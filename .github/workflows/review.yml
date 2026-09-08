@@ -159,6 +159,18 @@ env:
   # single tick interval, which matters more now that reviews are on Opus and
   # take longer.
   BATCH: 1
+  # Quiet time before a pull request this repo has ALREADY reviewed is
+  # reviewed again at a new head. The dedup record is the head SHA, so every
+  # push to a reviewed PR re-queues it; without this, an author pushing fixups
+  # three times an afternoon buys three reviews of a moving target and, because
+  # the queue is sorted most-recently-updated first with BATCH at 1, takes the
+  # only slot each time while the backlog stands still.
+  #
+  # 90 minutes is three tick intervals and longer than all but the slowest
+  # review, so a burst of pushes collapses into one review of the last one. A
+  # PR nobody has reviewed yet is never held: only the second look waits. Set
+  # to 0 to turn the gate off entirely. See scripts/select_prs.py.
+  SETTLE_MINUTES: 90
 
   # THE BINDING TOOL ALLOWLIST. One copy, referenced by every pass below --
   # it used to be two character-identical copies in this file, and the
@@ -330,11 +342,14 @@ jobs:
       #
       # `queue` counts every unreviewed PR including doc-only ones and keeps
       # that meaning for comparability with older issues; `ready` is the count
-      # that answers "is there anything actually waiting", and `docs` is the
-      # residue that never will be. See scripts/select_prs.py.
+      # that answers "is there anything actually waiting", `docs` is the
+      # residue that never will be, and `settling` is the re-reviews this tick
+      # deliberately held because the head is still moving. See
+      # scripts/select_prs.py.
       queue: ${{ steps.pick.outputs.queue }}
       ready: ${{ steps.pick.outputs.ready }}
       docs: ${{ steps.pick.outputs.docs }}
+      settling: ${{ steps.pick.outputs.settling }}
       unprobed: ${{ steps.pick.outputs.unprobed }}
       open: ${{ steps.pick.outputs.open }}
     steps:
@@ -1528,6 +1543,7 @@ jobs:
         env:
           READY: ${{ needs.select.outputs.ready }}
           DOCS: ${{ needs.select.outputs.docs }}
+          SETTLING: ${{ needs.select.outputs.settling }}
           UNPROBED: ${{ needs.select.outputs.unprobed }}
           OPEN: ${{ needs.select.outputs.open }}
         run: |
@@ -1544,6 +1560,12 @@ jobs:
           # the PR this run is reviewing, since it was in line when the run
           # started -- which is what the whole line is timestamped to.
           line="Queue: $READY in line to review, $DOCS doc-only"
+          # Re-reviews held because the head is still moving. Worth a reader's
+          # attention only when there are some: it says the queue is shorter
+          # than it looks on purpose, not that the bot fell behind.
+          if [ -n "${SETTLING:-}" ] && [ "$SETTLING" != "0" ]; then
+            line="$line, $SETTLING waiting for a moving head to settle"
+          fi
           # Only when the probe budget actually truncated the queue: an
           # unclassified count is a gap in what was measured, not a bucket.
           if [ -n "${UNPROBED:-}" ] && [ "$UNPROBED" != "0" ]; then
