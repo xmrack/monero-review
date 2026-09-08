@@ -152,9 +152,31 @@ escalates — so watch the footers as more land. And the wall clock roughly
 doubled, 7m32s to 16m41s: still inside the 30-minute tick, with less slack if
 the queue is deep.
 
-The dollar figure in the footer is the whole run, agents included — it comes
-from the CLI's `total_cost_usd`, not from the token columns beside it, which
-show only the Lead's own conversation.
+Every number in the telemetry footer is now whole-run, agents included:
+
+```
+`claude-opus-5` · standard · 8 agents + lead · 20m37s wall ·
+7.22M in (6.69M cached) / 150.6k out, 68% thinking · ~$10.74 at API rates ·
+25 lead turns · [run]
+```
+
+That was not always true, and the exception was the confusing one. The token
+columns used to come from the CLI's `usage`, which is the Lead's own
+conversation, while the dollar figure came from `total_cost_usd`, which is the
+whole run. Under the fleet the Lead reads almost nothing, so the two describe
+different things: on run 487 the Lead's columns said 1.10M in / 10.0k out for a
+run that actually spent 7.22M / 150.6k. Anyone comparing two issues by those
+columns was comparing orchestrators, and would have read the switch to the
+fleet — turns falling from 50–88 to 25–38 while cost and wall clock doubled on
+much larger diffs — as the pipeline getting lazier.
+
+The footer now reads `modelUsage`, whose `costUSD` sums to `total_cost_usd` and
+so is the same whole-run scope as the money. `N agents + lead` is counted from
+the workflow journal, one entry per dispatch, so it is measured rather than
+claimed. `lead turns` is kept but named for what it is: a signal about the
+orchestrator, not a proxy for effort. If the schema ever moves and the
+whole-run block is missing, the footer falls back to the Lead's numbers and
+prints `[lead only]` beside them rather than passing them off as the run.
 
 ## Where things are
 

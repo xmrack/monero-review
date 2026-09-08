@@ -6,6 +6,23 @@ parses defensively: it walks whatever JSON it is given looking for a record
 carrying cost/usage fields, and degrades to wall-clock only if it finds
 nothing. It must never fail the job -- any error just means a shorter footer.
 
+TWO SCOPES LIVE IN THAT FILE AND ONLY ONE OF THEM IS THE RUN.
+
+The result record carries `usage`, which is the Lead's own conversation, and
+`modelUsage`, whose `costUSD` equals `total_cost_usd` -- so that one is the
+whole run, subagents included. This footer used to print `usage` beside the
+whole-run cost, and under the agent fleet the two are nowhere near each other.
+Measured on run 487: `usage` said 1.10M in / 10.0k out while `modelUsage` said
+7.22M in / 150.6k out for the same $10.74. A reader comparing two issues by
+those columns was comparing orchestrators, not reviews, and would have
+concluded the pipeline got lazier at the point it got more thorough -- turns
+fell from 50-88 to 25-38 across the cutover while cost and wall clock roughly
+doubled on diffs several times larger.
+
+So `modelUsage` is what prints, `num_turns` is labelled as the Lead's and
+nothing else, and the agent count comes from the workflow journal, which
+records one `started` entry per dispatch -- measured rather than asserted.
+
 Env:
   EXEC_FILE   path to the execution log (action output, or `claude
               --output-format json` stdout). Optional. Accepts a
@@ -14,8 +31,12 @@ Env:
   REVIEW_MD   review file to append to. Default: review.md
   T0          unix timestamp taken before the review started. Optional.
   MODEL       model name to display. Optional.
+  TIER        which review shape ran (`standard`/`deep`). Optional.
+  JOURNAL     glob for the agent-fleet journal(s). Optional; defaults to the
+              path the CLI writes under $HOME.
   RUN_URL     link to the CI run. Optional.
 """
+import glob
 import json
 import os
 import sys
@@ -81,7 +102,102 @@ def merge(results):
         vals = [v for v in vals if isinstance(v, (int, float))]
         if vals:
             total["usage"][key] = sum(vals)
+    # And the whole-run block, per model, or a two-pass footer would report
+    # only whichever pass happened to be read first.
+    merged_mu = {}
+    for r in results:
+        mu = r.get("modelUsage")
+        if not isinstance(mu, dict):
+            continue
+        for name, rec in mu.items():
+            if not isinstance(rec, dict):
+                continue
+            into = merged_mu.setdefault(name, {})
+            for k, v in rec.items():
+                if isinstance(v, (int, float)):
+                    into[k] = into.get(k, 0) + v
+    if merged_mu:
+        total["modelUsage"] = merged_mu
     return total
+
+
+# The CLI writes one journal per dispatched workflow. Overridable so
+# review-local.sh and a test can point somewhere else.
+DEFAULT_JOURNAL = os.path.expanduser(
+    "~/.claude/projects/*/*/subagents/workflows/*/journal.jsonl")
+
+
+def whole_run_usage(result):
+    """Totals for the WHOLE run from `modelUsage`, or None if it is absent.
+
+    `modelUsage` is keyed by model and its `costUSD` sums to `total_cost_usd`,
+    which is what identifies it as the run-wide block rather than the Lead's.
+    Summed across keys rather than reading one: a turn served by a fallback
+    model adds a second key, and reporting only the first would quietly drop
+    whatever that model did.
+    """
+    mu = result.get("modelUsage")
+    if not isinstance(mu, dict) or not mu:
+        return None
+    out = {"input": 0, "cached": 0, "output": 0, "thinking": 0, "models": []}
+    for name, rec in mu.items():
+        if not isinstance(rec, dict):
+            continue
+        cached = rec.get("cacheReadInputTokens") or 0
+        out["input"] += (rec.get("inputTokens") or 0) + cached \
+            + (rec.get("cacheCreationInputTokens") or 0)
+        out["cached"] += cached
+        out["output"] += rec.get("outputTokens") or 0
+        out["thinking"] += rec.get("thinkingTokens") or 0
+        out["models"].append(str(name))
+    if not out["models"]:
+        return None
+    out["models"].sort()
+    return out
+
+
+def lead_usage(result):
+    """The Lead's own conversation, from `usage`. The fallback, and labelled."""
+    usage = result.get("usage")
+    if not isinstance(usage, dict) or not any(k in usage for k in USAGE_KEYS):
+        return None
+    got = {k: usage.get(k) or 0 for k in USAGE_KEYS}
+    cached = got["cache_read_input_tokens"]
+    return {"input": got["input_tokens"] + cached + got["cache_creation_input_tokens"],
+            "cached": cached, "output": got["output_tokens"], "thinking": 0,
+            "models": []}
+
+
+def agent_count(pattern):
+    """How many fleet agents were dispatched, counted from the journal(s).
+
+    One `started` entry per dispatch, each with its own `agentId`. Keyed on
+    (file, agentId) because ids are only unique within a workflow run, and a
+    review that dispatched two workflows would otherwise merge them.
+
+    Returns None when there is no journal at all -- which is the honest answer
+    for the single-reviewer fallback, and is NOT the same as zero agents.
+    """
+    seen = set()
+    found = False
+    for path in sorted(glob.glob(pattern)):
+        found = True
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rec = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(rec, dict) and rec.get("type") == "started" \
+                            and rec.get("agentId"):
+                        seen.add((path, rec["agentId"]))
+        except OSError:
+            continue
+    return len(seen) if found else None
 
 
 def human(n):
@@ -111,12 +227,27 @@ def main():
     if model:
         bits.append(f"`{model}`")
 
+    tier = os.environ.get("TIER")
+    if tier:
+        bits.append(tier)
+
+    # THE FIELD THIS FOOTER WAS MISSING. Under the fleet the Lead reads almost
+    # nothing, so every number that describes the Lead understates the review;
+    # this is the one that describes the machinery. Counted from the journal,
+    # so it is a measurement rather than the model's account of itself.
+    agents = agent_count(os.environ.get("JOURNAL") or DEFAULT_JOURNAL)
+    if agents:
+        bits.append(f"{agents} agents + lead")
+
     t0 = os.environ.get("T0")
+    wall = None
     if t0:
         try:
-            bits.append(f"{dur(time.time() - float(t0))} wall")
+            wall = time.time() - float(t0)
         except ValueError:
-            pass
+            wall = None
+    if wall is not None:
+        bits.append(f"{dur(wall)} wall")
 
     # De-duplicate: claude-code-action wrote both passes to one path, so an
     # unguarded list could contain the same file twice and merge() would sum a
@@ -151,32 +282,55 @@ def main():
     result = merge(results) if results else None
 
     if result:
+        # Only when there is no wall clock to fall back on. It duplicates
+        # `wall` to within a few seconds otherwise, and two near-identical
+        # durations in one line is a field that costs a reader attention and
+        # returns nothing.
         ms = result.get("duration_ms")
-        if isinstance(ms, (int, float)):
+        if wall is None and isinstance(ms, (int, float)):
             bits.append(f"{dur(ms / 1000)} model")
 
-        turns = result.get("num_turns")
-        if isinstance(turns, int):
-            passes = result.get("passes")
-            bits.append(f"{turns} turns" + (f" over {passes} passes" if passes else ""))
-
-        usage = result.get("usage") or {}
-        if isinstance(usage, dict) and any(k in usage for k in USAGE_KEYS):
-            got = {k: usage.get(k) or 0 for k in USAGE_KEYS}
-            inp = got["input_tokens"] + got["cache_read_input_tokens"] \
-                + got["cache_creation_input_tokens"]
-            cached = got["cache_read_input_tokens"]
-            piece = f"{human(inp)} in"
-            if cached:
-                piece += f" ({human(cached)} cached)"
-            piece += f" / {human(got['output_tokens'])} out"
+        whole = whole_run_usage(result)
+        scope = "run"
+        if whole is None:
+            # No `modelUsage`: an older CLI, or a shape this has not seen. Fall
+            # back to the Lead's own numbers and SAY SO. Printing them unlabelled
+            # beside a whole-run cost is the bug this rewrite exists to fix, and
+            # a silent fallback would reintroduce it on the day the schema moves.
+            whole = lead_usage(result)
+            scope = "lead only"
+        if whole:
+            piece = f"{human(whole['input'])} in"
+            if whole["cached"]:
+                piece += f" ({human(whole['cached'])} cached)"
+            piece += f" / {human(whole['output'])} out"
+            if whole["thinking"] and whole["output"]:
+                piece += f", {round(100 * whole['thinking'] / whole['output'])}% thinking"
+            if scope != "run":
+                piece += f" [{scope}]"
             bits.append(piece)
+            # A run served by more than one model is worth seeing: it means a
+            # fallback happened, and the tier's cost and depth are then not
+            # what the tier table says they are.
+            if len(whole["models"]) > 1:
+                bits.append("served by " + ", ".join(f"`{m}`" for m in whole["models"]))
 
         cost = result.get("total_cost_usd")
         if isinstance(cost, (int, float)) and cost > 0:
             # Runs bill against a Claude subscription, not the API. This is the
             # API-rate equivalent -- useful for comparing PRs, not a charge.
+            # Whole-run: it has always included the subagents, which is why it
+            # was the only trustworthy number on the old footer.
             bits.append(f"~${cost:.2f} at API rates")
+
+        # Last, and named for what it is. It measures the orchestrator, not the
+        # review -- useful for spotting a Lead that thrashed, useless as a
+        # proxy for effort, and unlabelled it was read as the latter.
+        turns = result.get("num_turns")
+        if isinstance(turns, int):
+            passes = result.get("passes")
+            bits.append(f"{turns} lead turns"
+                        + (f" over {passes} passes" if passes else ""))
     elif paths:
         bits.append("token stats unavailable")
 

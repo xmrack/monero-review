@@ -462,8 +462,13 @@ if [ "$IS_FLEET" != "true" ]; then
   esac
 fi
 
-# Same footer the workflow appends: model, wall clock, turns, tokens, cost.
+# Same footer the workflow appends: model, tier, fleet size, wall clock,
+# whole-run tokens, cost, lead turns. JOURNAL is where the CLI writes one
+# `started` entry per dispatched fleet agent; TIER=single leaves no journal and
+# the agent field is then correctly absent rather than reported as zero.
 EXEC_FILE="$EXEC_FILES" REVIEW_MD="$CACHE/review.md" T0="$T0" MODEL="$MODEL" \
+  TIER="$TIER" \
+  JOURNAL="$HOME/.claude/projects/*/*/subagents/workflows/*/journal.jsonl" \
   python3 "$HERE/scripts/telemetry.py"
 printf '<sub>Verification: %s</sub>\n' "$VERIFIED" >> "$CACHE/review.md"
 

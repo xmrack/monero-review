@@ -1254,6 +1254,12 @@ jobs:
         env:
           EXEC_FILE: ${{ env.PASS1_EXEC }}
           MODEL: ${{ steps.route.outputs.model }}
+          TIER: ${{ steps.route.outputs.tier }}
+          # One `started` entry per dispatched fleet agent. Same glob the
+          # artifact upload below uses, so if one finds a journal so does the
+          # other -- and the footer's agent count is then a measurement rather
+          # than the model's account of its own fan-out.
+          JOURNAL: /home/runner/.claude/projects/*/*/subagents/workflows/*/journal.jsonl
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # always() means this runs even if the harness checkout never happened
