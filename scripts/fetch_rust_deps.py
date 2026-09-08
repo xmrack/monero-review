@@ -68,6 +68,11 @@ ALLOWED_OWNERS = (
 # ours and a hung clone would burn the review's whole clock.
 CLONE_TIMEOUT = 180
 
+# A bump patch is read by a person, and an enormous one is read by nobody. The
+# --stat above always lists every changed file, so truncating the patch loses
+# detail rather than the shape of the change.
+MAX_PATCH_BYTES = 2_000_000
+
 # `source = "git+<url>[?rev=..|?branch=..|?tag=..]#<sha>"`
 GIT_SOURCE = re.compile(r'^\s*source\s*=\s*"git\+([^"]+)"\s*$', re.M)
 NAME = re.compile(r'^\s*name\s*=\s*"([^"]+)"\s*$', re.M)
@@ -96,7 +101,10 @@ def parse_sources(path):
     except OSError as exc:
         print(f"warn: cannot read {path}: {exc}", file=sys.stderr)
         return []
+    return parse_sources_text(text)
 
+
+def parse_sources_text(text):
     found = {}
     # Split on the package table header so a `source` is attributed to the
     # `name` above it rather than to whichever name the regex reaches first.
@@ -110,7 +118,7 @@ def parse_sources(path):
         if not sha:
             # A branch or tag with no resolved commit. Cargo always writes the
             # commit, so this means a hand-edited lock; refuse to guess.
-            print(f"warn: {url} has no pinned commit in {path}", file=sys.stderr)
+            print(f"warn: {url} has no pinned commit", file=sys.stderr)
             continue
         name = NAME.search(block)
         entry = found.setdefault((url, sha), [])
@@ -125,31 +133,117 @@ def allowed(url):
     return any(stripped.startswith(o) for o in ALLOWED_OWNERS)
 
 
-def fetch(url, sha, dest):
-    """Fetch exactly the pinned commit. Returns (ok, detail)."""
-    def run(*args, cwd=None):
-        return subprocess.run(args, cwd=cwd, timeout=CLONE_TIMEOUT,
-                              capture_output=True, text=True)
+def git_in(dest, *args, timeout=None):
+    return subprocess.run(("git", "-C", dest) + args,
+                          timeout=timeout or CLONE_TIMEOUT,
+                          capture_output=True, text=True)
+
+
+def fetch(url, sha, dest, also=None):
+    """Fetch the pinned commit, and optionally a second one. (ok, detail).
+
+    `also` is the revision the BASE branch pinned, when this pull request moves
+    the pin. Both land in one repository so the two trees can be compared; the
+    working tree is checked out at `sha`, which is what the PR pins.
+    """
     os.makedirs(dest, exist_ok=True)
     try:
-        r = run("git", "init", "--quiet", dest)
+        r = subprocess.run(("git", "init", "--quiet", dest),
+                           timeout=CLONE_TIMEOUT, capture_output=True, text=True)
         if r.returncode:
             return False, r.stderr.strip()[:200]
-        run("git", "remote", "add", "origin", url, cwd=dest)
+        git_in(dest, "remote", "add", "origin", url)
         # By SHA, so what lands is exactly what the lockfile pins and nothing
         # else -- no branch tip, no tags, no history to be confused by.
-        r = run("git", "fetch", "--depth", "1", "--no-tags",
-                "origin", sha, cwd=dest)
+        r = git_in(dest, "fetch", "--depth", "1", "--no-tags", "origin", sha)
         if r.returncode:
             return False, (r.stderr.strip() or "fetch failed")[:200]
-        r = run("git", "checkout", "--quiet", "FETCH_HEAD", cwd=dest)
+        r = git_in(dest, "checkout", "--quiet", "FETCH_HEAD")
         if r.returncode:
             return False, r.stderr.strip()[:200]
+        if also:
+            # Best effort: a bump whose old side cannot be fetched still leaves
+            # the new side readable, which is strictly better than nothing.
+            git_in(dest, "fetch", "--depth", "1", "--no-tags", "origin", also)
     except subprocess.TimeoutExpired:
         return False, f"timed out after {CLONE_TIMEOUT}s"
     except OSError as exc:
         return False, str(exc)[:200]
     return True, ""
+
+
+def bump_report(dest, old_sha, new_sha, patch_path):
+    """Precompute what a revision bump changed. Returns a list of md lines.
+
+    THE REVIEWER CANNOT RUN GIT HERE. `git -C` is not allowlisted and
+    `cd <dir> && git` is refused by a hooks-safety heuristic, so a bump that is
+    only "two commits in a repository on disk" is a bump nobody can diff -- which
+    is exactly what a published review reported (issue #514: "every git
+    invocation against its .git was refused by the sandbox, so 71da8f03 ->
+    31c26d96 could not be diffed"). Everything a reviewer needs is written out
+    here, the same way PR_SUBMODULES.md precomputes a moved submodule's log.
+    """
+    out = []
+    have_old = git_in(dest, "cat-file", "-e", old_sha + "^{commit}").returncode == 0
+    if not have_old:
+        out += ["- **The previous revision could not be fetched**, so this bump",
+                "  was not diffed. Report the content of the bump as not covered.", ""]
+        return out
+
+    # `git diff A B` needs only the two trees, so it works across two shallow
+    # fetches with no history connecting them. `git log A..B` does NOT -- it
+    # needs the commits between, which a depth-1 fetch of each end does not
+    # have. So the diff is the reliable half and the log is best effort.
+    stat = git_in(dest, "diff", "--stat", old_sha, new_sha)
+    if stat.returncode == 0 and stat.stdout.strip():
+        body = stat.stdout.strip().splitlines()
+        out += ["- **What changed between the two revisions** "
+                f"(`git diff --stat {old_sha[:12]} {new_sha[:12]}`):", "",
+                "  ```"]
+        out += ["  " + ln for ln in body[:200]]
+        if len(body) > 200:
+            out.append(f"  ... {len(body) - 200} more lines")
+        out += ["  ```", ""]
+
+    log = git_in(dest, "log", "--oneline", "--no-decorate",
+                 f"{old_sha}..{new_sha}")
+    if log.returncode != 0:
+        # One bounded deepen, then give up. Unshallowing a large dependency to
+        # print a commit list is not worth a review's clock.
+        git_in(dest, "fetch", "--depth", "250", "--no-tags", "origin", new_sha)
+        git_in(dest, "fetch", "--depth", "250", "--no-tags", "origin", old_sha)
+        log = git_in(dest, "log", "--oneline", "--no-decorate",
+                     f"{old_sha}..{new_sha}")
+    if log.returncode == 0 and log.stdout.strip():
+        commits = log.stdout.strip().splitlines()
+        out += [f"- **{len(commits)} commit(s) between them:**", "", "  ```"]
+        out += ["  " + c[:160] for c in commits[:100]]
+        if len(commits) > 100:
+            out.append(f"  ... {len(commits) - 100} more")
+        out += ["  ```", ""]
+    else:
+        out += ["- The commit list between the two revisions is **not available**:",
+                "  both ends were fetched shallow and the history joining them was",
+                "  not, so nothing can enumerate them. The file-level diff above is",
+                "  complete regardless -- it needs only the two trees.", ""]
+
+    patch = git_in(dest, "diff", old_sha, new_sha)
+    if patch.returncode == 0 and patch.stdout:
+        text = patch.stdout
+        note = ""
+        if len(text) > MAX_PATCH_BYTES:
+            text = text[:MAX_PATCH_BYTES]
+            note = (f"\n... truncated at {MAX_PATCH_BYTES} bytes; the stat above"
+                    " lists every file that changed.\n")
+        try:
+            with open(patch_path, "w", encoding="utf-8", errors="replace") as fh:
+                fh.write(text + note)
+            rel = os.path.relpath(patch_path, os.path.dirname(os.path.dirname(patch_path)))
+            out += [f"- **The full patch is at `{rel}`**"
+                    + (" (truncated)." if note else "."), ""]
+        except OSError as exc:
+            out += [f"- The full patch could not be written: `{exc}`.", ""]
+    return out
 
 
 def main():
@@ -174,6 +268,23 @@ def main():
             sources[(url, sha)]["crates"].update(crates)
             sources[(url, sha)]["locks"].add(rel)
 
+    # What the BASE branch pinned, so a bump can be told from a first
+    # appearance -- and, when it is a bump, so both ends can be fetched and the
+    # delta precomputed. `git -C` is fine HERE: the restriction that bites is on
+    # the reviewer's Bash tool, not on this script, which is an ordinary
+    # subprocess in the harness.
+    base_revs = {}
+    for lock in locks:
+        rel = os.path.relpath(lock, root)
+        r = git_in(root, "show", f"origin/base:{rel}")
+        if r.returncode:
+            # The lockfile is new in this pull request, or origin/base is absent
+            # (a checkout not prepared by the harness). Either way there is no
+            # previous pin to compare against, which is not an error.
+            continue
+        for url, sha, _ in parse_sources_text(r.stdout):
+            base_revs[url] = sha
+
     lines = ["# Rust git dependencies", ""]
     if not locks:
         lines += ["No `Cargo.lock` in this checkout, so this pull request pins",
@@ -186,9 +297,16 @@ def main():
         lines += ["Pinned by git revision in this pull request's lockfile(s), and",
                   "fetched at exactly that commit so a review can read them. These",
                   "are NOT in the git tree: `git ls-files` and `git grep` cannot see",
-                  "them, so use `rg` or `find` under `rust-deps/`.", ""]
+                  "them, so use `rg` or `find` under `rust-deps/`.",
+                  "",
+                  "**You cannot run git in `rust-deps/`.** `git -C` is not allowlisted",
+                  "and `cd <dir> && git` is refused by a hooks-safety heuristic, so",
+                  "anything that needs history is precomputed below rather than left",
+                  "for you to derive. Where this pull request MOVES a pin, the entry",
+                  "says so and carries the file-level diff, the commit list where it",
+                  "could be obtained, and a path to the full patch.", ""]
 
-    ok = refused = failed = 0
+    ok = refused = failed = bumps = 0
     for (url, sha), meta in sorted(sources.items()):
         name = url.rstrip("/").rsplit("/", 1)[-1]
         if name.endswith(".git"):
@@ -214,15 +332,24 @@ def main():
             continue
 
         dest = os.path.join(root, "rust-deps", name)
-        good, detail = fetch(url, sha, dest)
+        prev = base_revs.get(url)
+        bumped = bool(prev) and prev != sha
+        good, detail = fetch(url, sha, dest, also=prev if bumped else None)
         if good:
             ok += 1
-            lines += [f"## {name}", "",
-                      f"- Source: `rust-deps/{name}/`",
+            lines += [f"## {name}" + (" — BUMPED BY THIS PULL REQUEST" if bumped else ""), "",
+                      f"- Source: `rust-deps/{name}/`, checked out at the revision this PR pins",
                       f"- URL: `{url}`",
                       f"- Pinned at: `{sha}`",
                       f"- Crates used from it: {crates}",
-                      f"- Declared in: `{where}`", ""]
+                      f"- Declared in: `{where}`"]
+            if bumped:
+                bumps += 1
+                lines += [f"- **Previous revision (`origin/base`): `{prev}`**", ""]
+                lines += bump_report(dest, prev, sha,
+                                     os.path.join(root, "rust-deps", name + ".bump.diff"))
+            else:
+                lines += [""]
         else:
             failed += 1
             lines += [f"## {name} — FETCH FAILED", "",
@@ -243,8 +370,9 @@ def main():
         # non-fatal.
         print(f"warn: could not write RUST_DEPS.md: {exc}", file=sys.stderr)
 
-    print(f"rust deps: {ok} fetched, {refused} refused by allowlist, "
-          f"{failed} failed, from {len(locks)} lockfile(s)", file=sys.stderr)
+    print(f"rust deps: {ok} fetched ({bumps} bumped by this PR), "
+          f"{refused} refused by allowlist, {failed} failed, "
+          f"from {len(locks)} lockfile(s)", file=sys.stderr)
 
 
 if __name__ == "__main__":

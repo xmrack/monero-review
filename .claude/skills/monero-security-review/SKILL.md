@@ -185,6 +185,14 @@ where a panic across an `extern "C"` boundary aborts the process, and whether
 counts. Both are a few minutes of reading now. When a finding turns on what a
 pinned crate does, go and read it.
 
+**On a dependency bump, read `RUST_DEPS.md` for the delta.** When the PR moves
+a pin, it carries the file-level diff between the old and new revisions, the
+commit list where one could be obtained, and a path to the full patch at
+`rust-deps/<repo>.bump.diff`. You cannot derive any of that yourself: `git -C`
+is not allowlisted and `cd <dir> && git` is refused by a hooks-safety
+heuristic, so git does not run inside `rust-deps/` at all. A published review
+lost the whole content of a monero-oxide bump to exactly that.
+
 Untracked, so `git ls-files` and `git grep` cannot see it — use `rg` or `find`
 under `rust-deps/`. A source `RUST_DEPS.md` reports as **NOT FETCHED** (its URL
 is not on the harness's allowlist) or **FETCH FAILED** was read by nobody: put

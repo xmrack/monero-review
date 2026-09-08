@@ -48,7 +48,9 @@ verdict is REFUTED; a finding has to earn CONFIRMED.
   escape. Now it is a file you can cite. Untracked, so use `rg`/`find`, not
   `git grep`. A source reported NOT FETCHED or FETCH FAILED was read by
   nobody — that stays UNRESOLVED, and never REFUTED on what a crate probably
-  does.
+  does. On a bump, `RUST_DEPS.md` also holds the diff between the two pinned
+  revisions and a path to the full patch; git cannot be run inside
+  `rust-deps/`, so that file is the only way to see what a bump changed.
 - **`Agent(monero-explore)`** — a read-only sub-agent that answers one mapping
   question in its own context and hands back the answer: who calls this, which
   paths reach that line, is there a check one frame up. Reachability is most of
