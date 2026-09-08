@@ -51,6 +51,13 @@ verdict is REFUTED; a finding has to earn CONFIRMED.
   does. On a bump, `RUST_DEPS.md` also holds the diff between the two pinned
   revisions and a path to the full patch; git cannot be run inside
   `rust-deps/`, so that file is the only way to see what a bump changed.
+  It also checks every crates.io package's lockfile sha256 against what the
+  registry published. A mismatch there is a finding you can CONFIRM on the
+  file; an unchecked or non-crates.io package stays UNRESOLVED. Source for
+  what this PR adds or bumps, and the registry original of anything
+  `[patch.crates-io]` replaces, is under `rust-deps/crates/<name>-<version>/`
+  -- that last one is how a fork gets compared to what it replaced instead of
+  being taken on trust.
 - **`Agent(monero-explore)`** — a read-only sub-agent that answers one mapping
   question in its own context and hands back the answer: who calls this, which
   paths reach that line, is there a check one frame up. Reachability is most of

@@ -249,9 +249,13 @@ python3 "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
   fi
   if [ -d "$CACHE/rust-deps" ]; then
     echo
-    echo "Rust dependencies pinned by git revision, at their pinned commits:"
-    echo "- rust-deps/      (RUST_DEPS.md has the URL, the commit and which"
-    echo "                   crates come from each)"
+    echo "Rust dependencies, at the versions this PR pins:"
+    echo "- rust-deps/         (git deps at their pinned commits; RUST_DEPS.md"
+    echo "                      has the URL, the commit and which crates)"
+    echo "- rust-deps/crates/  (crates.io packages this PR adds or bumps, and"
+    echo "                      the registry original of anything patched)"
+    echo "  RUST_DEPS.md also checks every registry package's lockfile sha256"
+    echo "  against what crates.io published. A mismatch is a finding."
     echo "  Untracked, so git ls-files and git grep cannot see them:"
     echo "  use rg or find under rust-deps/."
     echo

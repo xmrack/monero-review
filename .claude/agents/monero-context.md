@@ -75,6 +75,20 @@ against master returns the whole branch divergence instead of the change
   A source `RUST_DEPS.md` reports as NOT FETCHED or FETCH FAILED was not read
   by anybody: say so under Not covered rather than reasoning about what the
   crate probably does.
+- **The crates.io half.** `RUST_DEPS.md` also carries every REGISTRY package
+  in the lockfile, checked against the crates.io index: the lock records a
+  sha256 per package and the index says what crates.io actually published for
+  that exact version, so a MATCH means the lock pins the real artifact. A
+  **checksum mismatch is a finding**, not a gap -- the lock pins a digest
+  crates.io never published. A package listed as unchecked, yanked, or from a
+  registry that is not crates.io is a limit: name it under Not covered.
+  Source for the packages this PR ADDS OR BUMPS is under
+  `rust-deps/crates/<name>-<version>/`, and so is the **registry original of
+  any crate `[patch.crates-io]` replaces** -- a patch swaps a crate for
+  somebody's fork with nothing in the lockfile recording what it replaced, and
+  that directory is what you diff the fork against. Unchanged packages are
+  verified but NOT on disk; if a claim turns on one, say so rather than
+  guessing what it contains.
 - `TOOLING.md` — which optional analysers this run has, and whether
   `deps-include/` landed. Read it rather than probing for binaries. It does not
   say whether the symbol index was built; check that yourself, below.

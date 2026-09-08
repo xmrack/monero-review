@@ -200,12 +200,22 @@ show only the Lead's own conversation.
   drift between them. `.claude/agents/monero-context.md` is the context
   contract every one of those agents opens with, so they start where the
   standard review starts.
-- `scripts/fetch_rust_deps.py` — puts the Rust crates a PR pins by git
-  revision on disk at those commits, so a review can read them. monero-oxide
-  is the one that matters: every FCMP++ change depends on it, and it is neither
-  a submodule nor vendored, so it used to be unreadable and cost real coverage.
-  The URL comes from the pull request, so the script holds an owner allowlist
-  and reports anything it refuses in `RUST_DEPS.md` rather than fetching it.
+- `scripts/fetch_rust_deps.py` — puts the Rust dependencies a PR pins on disk,
+  so a review can read them. For **git-pinned** crates that means the source at
+  exactly that commit; monero-oxide is the one that matters, since every FCMP++
+  change depends on it and it is neither a submodule nor vendored, so it used to
+  be unreadable and cost real coverage. The URL comes from the pull request, so
+  that half holds an owner allowlist and reports anything it refuses in
+  `RUST_DEPS.md` rather than fetching it.
+  For **crates.io** packages it does two different things. Every registry
+  package's lockfile sha256 is checked against the crates.io index, which says
+  what was actually published for that version — a mismatch is a finding, not a
+  gap. Source is unpacked only for what the PR adds or bumps, plus the registry
+  original of any crate `[patch.crates-io]` replaces, since a patch swaps in
+  somebody's fork with nothing in the lockfile recording what it replaced. The
+  registry host is fixed rather than attacker-chosen, so that half is guarded by
+  a pinned host, a sanitised name and version, and a mandatory digest match
+  before anything is unpacked.
 - `scripts/select_prs.py` — picks the next PR, skipping ones already reviewed.
 - `scripts/dispatch.sh` and `scripts/drip.sh` — run reviews unattended on a
   timer. `dispatch.sh` runs the review on GitHub and files results as issues;

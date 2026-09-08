@@ -938,10 +938,18 @@ jobs:
             echo
             echo
             if [ -d rust-deps ]; then
-              echo "Rust dependencies pinned by git revision, fetched at their"
-              echo "pinned commits:"
-              echo "- rust-deps/       (see RUST_DEPS.md for the URL, the commit"
-              echo "                    and which crates come from each)"
+              echo "Rust dependencies, at the versions this PR pins:"
+              echo "- rust-deps/         (git deps at their pinned commits; see"
+              echo "                      RUST_DEPS.md for the URL, the commit and"
+              echo "                      which crates come from each)"
+              if [ -d rust-deps/crates ]; then
+                echo "- rust-deps/crates/  (crates.io packages this PR adds or"
+                echo "                      bumps, and the registry ORIGINAL of any"
+                echo "                      crate [patch.crates-io] replaces)"
+              fi
+              echo "  RUST_DEPS.md also checks every registry package's lockfile"
+              echo "  sha256 against what crates.io published. A MISMATCH is a"
+              echo "  finding; unchecked, yanked or non-crates.io is a limit."
               echo "  Untracked, so git ls-files and git grep cannot see them:"
               echo "  use rg or find under rust-deps/."
               echo

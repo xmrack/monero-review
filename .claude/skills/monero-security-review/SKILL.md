@@ -185,6 +185,19 @@ where a panic across an `extern "C"` boundary aborts the process, and whether
 counts. Both are a few minutes of reading now. When a finding turns on what a
 pinned crate does, go and read it.
 
+**Every crates.io package is checked too, and that half is new.** The
+lockfile records a sha256 per registry package; `RUST_DEPS.md` compares each
+against what crates.io actually published for that exact version. A
+**checksum mismatch is a finding** -- the lock pins a digest the registry never
+published -- while an unchecked package, a yanked one, or one from a registry
+that is not crates.io is a limit to report under Not covered. Source for the
+packages this PR adds or bumps is on disk under
+`rust-deps/crates/<name>-<version>/`, and so is the registry original of any
+crate `[patch.crates-io]` replaces: a patch swaps a crate for somebody's fork
+and the lockfile records nothing about what it replaced, so that directory is
+the only way to compare the two. Packages the PR did not touch are verified but
+not unpacked; if a claim turns on one, say so.
+
 **On a dependency bump, read `RUST_DEPS.md` for the delta.** When the PR moves
 a pin, it carries the file-level diff between the old and new revisions, the
 commit list where one could be obtained, and a path to the full patch at
