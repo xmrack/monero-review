@@ -311,9 +311,16 @@ MEDIUM when keys are in the process — correct it upward and say so.
 
 ## Output
 
-Rewrite `review.md` in place, keeping the header block, `## Coverage`,
-`## Checked and clear` and `## Not covered`, and updating them where you proved
-the first pass wrong.
+Rewrite `review.md` in place, keeping the header block, `## Summary`,
+`## Coverage`, `## Checked and clear` and `## Not covered`, and updating them
+where you proved the first pass wrong.
+
+**`## Summary` is the one you should expect to change.** It is two or three
+sentences of judgement written before anything was attacked, so a pass that
+kills the only finding has made it wrong: rewrite it to say what the change
+does and that nothing survived. Keep it to two or three sentences, keep it out
+of the business of describing this pass, and do not let it contradict the
+`Result:` line above it.
 
 ### Carry `## Coverage` and the stamp through unchanged
 

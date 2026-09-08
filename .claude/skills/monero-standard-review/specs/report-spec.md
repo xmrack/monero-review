@@ -20,6 +20,13 @@ They will check your citations. Write as though they will.
 **Boundaries:** <the trust boundaries the change reaches, or "none reachable">
 **Result:** <2 findings: 1 MEDIUM, 1 LOW> — or "No findings."
 
+## Summary
+
+<Two or three sentences. What the change actually does, in your own words rather
+than the author's title, and the one thing a maintainer needs to know before
+deciding whether to read on. If nothing here matters, say that plainly — it is
+the most useful summary there is.>
+
 ## Findings
 
 ### [SEVERITY] Short title
@@ -77,6 +84,33 @@ that researcher's own account, not as established fact.>
 
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
+
+# The summary is two or three sentences
+
+It sits above everything and it is the only part some readers will finish, so it
+carries the judgement, not the arithmetic.
+
+Say what the change does, in your own words. The title is the author's framing
+and this is your reading of the diff; where the two differ, that difference is
+usually the most interesting sentence in the report. Then say what it means for
+a maintainer: the one finding that matters, or the fact that nothing does.
+
+What it must not be:
+
+- **a restatement of `Result:`.** That line already gives the counts, one line
+  above. A summary reading "2 findings: 1 MEDIUM, 1 LOW" has spent the reader's
+  attention to tell them what they just read.
+- **a description of the review.** No "I examined", no "this review covered",
+  no method, no effort. Coverage says what was read and the footer says what ran.
+- **hedged into meaninglessness.** "Some areas may warrant further review" is
+  not a summary; it is a way of not writing one.
+- **longer than three sentences.** A fourth sentence is a sign the finding
+  belongs in `## Findings` where it can carry a citation.
+
+On a no-findings review this section does the most work in the whole report.
+"Adds a bounds check to the RPC handler and its test; nothing in the diff
+reaches a trust boundary and nothing was removed" tells a maintainer they can
+stop reading, and is worth more than three paragraphs of Checked-and-clear.
 
 # There is no confidence word, on purpose
 
