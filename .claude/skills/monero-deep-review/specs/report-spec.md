@@ -8,7 +8,7 @@
 It is the house style: Orwell's six rules, the Simplified Technical English
 rules that apply, the words to cut, and the six-step pass to run over the
 draft. This spec gives the structure; that file gives the prose. A deep review
-buys more agents, not more words — a report that follows this spec in 3,000
+buys more agents, not more words. A report that follows this spec in 3,000
 words of hedged passive voice has failed.
 
 # One reader, three questions
@@ -28,20 +28,20 @@ though they will.
 # Sections
 
 ```markdown
-# Security review — <PR title>
+# Security review of <PR title>
 
-**Result:** <2 findings: 1 MEDIUM, 1 LOW> · <what it reaches, ≤10 words> — or
+**Result:** <2 findings: 1 MEDIUM, 1 LOW> · <what it reaches, ≤10 words>, or
 `**Result:** No findings · nothing in the diff reaches a trust boundary`
 **Change:** <N> files, +<A>/-<B> · <subsystems touched>
 **Head:** `<sha12>` · opened by <the `Opened by:` login from PR_CONTEXT.md>
 
 ## Summary
 
-<At most 3 sentences and at most 75 words. No sentence over 25 words. What the change does, in your own words, and the one thing a maintainer needs before deciding whether to read on. ONE LINE — do not wrap it, see `writing.md`.>
+<At most 3 sentences and at most 75 words. No sentence over 25 words. What the change does, in your own words, and the one thing a maintainer needs before deciding whether to read on. ONE LINE: do not wrap it, see `writing.md`.>
 
 ## Findings
 
-<With two or more findings, this table first. With one, skip it — the finding is already its own summary.>
+<With two or more findings, this table first. With one, skip it: the finding is already its own summary.>
 
 | id | sev | what is wrong | where | the fix |
 | --- | --- | --- | --- | --- |
@@ -50,14 +50,14 @@ though they will.
 ### [SEVERITY] Short title
 
 `path/to/file.cpp:123` · `function_name` · <n>/3 angles agreed
-<For a finding carrying `merged`: one such line per site in `merged.sites`, each with that site's own vote, then a final line reading `Same defect because: <merged.sameDefectBecause>`. These breaks ARE deliberate — one site per line.>
+<For a finding carrying `merged`: one such line per site in `merged.sites`, each with that site's own vote, then a final line reading `Same defect because: <merged.sameDefectBecause>`. These breaks ARE deliberate: one site per line.>
 
 **Panel split.** <Only for a finding carrying `rescued`. At most 2 sentences: that the panel rejected it two to one and an advocate restored it, what the two rejections relied on, and the line the advocate showed they were wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
 
 **Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why nothing stops it. A citation for each. One line.>
 
 **Impact.** <One sentence. What someone gets.>
-**Needs:** <what has to hold — a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line — the break above this label is deliberate, the only one in the block.>
+**Needs:** <what has to hold: a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line. The break above this label is deliberate, and it is the only one in the block.>
 
 **Fix.** <At most 3 sentences. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
@@ -65,7 +65,7 @@ though they will.
 
 ## Refuted
 
-- ~~<proposal>~~ — <what took it apart, and the line that settled it.>
+- ~~<proposal>~~: <what took it apart, and the line that settled it.>
 
 ## Not covered
 
@@ -81,15 +81,15 @@ though they will.
 | --- | --- | --- |
 | <plain name> | <paths, or a count> | <weakness classes> |
 
-**Accounted for.** <N> of <N> changed files — <N> read, <N> excluded (<reason per exclusion, one clause each>).
-**Not accounted for.** <each path nobody placed, named — or "none">
-**Not read.** <any area a reader failed on, named — or "none">
-**This tier.** deep — one reader per area per weakness class, a pass across the areas, a second look at every area, three verifiers per finding.
+**Accounted for.** <N> of <N> changed files: <N> read, <N> excluded (<reason per exclusion, one clause each>).
+**Not accounted for.** <each path nobody placed, named, or "none">
+**Not read.** <any area a reader failed on, named, or "none">
+**This tier.** deep: one reader per area per weakness class, a pass across the areas, a second look at every area, three verifiers per finding.
 **Across areas.** <what the pass looking only at what crosses between areas found, including "nothing"; or that it did not run, and why>
 **Second look.** <what the second pass over each area found that the first missed, including "nothing">
 **Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>, <n> one vote short and re-looked, <n> restored by an advocate.
-**Handed on.** <each observation one reader passed to another, and how it was settled — or "none">
-**Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect — or omit the line>
+**Handed on.** <each observation one reader passed to another, and how it was settled, or "none">
+**Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect, or omit the line>
 
 <!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
@@ -97,7 +97,7 @@ though they will.
 # The header is three lines
 
 **Result first**, because it is the only line some readers finish. It carries
-the count and, after a `·`, what the change reaches — the boundary in a clause,
+the count and, after a `·`, what the change reaches: the boundary in a clause,
 not a paragraph. "none reachable" is a complete and valuable answer.
 
 `Change` and `Head` are facts, not prose. Do not let either grow a clause.
@@ -105,7 +105,7 @@ not a paragraph. "none reachable" is a complete and valuable answer.
 # The summary: 3 sentences, 75 words, nothing over 25
 
 The sentence cap alone does not work. Told only "two or three sentences", a
-writer packs 53 words into one and calls it brief — that has happened here, and
+writer packs 53 words into one and calls it brief. That has happened here, and
 the result was three facts in a blur. So both limits hold at once, and the
 25-word ceiling is what actually forces the prose apart.
 
@@ -133,13 +133,13 @@ reading, and is worth more than three paragraphs of Checked-and-clear.
 
 # The finding: a locator and four blocks
 
-Seven labelled blocks per finding was the old shape, and the fix sat sixth —
+Seven labelled blocks per finding was the old shape, and the fix sat sixth,
 below the two longest. A maintainer reads a finding to learn what is broken and
 what to change, so those are now first and third of four.
 
 **The locator line** is what a reader copies into an editor:
 `` `file:line` · `symbol` · <n>/3 angles agreed ``. It replaces a **Where.**
-block and a **Verification.** paragraph. The vote is a count and nothing else —
+block and a **Verification.** paragraph. The vote is a count and nothing else:
 never "thoroughly verified" or "confirmed by an independent panel". The value
 of this shape over one reviewer is that the number came out of a program;
 adjectives are how it stops being worth more.
@@ -149,7 +149,7 @@ nothing stops it, each with a line you read. This is question 1 and it is
 answered in plain words before any evidence: not "an analysis of the call graph
 indicates" but "a peer's crafted response reads past the end of the buffer".
 
-**Impact.** One sentence, then `Needs:`. What someone gets, concretely — funds,
+**Impact.** One sentence, then `Needs:`. What someone gets, concretely: funds,
 a crash, a key, a chain split, a deanonymised user. `Needs:` carries the
 preconditions, and it is the line that decides whether a MEDIUM is this
 afternoon's problem or next month's. State the condition plainly: a flag by its
@@ -171,12 +171,12 @@ and a reader who doubts it needs nothing else.
 **Panel split** is the one extra line this tier can carry, and only where the
 workflow returned `rescued`. A finding the panel rejected two to one and an
 advocate restored is one a maintainer must be told about, in plain words, above
-the claim rather than in a footnote below it — the `<n>/3` on the locator line
+the claim rather than in a footnote below it. The `<n>/3` on the locator line
 says a minority agreed but not that anybody went back. Two sentences.
 
 **Nothing else gets a block.** No **Notes.**, no **Discussion.** An exception
-the reader must know about — a severity the panel brought down, an anchor you
-re-checked, a duplicate that could not be merged — goes in Coverage's
+the reader must know about (a severity the panel brought down, an anchor you
+re-checked, a duplicate that could not be merged) goes in Coverage's
 **Corrections.** line, once, not appended to each finding.
 
 ## Order and length
@@ -192,7 +192,7 @@ or one that has not finished being reduced.
 **Severity comes back already decided.** The workflow lowered any severity its
 agreeing verifiers rated below the proposal, and caps a confidence by how many
 agreed. Publish what it returned. `coverage.severityLowered` lists every one
-that moved, with both values — note it in **Corrections.**
+that moved, with both values. Note it in **Corrections.**
 
 The heading is `### [SEVERITY] Title` and nothing else. A confidence beside the
 severity puts two graded words in one bracket, they read as one scale, and
@@ -225,11 +225,12 @@ and a grouped finding arrives carrying a `merged` object.
 Write it as **one** `### [SEVERITY]` entry:
 
 - one locator line per site in `merged.sites`, each with that site's vote;
-- a final locator line reading `Same defect because: <merged.sameDefectBecause>`
-  — a shared cause, not a shared file;
+- a final locator line reading
+  `Same defect because: <merged.sameDefectBecause>`, naming a shared cause and
+  not a shared file;
 - one **Fix.**, which is the point of the merge: one change at one place.
 
-Do not split it back into one entry per site — a maintainer should see one bug
+Do not split it back into one entry per site. A maintainer should see one bug
 once, and `published` in the stamp would then be wrong. Do not drop a site
 either: each is a place the defect is reachable and a place the fix has to
 hold.
@@ -246,8 +247,8 @@ throws away the expensive part.
 
 One line each: the proposal, what killed it, the `file:line`. Not the story of
 how it was considered. Two proposals killed by the same line may share one
-bullet naming both sites — only when the refutation is genuinely the same one,
-and never by dropping a site. Nothing merges the refuted list upstream, so that
+bullet naming both sites, but only when the refutation is genuinely the same
+one, and never by dropping a site. Nothing merges the refuted list upstream, so that
 is yours to do.
 
 Emit the heading even when nothing was refuted (`- none`). `labels.py` stops
@@ -282,7 +283,7 @@ the total against the changed-file list.
 
 **No workflow field names in this section.** `seamPassApplicable`,
 `coverage.unaccounted`, `mergeApplicable`, `reLookApplicable`, "cells",
-"lenses", "the mapper" — none of these mean anything to a maintainer. Read the
+"lenses", "the mapper": none of these mean anything to a maintainer. Read the
 value and write the fact: "every changed file is accounted for", "no pass
 looked across areas", "nothing was nominated as a duplicate". The stamp is
 where field names belong, and it is invisible when rendered.
@@ -296,8 +297,8 @@ do not soften something real to be kind about the code.
 # Nominate the durable refutations
 
 Where a refutation settles something about this codebase rather than about this
-diff — what epee's serializer really bounds, what a zero scalar does, which
-zone a limit applies to — say so, and name it as worth adding to
+diff (what epee's serializer really bounds, what a zero scalar does, which zone
+a limit applies to), say so, and name it as worth adding to
 `.claude/skills/monero-security-review/references/refutations.md`. That file is
 why the next review does not re-propose it, and this pipeline is the cheapest
 place to grow it. Do not edit it from here: propose, and let a human land it.
@@ -306,24 +307,24 @@ place to grow it. Do not edit it from here: propose, and let a human land it.
 
 The last line is an HTML comment, invisible when rendered, and the harness
 reads it. Emit it **always**, as the final line, with every field present and
-every value a plain integer taken verbatim from the returned `coverage` object
-— never a number you reasoned your way to.
+every value a plain integer taken verbatim from the returned `coverage` object,
+never a number you reasoned your way to.
 
 | field | from |
 | --- | --- |
-| `profile` | the literal `deep`. Checked against the mode the harness dispatched — the same stamp shape carries `profile=standard` for the cheaper tier, and a report claiming the wrong one is treated as not having happened |
+| `profile` | the literal `deep`. Checked against the mode the harness dispatched: the same stamp shape carries `profile=standard` for the cheaper tier, and a report claiming the wrong one is treated as not having happened |
 | `units` | `coverage.units.length` |
 | `cells` | `coverage.cells` |
 | `failedCells` | `coverage.failedCells` |
 | `angles` | the literal `3`. The standard profile runs two, and the harness reads this rather than assuming |
 | `candidates` | `coverage.candidatesDistinct` |
-| `confirmed` | `coverage.confirmed` — proposals whose panel said holds. **Not** the returned `findings` array's length: those two were the same number until the merge stage separated them |
-| `published` | `coverage.published` — the number of `###` entries you write under `## Findings`, which is the `findings` array's length |
-| `merged` | `coverage.merged` — confirmed proposals folded into another entry |
+| `confirmed` | `coverage.confirmed`: proposals whose panel said holds. **Not** the returned `findings` array's length: those two were the same number until the merge stage separated them |
+| `published` | `coverage.published`: the number of `###` entries you write under `## Findings`, which is the `findings` array's length |
+| `merged` | `coverage.merged`: confirmed proposals folded into another entry |
 | `refuted` | the returned `refuted` array's length |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
-| `deferred` | `coverage.deferredUnclaimed.length` — the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone" |
+| `deferred` | `coverage.deferredUnclaimed.length`: the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone" |
 
 `cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
 `researchAccount` is an exception log, not a roster: a pass is recorded there
@@ -332,7 +333,7 @@ readers, the pass across areas, the second look and the adjudicators alike,
 distinguished by `kind`. On a clean run it is **empty**. `coverage.cells` is
 the number of readers dispatched and `coverage.failedCells` counts only the
 `kind: "cell"` failures among them, so those two are the pair that can honestly
-be divided into each other — which is what the harness does.
+be divided into each other, which is what the harness does.
 
 `confirmed + refuted + unverified` must equal `candidates`, and
 `published + merged` must equal `confirmed`. Neither is a rule imposed on you:
@@ -346,7 +347,7 @@ numbers do not add up, you took them from the wrong place; go back to
 It exists because of one failure mode the prose cannot cover, and the fleet has
 **two halves that die separately**. If the readers die, nothing was read. If
 the readers work and the verifier panels die, every proposal comes back
-`unverified` and `findings` is empty — and an honest report of either is a
+`unverified` and `findings` is empty, and an honest report of either is a
 report with no findings in it. To `labels.py` and to the harness that is
 byte-for-byte a clean review, and publishing it files the issue that marks this
 pull request reviewed forever. The stamp is the only thing that separates
@@ -369,7 +370,7 @@ report as much as for the tools. The same goes for any other repository's
 issues or pull requests you cite.
 
 The harness rewrites these shapes out of `review.md` immediately before
-publishing, so a slip is caught — but it is caught by a regex over
+publishing, so a slip is caught, but it is caught by a regex over
 model-written prose, which is the weakest kind of guarantee. Do not rely on it.
 
 # Do not write a Verification footer
@@ -391,7 +392,7 @@ So:
 - **a bracketed-severity `###` heading appears only under `## Findings`.**
   Everything above the first `## Refuted` is read as a finding, so such a
   heading anywhere else there labels the issue as though a panel had confirmed
-  it. The triage table is safe — it has no `###` heading — and so is a
+  it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
 - `## Not covered`, `## Checked and clear` and `## Coverage` sit below

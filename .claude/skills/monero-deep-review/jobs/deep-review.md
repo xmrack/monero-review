@@ -7,18 +7,18 @@ Resolve what is under review, start the run, write `review.md`.
 The harness fetched the PR head and pointed `origin/base` at the branch it
 targets. Confirm that instead of assuming it, one command per call:
 
-- `git rev-parse --verify --quiet origin/base` — empty means this checkout was
+- `git rev-parse --verify --quiet origin/base`: empty means this checkout was
   not prepared by the harness. Stop and say so. Without `origin/base` there is
   no honest range, and falling back to `master` would hand you an entire
   branch's divergence on any backport.
-- `git rev-parse --short=12 HEAD` — the head under review. Quote it.
+- `git rev-parse --short=12 HEAD`: the head under review. Quote it.
 
 The range is `origin/base...HEAD`, three dots, never inside `$(...)`.
 
 `PR_CONTEXT.md` opens with a `Pull request: <upstream>#<n>` line written by the
 harness, outside the author-supplied fence, and then the author's own title.
 Take the number and title from there and treat the rest as the author's claims.
-If that line is absent — an older harness, or a checkout prepared by hand —
+If that line is absent (an older harness, or a checkout prepared by hand),
 pass `pr: null` rather than guessing; the workflow handles it.
 
 ## 2. List the changed files
@@ -33,7 +33,7 @@ Hand this list to the workflow exactly as git printed it. Do not filter it,
 reorder it by what looks important, or trim it to something manageable. The
 workflow's coverage check compares the mapper's answer against precisely this
 list, so anything you drop here becomes a file that was never reviewed and
-never reported as unreviewed — which is the one failure this job is built to
+never reported as unreviewed, which is the one failure this job is built to
 prevent.
 
 An empty list means there is nothing to review: say so and stop.
@@ -47,7 +47,7 @@ parameters. This skill's frontmatter asking for it proves nothing: the
 scheduled pipeline runs with a narrow allowlist carrying neither `Workflow` nor
 `Agent`, and this skill is written for a session where both are granted.
 
-If it is missing, stop with one line — that the deep review needs the Workflow
+If it is missing, stop with one line: that the deep review needs the Workflow
 tool, this session does not have it, so nothing ran, and
 `/monero-security-review`, the single-reviewer fallback, is what to use here. Do not improvise around it. Dispatching the agents
 yourself would yield a report claiming a verification nobody performed, which
@@ -57,7 +57,7 @@ is the one thing this skill must never produce.
 harness's input, not a place to leave a note. A file explaining why nothing
 ran carries no severity heading, so `labels.py` reads it as a review that
 found nothing, the harness files the issue that marks this pull request
-reviewed, and it is never looked at again — a harness misconfiguration turned
+reviewed, and it is never looked at again, so a harness misconfiguration turns
 into a permanent clean bill of health. An absent file is read correctly: the
 run failed and the pull request stays in the queue.
 
@@ -80,16 +80,16 @@ Workflow({ name: "monero-deep-scan",
 the working directory is not reliably the checkout.
 
 Prefer passing `args` as a real object rather than a JSON-encoded string. Both
-work — measured: the first two CI deep runs both serialised it to a string, and
-the one that got as far as running the fleet partitioned all 50 changed files
-correctly, so the harness parses it. An object is simply the documented shape
+work, and that is measured: the first two CI deep runs both serialised it to a
+string, and the one that got as far as running the fleet partitioned all 50
+changed files correctly, so the harness parses it. An object is simply the documented shape
 and one less thing between you and the script.
 
 Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, that this is the deep pass, and that nothing is a finding
 until the verifiers have finished.
 
-## 4b. Wait for it — this is not optional
+## 4b. Wait for it: this is not optional
 
 The Workflow tool **always returns immediately**. Its result says
 `Workflow launched in background. Task ID: <id>` and the fleet then runs
@@ -118,17 +118,17 @@ narrate it yourself.
 You get back `findings`, `refuted`, `unverified`, `coverage`, and a `next` line.
 Follow `next`. Note that `unverified` is a list of candidates no panel decided,
 while `coverage.candidatesUnverified` is only its count (plus any whose panel
-threw, which are a count with no record) — when something has to be named, use
+threw, which are a count with no record). When something has to be named, use
 the list.
 
-If the workflow genuinely fails rather than returning — the task dies, or
-`TaskOutput` reports an error rather than a result — say so and write nothing.
+If the workflow genuinely fails rather than returning (the task dies, or
+`TaskOutput` reports an error rather than a result), say so and write nothing.
 A report with no pipeline behind it is the one thing this skill must never
 produce.
 
 ## 5. Write `review.md`
 
-Read the REPORT SPEC now — not before. Then read the house style,
+Read the REPORT SPEC now, not before. Then read the house style,
 `.claude/references/writing.md`: Orwell's six rules, the Simplified Technical
 English rules that apply, the words to cut, and the six-step pass to run over
 the draft. Then write `review.md` in the repository root with `Write`.
@@ -142,7 +142,7 @@ agents, not more words.
 **Publish the fix that came back.** Each finding carries a `fix` written by the
 researcher that read the guards and the callers. Check it names a real file and
 function and that it covers the defect; correct it and say so where reading the
-code contradicts it. Do not replace it with a restatement of the defect —
+code contradicts it. Do not replace it with a restatement of the defect:
 "validate the length" is what this field exists to stop. On a merged finding
 there is one **Fix.** for the whole entry, because one change at one place
 fixing them all is what the merge decided.
@@ -165,11 +165,11 @@ citation is the fastest way to lose the reader.
 A finding carrying `rescued` gets a **Panel split.** line above **Defect.**:
 the real split from its vote record, what the two rejections relied on, and the
 line the advocate showed they were wrong about. When `rescuedMemberId` is set,
-name which site of the merged finding that was. Say it plainly — this is a
+name which site of the merged finding that was. Say it plainly, because this is a
 finding a majority of the panel rejected, and the reader is entitled to know
 that before the claim rather than after it.
 
-Coverage is a table and nine labelled lines — never a paragraph, and never a
+Coverage is a table and nine labelled lines, never a paragraph, and never a
 field name from the returned object in front of the reader. It must carry:
 
 - the areas and the weakness classes read over each;
@@ -184,7 +184,7 @@ field name from the returned object in front of the reader. It must carry:
   anything, and then it is worth stating at zero;
 - what the second look over each area found (`coverage.gapFresh`), and how many
   areas it failed to cover (`coverage.gapFailed`);
-- any id in `coverage.anchorDoubted` — a finding two verifiers could not find
+- any id in `coverage.anchorDoubted`: a finding two verifiers could not find
   at its cited line. Re-anchor it from the code or drop the finding, and say
   which you did in **Corrections.**;
 - `coverage.marginalReLooked` and `coverage.rescuedOnReLook`: how many
@@ -198,7 +198,7 @@ field name from the returned object in front of the reader. It must carry:
   `coverage.deferred` holds every one, each with its own adjudicator and a
   `ruling`. `filed` became a proposal and is already accounted for among the
   findings or the refutations. `did-not-hold` means somebody read the code and
-  it did not survive — say what it was and give the adjudicator's reason, which
+  it did not survive, so say what it was and give the adjudicator's reason, which
   is in `coverage.researchAccount` under the matching `deferred/<n>` tag. Do
   not drop a `did-not-hold` silently: an observation somebody wrote down and
   somebody else disposed of is exactly what the next reviewer will otherwise
@@ -206,20 +206,20 @@ field name from the returned object in front of the reader. It must carry:
 - **every entry in `coverage.deferredUnclaimed`**, quoted with its file and
   line, in **Not covered**. Their adjudicator came back unusable, so nothing
   ever looked at them. They were not refuted; they were missed. On the first CI
-  deep run — before that stage existed — exactly this happened to both
+  deep run, before that stage existed, exactly this happened to both
   observations the run produced: one named a file, a line, a mechanism and an
   impact, reached no panel, and appeared nowhere in the report;
 - `coverage.mapperFallback` when the partition was unusable and the whole
-  change was read as one area — complete, but blunter;
+  change was read as one area: complete, but blunter;
 - `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the
   cap scales with the size of the change;
 - the merge, from `coverage.mergeGroups` and `coverage.mergeClusters`. A
   non-zero `coverage.mergeFailed` means a group came back unusable and its
-  findings publish separately — say so in **Corrections.**, because that is a
+  findings publish separately, so say so in **Corrections.**, because that is a
   possible duplicate in the report rather than a hidden one.
 
 When Coverage names what a reader could not finish and promises the reader
-what is in it — "three things it could not read to the bottom" — reproduce
+what is in it ("three things it could not read to the bottom"), reproduce
 those items. Do not point at an account and then print a different, more
 general list; that sentence is a promise a reader will try to cash.
 
@@ -233,16 +233,16 @@ A finding carrying `merged` is several confirmed proposals a merge agent read
 as **one defect**. Write it as one `### [SEVERITY]` entry: a locator line per
 site in `merged.sites` with that site's vote, a final line giving
 `merged.sameDefectBecause`, and one **Fix.** Never split it back into one entry
-per site and never drop a site — the first makes the stamp's `published` wrong,
+per site and never drop a site: the first makes the stamp's `published` wrong,
 the second loses a place the fix has to hold.
 
 Keep `refuted` in the report, one line each. It is most of what this pipeline
 produces and it is how the next reviewer avoids buying a panel for the same
 idea twice. Nothing merges that list upstream, so two proposals killed by the
-same line may share one bullet naming both sites — but only when the refutation
+same line may share one bullet naming both sites, but only when the refutation
 is genuinely the same one, and never by dropping a site.
 
-End the file with the coverage stamp the REPORT SPEC describes — the HTML
+End the file with the coverage stamp the REPORT SPEC describes: the HTML
 comment carrying `cells`, `failedCells` and the rest, straight from `coverage`.
 The harness reads it and refuses to publish a run whose research mostly failed,
 or whose panels mostly returned no verdict, because such a run and a genuinely

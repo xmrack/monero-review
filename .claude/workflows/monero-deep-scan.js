@@ -339,7 +339,7 @@ const gotPartition = !!(mapped && Array.isArray(mapped.units) && mapped.units.le
 if (!gotPartition) log('no usable partition came back; reading the whole change as one unit instead')
 if (gotPartition && mapped.units.length > MAX_UNITS) {
   log('the mapper returned ' + mapped.units.length + ' units; keeping ' + MAX_UNITS +
-      ' — files in the rest are reported as unaccounted rather than dropped quietly')
+      '; files in the rest are reported as unaccounted rather than dropped quietly')
 }
 
 const units = gotPartition
@@ -544,7 +544,7 @@ const seamThunk = () => agent(
      'path that STARTS in one unit and ends in another.',
      '',
      'The units this change was split into:',
-     units.map((u) => '  [' + u.name + '] ' + u.boundary + ' — ' + u.role + '\n' +
+     units.map((u) => '  [' + u.name + '] ' + u.boundary + ': ' + u.role + '\n' +
        (u.paths || []).map((x) => '      ' + x).join('\n')).join('\n'),
      '',
      'Trace values across those boundaries: an untrusted input parsed in one unit',
@@ -625,7 +625,7 @@ if (applicable) {
   seamRan = !seamFailed
   seamFresh = seamFailed ? 0 : got
   log(seamFailed
-    ? 'seams: the pass returned nothing usable — reported as not run, NOT as a clean result'
+    ? 'seams: the pass returned nothing usable, reported as not run, NOT as a clean result'
     : 'seams: ' + seamFresh + ' fresh candidate(s) crossing unit boundaries')
 }
 // Best effort: a deferral is "claimed" once the unit it names got a second look
@@ -642,7 +642,7 @@ if (roundTwoRuns) {
   log('gap pass: ' + gapCount + ' fresh candidate(s) the first round missed' +
       (gapFailed ? ', and ' + gapFailed + ' unit(s) whose second look returned nothing usable' : ''))
 } else {
-  log('standard profile: no seam pass and no per-unit second look — the report says so')
+  log('standard profile: no seam pass and no per-unit second look; the report says so')
 }
 
 // ADJUDICATE. Every observation a researcher noticed and handed on because it
@@ -765,7 +765,7 @@ const judged = await parallel(candidates.map((c) => () => parallel(
      'only with a line you read for each of: an untrusted input, what it reaches,',
      'and nothing effective in between.',
      '',
-     'Candidate ' + c.id + ' — ' + c.title,
+     'Candidate ' + c.id + ': ' + c.title,
      '  where:            ' + c.file + ':' + c.line + ' in ' + c.symbol,
      '  the quoted line:  ' + JSON.stringify(c.snippet),
      '  category:         ' + c.category,
@@ -853,7 +853,7 @@ const advocated = await parallel(marginal.map((r) => () => agent(
    'hunting is a rejection resting on a guard the verifier assumed instead of',
    'reading, or on a route it did not walk.',
    '',
-   'Candidate ' + r.candidate.id + ' — ' + r.candidate.title,
+   'Candidate ' + r.candidate.id + ': ' + r.candidate.title,
    '  where:           ' + r.candidate.file + ':' + r.candidate.line + ' in ' + r.candidate.symbol,
    '  category:        ' + r.candidate.category,
    '  untrusted input: ' + r.candidate.untrustedInput,

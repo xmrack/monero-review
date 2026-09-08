@@ -95,7 +95,7 @@ Every candidate carries one, and nobody downstream can write it for you. You
 have read the guards, the callers and the function around the defect; the Lead
 that writes the report has read your JSON. When this field did not exist the
 Lead invented a remedy from the other fields, and the reports said "validate
-the length" — the defect restated, which is not a change a maintainer can make.
+the length": the defect restated, which is not a change a maintainer can make.
 
 Name the file, name the function, say what changes, in one or two sentences.
 Fix the cause: if two callers are wrong because a helper is permissive, the
@@ -108,7 +108,7 @@ lazy one.
 # Answering
 
 Fill in the structure your dispatch specifies. A program consumes it, so leave
-out anything written for a human reader — but the prose fields are reproduced
+out anything written for a human reader. But the prose fields are reproduced
 in front of a Monero maintainer, so write them in the house style at
 `.claude/references/writing.md`: active voice with the actor named, one idea per
 sentence, 25 words at most. `snippet` is exempt and copied exactly.

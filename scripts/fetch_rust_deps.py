@@ -616,14 +616,14 @@ def registry_report(root, registry, base_registry, locked_versions, patch_target
                 "version. Nothing here explains that away: read it as a finding",
                 "and say which crate.", ""]
         for name, version, want, got in mismatched:
-            out += [f"- `{name} {version}` — lockfile `{want}`, index "
+            out += [f"- `{name} {version}`: lockfile `{want}`, index "
                     + (f"`{got}`" if got else "(no digest)")]
         out += [""]
 
     if yanked:
         out += ["## Yanked versions", "",
                 "Still installable and still pinned, but withdrawn by their",
-                "publisher — often for a defect or an advisory. Worth a line in",
+                "publisher, often for a defect or an advisory. Worth a line in",
                 "the report, and worth asking why the pin is on one.", ""]
         out += [f"- `{name} {version}`" for name, version in yanked] + [""]
 
@@ -641,7 +641,7 @@ def registry_report(root, registry, base_registry, locked_versions, patch_target
                 "The pin stands unverified for each of these. That is a limit on",
                 "the review, not a clean result.", ""]
         for name, version, why in missing:
-            out += [f"- `{name} {version}` — {why}"]
+            out += [f"- `{name} {version}`: {why}"]
         out += [""]
 
     # ---- source on disk, for what the diff actually raises -----------------
@@ -680,13 +680,13 @@ def registry_report(root, registry, base_registry, locked_versions, patch_target
 
     out += ["## Source on disk", "",
             "Fetched from the registry and verified byte-for-byte against the",
-            "sha256 above before being unpacked — nothing here extracts bytes",
+            "sha256 above before being unpacked, and nothing here extracts bytes",
             "that failed that check. Untracked, so `git ls-files` and `git grep`",
             "cannot see them: use `rg` or `find` under `rust-deps/crates/`.", ""]
     if truncated:
         out += [f"**Only the first {MAX_CRATES_FETCHED} are on disk**; this pull",
                 "request changed more registry packages than that. The rest are",
-                "verified above but unread — report that as not covered.", ""]
+                "verified above but unread, so report that as not covered.", ""]
 
     fetched = crate_failed = 0
     for name, version, digest, why in wanted:
@@ -696,10 +696,10 @@ def registry_report(root, registry, base_registry, locked_versions, patch_target
                                                 f"{name}-{version}"))
         if good:
             fetched += 1
-            out += [f"- `{name} {version}` — `{rel}/`. {why[0].upper() + why[1:]}."]
+            out += [f"- `{name} {version}`: `{rel}/`. {why[0].upper() + why[1:]}."]
         else:
             crate_failed += 1
-            out += [f"- `{name} {version}` — **NOT ON DISK**: {detail}. "
+            out += [f"- `{name} {version}`, **NOT ON DISK**: {detail}. "
                     "The source was not read; report it as not covered."]
     out += [""]
     print(f"crates.io: {len(unchanged) + len(changed)} verified, "
@@ -799,7 +799,7 @@ def main():
 
         if not allowed(url):
             refused += 1
-            lines += [f"## {name} — NOT FETCHED", "",
+            lines += [f"## {name}: NOT FETCHED", "",
                       f"- URL: `{url}`",
                       f"- Pinned at: `{sha}`",
                       f"- Crates: {crates}",
@@ -820,7 +820,7 @@ def main():
         good, detail = fetch(url, sha, dest, also=prev if bumped else None)
         if good:
             ok += 1
-            lines += [f"## {name}" + (" — BUMPED BY THIS PULL REQUEST" if bumped else ""), "",
+            lines += [f"## {name}" + (": BUMPED BY THIS PULL REQUEST" if bumped else ""), "",
                       f"- Source: `rust-deps/{name}/`, checked out at the revision this PR pins",
                       f"- URL: `{url}`",
                       f"- Pinned at: `{sha}`",
@@ -835,7 +835,7 @@ def main():
                 lines += [""]
         else:
             failed += 1
-            lines += [f"## {name} — FETCH FAILED", "",
+            lines += [f"## {name}: FETCH FAILED", "",
                       f"- URL: `{url}`",
                       f"- Pinned at: `{sha}`",
                       f"- Crates: {crates}",

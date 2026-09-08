@@ -17,7 +17,7 @@ built around it.
 
 `.github/workflows/review.yml` takes a `mode` input. `mode=deep` dispatches
 this skill instead of `monero-standard-review`, and it must name a PR by
-number — the workflow refuses `mode=deep` with `pr=sweep`, because this is an
+number: the workflow refuses `mode=deep` with `pr=sweep`, because this is an
 escalation a human chooses for a diff that earned it, not something to point
 at whatever the queue surfaced.
 
@@ -101,9 +101,9 @@ There is one job. Read its recipe and follow it as written:
 
 ## Environment and paths (use verbatim)
 
-- [FINDING SPEC — the shape of a candidate finding](${CLAUDE_SKILL_DIR}/specs/finding-spec.md)
-- [REPORT SPEC — the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
-- [HOUSE STYLE — how the prose is written](.claude/references/writing.md).
+- [FINDING SPEC: the shape of a candidate finding](${CLAUDE_SKILL_DIR}/specs/finding-spec.md)
+- [REPORT SPEC: the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
+- [HOUSE STYLE: how the prose is written](.claude/references/writing.md).
   Orwell's six rules, the Simplified Technical English rules that apply, the
   words to cut, and the pass to run over the draft. Read it with the REPORT
   SPEC: that one is the structure, this one is the writing.

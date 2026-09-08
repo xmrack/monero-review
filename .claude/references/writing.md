@@ -53,7 +53,7 @@ terminate.
 mechanical: read your sentence and delete every word whose removal changes no
 fact. "It is worth noting that the check is absent" is "the check is absent".
 "There is no validation performed on the length" is "nothing validates the
-length" — six words for eight, and it also fixes rule 4.
+length": six words for eight, and it also fixes rule 4.
 
 **4. Active voice.** Name who does it. In a security report the actor is the
 whole point: "the length is not checked" hides the question a maintainer is
@@ -95,7 +95,7 @@ our own words rather than copied.
 
 **Words.** One thing keeps one name for the whole report. If you called it
 `m_key_images` in the finding, do not call it "the key image map" in the fix
-and "the index" in the summary — a reader cannot tell whether those are three
+and "the index" in the summary: a reader cannot tell whether those are three
 things. Pick the identifier and repeat it. Repetition is not a style flaw
 here; it is how a reader knows two sentences are about the same object.
 
@@ -106,7 +106,7 @@ cost of two words. Keep the articles: "the check", not "check".
 
 **Verbs.** Simple tenses. Present tense for what the code does, past for what
 you did. Avoid `-ing` chains: "validating the length before allocating" is
-"it validates the length, then allocates". No stacked conditionals — "would
+"it validates the length, then allocates". No stacked conditionals: "would
 have been able to have been reached" is "a peer can reach it".
 
 **Sentences.** One idea each. Twenty words is the cap on a sentence that tells
@@ -130,7 +130,7 @@ sentences that have not been separated yet.
 Nothing was lost and the reader gets three facts instead of one blur.
 
 **State the condition first.** "If the daemon runs with
-`--enable-multisig-experimental`, a co-signer can..." — not the condition
+`--enable-multisig-experimental`, a co-signer can...". Not the condition
 trailing after the claim. A reader who does not meet the condition can stop at
 word six.
 
@@ -186,11 +186,46 @@ than about the code.
 | thoroughly verified, independently confirmed | the vote count is the evidence; an adjective is not |
 | leverage, surface (verb), performant | not words |
 
+# No dashes for punctuation
+
+Never write an em dash in a report. Not fencing an aside, not before an
+afterthought, not as the separator in a heading or a list entry. The en dash
+used the same way is the same problem, and so is a spaced `--` standing in for
+one. A hyphen inside a name or a flag (`--enable-multisig-experimental`,
+`pre-image`, `check-and-clear`) is a different mark and is fine.
+
+The dash is where a sentence goes to avoid deciding what its two halves have
+to do with each other, which is the one thing this reader needs settled.
+Deciding costs one keystroke:
+
+| what the dash was doing | write instead |
+| --- | --- |
+| introducing the explanation of what came before it | a colon |
+| fencing an aside in mid-sentence | a pair of commas, or brackets |
+| bolting a second thought onto a finished sentence | a full stop, then the second sentence |
+| separating a heading, a label or a list entry from what it is about | a colon |
+| standing between a struck proposal and the reason it fell | a colon |
+| spanning a range | a hyphen: `lines 40-58`, `2-3 sentences` |
+
+The Before/After pair under **Sentences** above is this rule in miniature.
+Two dashes hold a 53-word sentence together; the colon that replaces the first
+of them is what lets it become three. Those two are the only dashes left in
+this file, and they are there because the Before is the fault being shown. Do
+not tidy them away.
+
+A colon carries more than it looks like it does. It promises the reader that
+what follows explains what came before. A dash promises nothing, which is why
+it is so easy to type.
+
 # What the rules do not touch
 
 - **Code.** A quoted snippet is copied exactly, whatever its style. Never
   reflow, retype or tidy a line you are citing: the reader is going to compare
   it against the file.
+- **Anything you are quoting.** A dash in a commit message, a pull request
+  description, an upstream comment or an author-supplied string is part of the
+  quotation. Copy it. The dash rule governs your sentences, not someone
+  else's.
 - **Identifiers.** `m_key_image_partial` is its name. Do not translate it into
   prose and do not correct its spelling.
 - **Domain terms.** `key image`, `ring signature`, `scalar`, `subaddress`,
@@ -207,8 +242,8 @@ Do not hard-wrap prose in `review.md`. A paragraph is a single long line,
 however long that is; let the reader's browser wrap it.
 
 This is not a style preference, it is where the file is read. GitHub renders a
-single newline in an ISSUE BODY as a line break — a GFM extension for
-user-authored content, and the opposite of how the same Markdown renders as a
+single newline in an ISSUE BODY as a line break, a GFM extension for
+user-authored content and the opposite of how the same Markdown renders as a
 file in a repository. So prose wrapped at 78 columns, which looks tidy in an
 editor and correct in every `.md` file in this repository, reaches the reader as
 a column of short ragged lines with the right-hand third of the page empty. It
@@ -221,9 +256,9 @@ Use it where you want one and nowhere else:
 - between the locator lines of a merged finding, one site per line;
 - between list items, table rows, and the header's three lines.
 
-Everything else — the summary, each labelled block of a finding, a refuted
-entry's explanation, a Coverage paragraph — is one line per paragraph, with a
-blank line between paragraphs.
+Everything else is one line per paragraph, with a blank line between
+paragraphs: the summary, each labelled block of a finding, a refuted entry's
+explanation, a Coverage paragraph.
 
 THE SPEC FILES AND THIS ONE ARE WRAPPED AT 78 COLUMNS. That is for the people
 who edit them, and it is the one piece of their formatting you must not copy.
@@ -234,7 +269,7 @@ structural and were never prose.
 
 # The pass to run before you write the file
 
-Not a suggestion — do these six things, in this order, over what you are about
+Not a suggestion. Do these six things, in this order, over what you are about
 to write:
 
 1. **Find your longest sentence.** Count its words. Over 25, split it. Do this
@@ -243,9 +278,11 @@ to write:
    the cut-on-sight table.
 3. **Turn every passive into an active** unless you truly do not know who acts.
    In a finding, if you do not know who acts, that is a gap in the finding.
-4. **Grep your own draft for our jargon.** unit, cell, lens, angle, seam,
-   candidate, mapper, `coverage.`. Each hit is a fact you have not yet
-   translated.
+4. **Grep your own draft twice.** First for our jargon: unit, cell, lens,
+   angle, seam, candidate, mapper, `coverage.`. Each hit is a fact you have
+   not yet translated. Then for the em dash and the en dash. Each hit outside
+   a quotation is a decision you have not made yet, and the table under
+   *No dashes for punctuation* says which mark makes it.
 5. **Read the fix alone**, with the rest of the report covered. Could a
    maintainer who has not read the finding act on it? It names a file, a
    function, and a change. If it names a principle instead, it is not a fix
@@ -253,6 +290,6 @@ to write:
 6. **Unwrap every paragraph.** Each one is a single line before you save the
    file. Any newline still inside prose is a break you meant. This is last
    because it is mechanical and it is easy to undo the other four while doing
-   it — check nothing else changed.
+   it, so check nothing else changed.
 
 The report is finished when cutting anything else would remove a fact.

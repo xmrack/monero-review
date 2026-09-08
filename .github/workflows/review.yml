@@ -1431,13 +1431,13 @@ jobs:
           if [ -z "$stamp" ] || [ -z "$cells" ] || [ -z "$failed" ] || \
              [ -z "$cands" ] || [ -z "$conf" ] || [ -z "$refut" ] || [ -z "$unver" ]; then
             state=unverified
-            note="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
+            note="**NOT VERIFIED**: the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran. Treat this as no review at all."
           elif [ -n "$prof" ] && [ "$prof" != "$TIER" ]; then
             state=unverified
-            note="**NOT VERIFIED** — this run was dispatched as \`$TIER\` but the report's coverage stamp says the \`$prof\` pipeline produced it. One of the two is wrong, and neither reading is safe to publish: the numbers describe a run nobody asked for."
+            note="**NOT VERIFIED**: this run was dispatched as \`$TIER\` but the report's coverage stamp says the \`$prof\` pipeline produced it. One of the two is wrong, and neither reading is safe to publish: the numbers describe a run nobody asked for."
           elif [ "$fleet" != "yes" ]; then
             state=unverified
-            note="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched. The numbers are not evidence of anything."
+            note="**NOT VERIFIED**: the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched. The numbers are not evidence of anything."
           elif [ "$(( conf + refut + unver ))" -ne "$cands" ]; then
             # Every candidate ends in exactly one of the three buckets, so
             # this identity holds by construction in the pipeline. A stamp
@@ -1445,13 +1445,13 @@ jobs:
             # a template left unfilled, or numbers someone reasoned their
             # way to. Either way it is not evidence.
             state=unverified
-            note="**NOT VERIFIED** — the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
+            note="**NOT VERIFIED**: the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
           elif { [ -n "$pub" ] && [ -z "$merg" ]; } || { [ -z "$pub" ] && [ -n "$merg" ]; }; then
             # Half a pair. The pipeline returns coverage.published and
             # coverage.merged together and always, so a stamp carrying one
             # without the other was assembled by hand.
             state=unverified
-            note="**NOT VERIFIED** — the coverage stamp carries one of \`published\`/\`merged\` and not the other. The pipeline returns both on every run, so this stamp was not copied from its result."
+            note="**NOT VERIFIED**: the coverage stamp carries one of \`published\`/\`merged\` and not the other. The pipeline returns both on every run, so this stamp was not copied from its result."
           elif [ -n "$pub" ] && [ -n "$merg" ] && [ "$(( pub + merg ))" -ne "$conf" ]; then
             # Every confirmed candidate either gets an entry of its own or is
             # folded into another one's; there is no third place for it. A
@@ -1459,16 +1459,16 @@ jobs:
             # the panel and the report -- the one thing the merge stage must
             # never do -- or was not taken from a real result.
             state=unverified
-            note="**NOT VERIFIED** — the coverage stamp does not add up ($pub published + $merg merged is not $conf confirmed), so either a confirmed finding went missing between the panel and the report, or the numbers were not taken from a real pipeline result."
+            note="**NOT VERIFIED**: the coverage stamp does not add up ($pub published + $merg merged is not $conf confirmed), so either a confirmed finding went missing between the panel and the report, or the numbers were not taken from a real pipeline result."
           elif [ "$cells" -eq 0 ]; then
             state=unverified
-            note="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
+            note="**NOT VERIFIED**: the $TIER pass dispatched no research cells at all, so nothing was examined."
           elif [ "$(( failed * 2 ))" -gt "$cells" ]; then
             state=unverified
-            note="**NOT VERIFIED** — $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+            note="**NOT VERIFIED**: $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
           elif [ "$cands" -gt 0 ] && [ "$(( unver * 2 ))" -gt "$cands" ]; then
             state=unverified
-            note="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
+            note="**NOT VERIFIED**: the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
           elif [ "$cands" -eq 0 ] && [ "$(( failed * 4 ))" -gt "$cells" ]; then
             # A no-findings deep review is the strongest claim this
             # pipeline makes, and it is the one a reader is least able to
@@ -1479,7 +1479,7 @@ jobs:
             # anything worse than a quarter of cells lost is not a clean
             # bill of health, it is a thin one.
             state=unverified
-            note="**NOT VERIFIED** — nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
+            note="**NOT VERIFIED**: nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
           else
             state=fleet
             covered="$(( cells - failed )) of $cells research cells reported"
@@ -1492,7 +1492,7 @@ jobs:
             elif [ -z "$sevs" ]; then
               note="the $TIER pipeline ran ($covered). Its panel decided $(( conf + refut )) of $cands candidate(s) and confirmed none: the report records $refut refuted. Each candidate is put to $angles verifiers on separate angles and the votes are counted in code rather than argued in prose."
             else
-              note="verified by the $TIER pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s) — $conf confirmed, $refut refuted. Each faced $angles verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered to what the agreeing verifiers rated. The report states the vote per finding instead of a confidence word. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
+              note="verified by the $TIER pipeline's own panel, which decided $(( conf + refut )) of $cands candidate(s): $conf confirmed, $refut refuted. Each faced $angles verifiers on separate angles; the votes are counted in code rather than argued in prose, and severity is lowered to what the agreeing verifiers rated. The report states the vote per finding instead of a confidence word. Coverage: $covered. The report's own Coverage and Refuted sections say what was examined and what died."
             fi
             if [ "$failed" != "0" ]; then
               note="$note $failed cell(s) failed rather than reporting; the report names them."
@@ -1632,7 +1632,7 @@ jobs:
           esac
           if [ -n "${UNPUBLISHABLE:-}" ]; then
             {
-              echo "## $UPSTREAM#${{ matrix.pr }} @ \`$SHA\` — UNVERIFIED"
+              echo "## $UPSTREAM#${{ matrix.pr }} @ \`$SHA\`: UNVERIFIED"
               echo
               echo "A review was produced but its verification did not complete"
               echo "(state: \`${VERIFY_STATE:-absent}\`). Nothing here has been"
@@ -1792,7 +1792,7 @@ jobs:
           # 3. Fallback: the clock.
           [ "$started" = "0" ] && spare_it "Failed before the review started."
           if [ "$elapsed" -lt "$MIN_REAL_ATTEMPT_SECONDS" ]; then
-            spare_it "Failed after ${elapsed}s — too fast to be this PR's fault (most likely a Claude usage limit, auth, or infrastructure)."
+            spare_it "Failed after ${elapsed}s: too fast to be this PR's fault (most likely a Claude usage limit, auth, or infrastructure)."
           fi
           count_it "Run did not produce a review after ${elapsed}s, and the execution log was inconclusive."
 

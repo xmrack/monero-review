@@ -24,15 +24,15 @@ with the right question.
 
 Each unit you emit carries:
 
-- `paths` — files, taken from the list you were given. Repository-relative,
+- `paths`: files, taken from the list you were given. Repository-relative,
   literal, no globs.
-- `role` — one line on what this part of the change does.
-- `boundary` — the trust boundary it sits behind, named as
+- `role`: one line on what this part of the change does.
+- `boundary`: the trust boundary it sits behind, named as
   `.claude/skills/monero-security-review/references/trust-boundaries.md` names them: the P2P/Levin surface, the
   restricted or unrestricted RPC surface, block and transaction validation,
   the daemon-to-wallet direction, the build and packaging path. Write `none`
   when nothing untrusted reaches it.
-- `lenses` — the weakness classes worth spending a researcher on, from the
+- `lenses`: the weakness classes worth spending a researcher on, from the
   fixed set your dispatch lists.
 
 Put the units most exposed to untrusted input first. Code that parses bytes off

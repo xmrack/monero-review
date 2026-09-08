@@ -28,9 +28,9 @@ needs no reachability argument.
 # Where it is
 
 - `file`, repository-relative.
-- `line` — where the damage happens, not where the function starts.
-- `symbol` — the enclosing function or method.
-- `snippet` — that line, copied exactly.
+- `line`: where the damage happens, not where the function starts.
+- `symbol`: the enclosing function or method.
+- `snippet`: that line, copied exactly.
 
 The snippet is how a reader confirms you were looking at what you say you were,
 and how the Lead checks the anchor still holds before publishing. Nothing
@@ -46,7 +46,7 @@ what changes**.
 You are the only agent in this run that can write it. You have read the guards,
 the callers and the function around the defect; the Lead has read your JSON.
 When this field was absent the Lead invented a fix out of `reaches` and
-`missingGuard`, and what came out was "validate the length" — the defect said
+`missingGuard`, and what came out was "validate the length": the defect said
 backwards, which is not a change anybody can make. "How do I fix it" is one of
 the three questions the report exists to answer, and it is answered here or not
 at all.
@@ -63,7 +63,7 @@ Four things make a fix usable:
   your fix in ten words with none of your reasoning. Write the first clause so
   that it still means something there.
 - **It admits a design question when there is one.** Sometimes the right fix is
-  not yours to choose — where validation belongs, whether an error is fatal.
+  not yours to choose: where validation belongs, whether an error is fatal.
   Say that in a clause and give the local change that stops the bleeding. That
   is more useful than a confident wrong answer and more useful than silence.
 
@@ -77,7 +77,7 @@ nothing downstream corrects a lazy fix. The merge stage does see it, because
 
 `untrustedInput`, `reaches`, `missingGuard`, `whyThisDiff`, `fix` and
 `rationale` are consumed by a program and then largely reproduced in front of a
-Monero maintainer. Write them in the house style —
+Monero maintainer. Write them in the house style of
 `.claude/references/writing.md`, which is Orwell's six rules and the Simplified
 Technical English rules that apply. The two that matter most here:
 
@@ -105,12 +105,12 @@ something.
 The same ladder every review here uses, so a deep review's labels mean what
 every other issue in this repository's labels mean:
 
-- **CRITICAL** — consensus split, remote code execution, or fund theft.
-- **HIGH** — remote crash or OOM of a node or wallet, key or seed disclosure,
+- **CRITICAL**: consensus split, remote code execution, or fund theft.
+- **HIGH**: remote crash or OOM of a node or wallet, key or seed disclosure,
   or a privacy break that deanonymises a user.
-- **MEDIUM** — needs unusual configuration, a non-default option, or a
+- **MEDIUM**: needs unusual configuration, a non-default option, or a
   significant attacker position; or a privacy leak of limited scope.
-- **LOW** — defence in depth, hardening, or a defect with no
+- **LOW**: defence in depth, hardening, or a defect with no
   attacker-reachable impact you were able to establish.
 
 Rate the path the code actually creates, not a deployment you are imagining.

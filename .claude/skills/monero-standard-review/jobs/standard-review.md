@@ -7,32 +7,32 @@ Resolve what is under review, start the run, write `review.md`.
 The harness fetched the PR head and pointed `origin/base` at the branch it
 targets. Confirm that instead of assuming it, one command per call:
 
-- `git rev-parse --verify --quiet origin/base` — empty means this checkout was
+- `git rev-parse --verify --quiet origin/base`: empty means this checkout was
   not prepared by the harness. Stop and say so. Without `origin/base` there is
   no honest range, and falling back to `master` would hand you an entire
   branch's divergence on any backport.
-- `git rev-parse --short=12 HEAD` — the head under review. Quote it.
+- `git rev-parse --short=12 HEAD`: the head under review. Quote it.
 
 The range is `origin/base...HEAD`, three dots, never inside `$(...)`.
 
 `PR_CONTEXT.md` opens with a `Pull request: <upstream>#<n>` line written by the
 harness, outside the author-supplied fence, and then the author's own title.
 Take the number and title from there and treat the rest as the author's claims.
-If that line is absent — an older harness, or a checkout prepared by hand —
+If that line is absent (an older harness, or a checkout prepared by hand),
 pass `pr: null` rather than guessing; the workflow handles it.
 
 ## 2. Take the changed-file list
 
 `PR_FILES.md` already holds it, one path per line, written by the harness from
 `git diff --name-only origin/base...HEAD` before you started. Read it rather
-than re-deriving it — and if it is absent, run that command yourself and say in
+than re-deriving it, and if it is absent, run that command yourself and say in
 the report that the harness did not provide the list.
 
 Hand the list to the workflow exactly as it stands. Do not filter it, reorder
 it by what looks important, or trim it to something manageable. The workflow's
 coverage check compares the mapper's answer against precisely this list, so
 anything you drop here becomes a file that was never reviewed and never
-reported as unreviewed — which is the one failure this shape is built to
+reported as unreviewed, which is the one failure this shape is built to
 prevent.
 
 An empty list means there is nothing to review: say so and stop.
@@ -47,7 +47,7 @@ single-reviewer fallback runs with a narrow allowlist carrying neither
 `Workflow` nor `Agent`, and this skill is written for a session where both are
 granted.
 
-If it is missing, stop with one line — that this review needs the Workflow
+If it is missing, stop with one line: that this review needs the Workflow
 tool, this session does not have it, so nothing ran, and
 `/monero-security-review`, the single-reviewer fallback, is what to use here.
 Do not improvise around it.
@@ -58,7 +58,7 @@ nobody performed, which is the one thing this skill must never produce.
 harness's input, not a place to leave a note. A file explaining why nothing
 ran carries no severity heading, so `labels.py` reads it as a review that
 found nothing, the harness files the issue that marks this pull request
-reviewed, and it is never looked at again — a harness misconfiguration turned
+reviewed, and it is never looked at again, so a harness misconfiguration turns
 into a permanent clean bill of health. An absent file is read correctly: the
 run failed and the pull request stays in the queue.
 
@@ -74,8 +74,8 @@ Workflow({ name: "monero-deep-scan",
 ```
 
 `profile: "standard"` is not optional and not a hint. The workflow defaults an
-unrecognised profile to `deep`, deliberately — a typo should cost money rather
-than coverage — so omitting it here buys the full three-hour pipeline on every
+unrecognised profile to `deep`, deliberately, because a typo should cost money
+rather than coverage. Omitting it here buys the full three-hour pipeline on every
 pull request the sweep picks up, which is a budget nobody asked for.
 
 `root` has to be absolute. The agents `cd` to it before doing anything, because
@@ -87,7 +87,7 @@ Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, and that nothing is a finding until the verifiers have
 finished.
 
-## 4b. Wait for it — this is not optional
+## 4b. Wait for it: this is not optional
 
 The Workflow tool **always returns immediately**. Its result says
 `Workflow launched in background. Task ID: <id>` and the fleet then runs
@@ -105,25 +105,25 @@ TaskOutput({ task_id: "<the Task ID>", block: true, timeout: 600000 })
 
 600000ms is the maximum per call. If it comes back `not_ready` or still
 running, **call it again**, and keep calling until it returns the workflow's
-result. This tier is a smaller fleet than the deep one — on a five-unit change
+result. This tier is a smaller fleet than the deep one. On a five-unit change
 it is about eight agents at an effective concurrency of two, and on an ordinary
-few-file diff it is three or four — so expect several calls, not dozens. Do not end your turn, do not start writing
+few-file diff it is three or four, so expect several calls, not dozens. Do not end your turn, do not start writing
 `review.md`, and do not summarise anything until that result is in your hands.
 
 You get back `findings`, `refuted`, `unverified`, `coverage`, and a `next` line.
 Follow `next`. Note that `unverified` is a list of candidates no panel decided,
 while `coverage.candidatesUnverified` is only its count (plus any whose panel
-threw, which are a count with no record) — when something has to be named, use
+threw, which are a count with no record). When something has to be named, use
 the list.
 
-If the workflow genuinely fails rather than returning — the task dies, or
-`TaskOutput` reports an error rather than a result — say so and write nothing.
+If the workflow genuinely fails rather than returning (the task dies, or
+`TaskOutput` reports an error rather than a result), say so and write nothing.
 A report with no pipeline behind it is the one thing this skill must never
 produce.
 
 ## 5. Write `review.md`
 
-Read the REPORT SPEC now — not before. Then read the house style,
+Read the REPORT SPEC now, not before. Then read the house style,
 `.claude/references/writing.md`: Orwell's six rules, the Simplified Technical
 English rules that apply, the words to cut, and the six-step pass to run over
 the draft. Then write `review.md` in the repository root with `Write`.
@@ -136,7 +136,7 @@ each returned field onto the template. Follow it.
 **Publish the fix that came back.** Each finding carries a `fix` written by the
 researcher that read the guards and the callers. Check it names a real file and
 function and that it covers the defect; correct it and say so where reading the
-code contradicts it. Do not replace it with a restatement of the defect —
+code contradicts it. Do not replace it with a restatement of the defect:
 "validate the length" is what this field exists to stop.
 
 Severity arrives already settled: the workflow lowered any severity its
@@ -153,7 +153,7 @@ Before you write a finding down, read its cited line and check it still says
 what the proposal quoted. Nothing upstream does that for you, and a wrong
 citation is the fastest way to lose the reader.
 
-Coverage is a table and seven labelled lines — never a paragraph, and never a
+Coverage is a table and seven labelled lines, never a paragraph, and never a
 field name from the returned object. It must carry:
 
 - the areas and the weakness classes read over each;
@@ -174,22 +174,22 @@ field name from the returned object. It must carry:
 - **the observations one reader handed to another.** `coverage.deferred` holds
   every one, each with a `ruling`. `filed` became a proposal and needs no
   separate mention; `did-not-hold` means somebody read the code and it did not
-  survive — say what it was and give the adjudicator's reason, which is in
+  survive, so say what it was and give the adjudicator's reason, which is in
   `coverage.researchAccount` under the matching `deferred/<n>` tag. Every entry
   in `coverage.deferredUnclaimed` is one whose adjudicator came back unusable,
   so nothing ever looked at it: quote those in **Not covered** with their file
   and line;
-- any id in `coverage.anchorDoubted` — a finding both verifiers could not find
+- any id in `coverage.anchorDoubted`: a finding both verifiers could not find
   at its cited line. Re-anchor it from the code or drop the finding, and say
   which you did in **Corrections.**;
 - `coverage.mapperFallback` when the partition was unusable and the whole
-  change was read as one area by one reader — complete, but the bluntest thing
+  change was read as one area by one reader: complete, but the bluntest thing
   this tier can do, and barely better than a single reviewer;
 - `coverage.unitsAllowed` when it is below `coverage.unitCeiling`;
 - the merge, when `coverage.mergeApplicable` is true: how many confirmed
   proposals were read as one defect, from `coverage.mergeGroups` and
   `coverage.mergeClusters`. A non-zero `coverage.mergeFailed` means a group
-  came back unusable and its findings publish separately — say so in
+  came back unusable and its findings publish separately, so say so in
   **Corrections.**, because that is a possible duplicate in the report rather
   than a hidden one.
 
@@ -201,13 +201,13 @@ A finding carrying `merged` is several confirmed proposals a merge agent read
 as **one defect**. Write it as one `### [SEVERITY]` entry: a locator line per
 site with that site's vote, a final line giving
 `merged.sameDefectBecause`, and one **Fix.** Never split it back into one entry
-per site and never drop a site — the first makes the stamp's `published` wrong,
+per site and never drop a site: the first makes the stamp's `published` wrong,
 the second loses a place the fix has to hold.
 
 Keep `refuted` in the report, one line each. It is most of what this pipeline
 produces and it is how the next reviewer avoids buying a panel for the same
 idea twice. Nothing merges that list upstream, so two proposals killed by the
-same line may share one bullet naming both sites — but only when the refutation
+same line may share one bullet naming both sites, but only when the refutation
 is genuinely the same one, and never by dropping a site.
 
 End the file with the coverage stamp the REPORT SPEC describes. The harness
@@ -217,7 +217,7 @@ are otherwise indistinguishable from the outside. Write it even when everything
 failed; that is the case it exists for. `profile=standard` in that stamp is
 checked against the mode the harness dispatched, so it has to be the profile
 you actually passed in step 4. Stamp `deferred` from
-`coverage.deferredUnclaimed` — the harness publishes that number as
+`coverage.deferredUnclaimed`, because the harness publishes that number as
 observations nobody settled, so the full `coverage.deferred` count would say on
 the issue that settled observations were abandoned.
 

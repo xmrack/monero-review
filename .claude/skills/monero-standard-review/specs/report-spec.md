@@ -28,20 +28,20 @@ you claim cannot weigh what you cite.
 # Sections
 
 ```markdown
-# Security review — <PR title>
+# Security review of <PR title>
 
-**Result:** <1 finding: 1 MEDIUM> · <what it reaches, ≤10 words> — or
+**Result:** <1 finding: 1 MEDIUM> · <what it reaches, ≤10 words>, or
 `**Result:** No findings · nothing in the diff reaches a trust boundary`
 **Change:** <N> files, +<A>/-<B> · <subsystems touched>
 **Head:** `<sha12>` · opened by <the `Opened by:` login from PR_CONTEXT.md>
 
 ## Summary
 
-<At most 3 sentences and at most 75 words. No sentence over 25 words. What the change does, in your own words, and the one thing a maintainer needs before deciding whether to read on. ONE LINE — do not wrap it, see `writing.md`.>
+<At most 3 sentences and at most 75 words. No sentence over 25 words. What the change does, in your own words, and the one thing a maintainer needs before deciding whether to read on. ONE LINE: do not wrap it, see `writing.md`.>
 
 ## Findings
 
-<With two or more findings, this table first. With one, skip it — the finding is already its own summary.>
+<With two or more findings, this table first. With one, skip it: the finding is already its own summary.>
 
 | id | sev | what is wrong | where | the fix |
 | --- | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ you claim cannot weigh what you cite.
 **Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why nothing stops it. A citation for each. One line.>
 
 **Impact.** <One sentence. What someone gets.>
-**Needs:** <what has to hold — a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line — the break above this label is deliberate, the only one in the block.>
+**Needs:** <what has to hold: a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line. The break above this label is deliberate, and it is the only one in the block.>
 
 **Fix.** <At most 3 sentences. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
@@ -62,7 +62,7 @@ you claim cannot weigh what you cite.
 
 ## Refuted
 
-- ~~<proposal>~~ — <what took it apart, and the line that settled it.>
+- ~~<proposal>~~: <what took it apart, and the line that settled it.>
 
 ## Not covered
 
@@ -78,13 +78,13 @@ you claim cannot weigh what you cite.
 | --- | --- | --- |
 | <plain name> | <paths, or a count> | <weakness classes> |
 
-**Accounted for.** <N> of <N> changed files — <N> read, <N> excluded (<reason per exclusion, one clause each>).
-**Not accounted for.** <each path nobody placed, named — or "none">
-**Not read.** <any area a reader failed on, named — or "none">
-**This tier.** standard — one reader per area rather than one per weakness class, no pass across areas, no second look, two verifiers per finding rather than three.
+**Accounted for.** <N> of <N> changed files: <N> read, <N> excluded (<reason per exclusion, one clause each>).
+**Not accounted for.** <each path nobody placed, named, or "none">
+**Not read.** <any area a reader failed on, named, or "none">
+**This tier.** standard: one reader per area rather than one per weakness class, no pass across areas, no second look, two verifiers per finding rather than three.
 **Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>.
-**Handed on.** <each observation one reader passed to another, and how it was settled — or "none">
-**Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect — or omit the line>
+**Handed on.** <each observation one reader passed to another, and how it was settled, or "none">
+**Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect, or omit the line>
 
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
@@ -92,7 +92,7 @@ you claim cannot weigh what you cite.
 # The header is three lines
 
 **Result first**, because it is the only line some readers finish. It carries
-the count and, after a `·`, what the change reaches — the boundary in a clause,
+the count and, after a `·`, what the change reaches: the boundary in a clause,
 not a paragraph. "none reachable" is a complete and valuable answer.
 
 `Change` and `Head` are facts, not prose. Do not let either grow a clause.
@@ -100,7 +100,7 @@ not a paragraph. "none reachable" is a complete and valuable answer.
 # The summary: 3 sentences, 75 words, nothing over 25
 
 The sentence cap alone does not work. Told only "two or three sentences", a
-writer packs 53 words into one and calls it brief — that has happened here, and
+writer packs 53 words into one and calls it brief. That has happened here, and
 the result was three facts in a blur. So both limits hold at once, and the
 25-word ceiling is what actually forces the prose apart.
 
@@ -128,13 +128,13 @@ reading, and is worth more than three paragraphs of Checked-and-clear.
 
 # The finding: a locator and four blocks
 
-Seven labelled blocks per finding was the old shape, and the fix sat sixth —
+Seven labelled blocks per finding was the old shape, and the fix sat sixth,
 below the two longest. A maintainer reads a finding to learn what is broken and
 what to change, so those are now first and third of four.
 
 **The locator line** is what a reader copies into an editor:
 `` `file:line` · `symbol` · <n>/2 angles agreed ``. It replaces a **Where.**
-block and a **Verification.** paragraph. The vote is a count and nothing else —
+block and a **Verification.** paragraph. The vote is a count and nothing else:
 never "thoroughly verified" or "confirmed by an independent panel". The value
 of this shape over one reviewer is that the number came out of a program;
 adjectives are how it stops being worth more.
@@ -144,7 +144,7 @@ nothing stops it, each with a line you read. This is question 1 and it is
 answered in plain words before any evidence: not "an analysis of the call graph
 indicates" but "a peer's crafted response reads past the end of the buffer".
 
-**Impact.** One sentence, then `Needs:`. What someone gets, concretely — funds,
+**Impact.** One sentence, then `Needs:`. What someone gets, concretely: funds,
 a crash, a key, a chain split, a deanonymised user. `Needs:` carries the
 preconditions, and it is the line that decides whether a MEDIUM is this
 afternoon's problem or next month's. State the condition plainly: a flag by its
@@ -164,9 +164,9 @@ audit trail, so it comes last: a reader who accepts the finding never needs it,
 and a reader who doubts it needs nothing else.
 
 **Nothing else gets a block.** No **Panel.**, no **Notes.**, no **Discussion.**
-An exception the reader must know about — a severity the panel brought down, an
-anchor you re-checked, a duplicate that could not be merged — goes in
-Coverage's **Corrections.** line, once, not appended to each finding.
+An exception the reader must know about (a severity the panel brought down, an
+anchor you re-checked, a duplicate that could not be merged) goes in Coverage's
+**Corrections.** line, once, not appended to each finding.
 
 ## Order and length
 
@@ -185,7 +185,7 @@ any that moved in **Corrections.**
 The heading is `### [SEVERITY] Title` and nothing else. A confidence beside the
 severity puts two graded words in one bracket, they read as one scale, and
 `[MEDIUM / medium]` blurs the only thing severity is for. What confidence stood
-in for is published instead as `<n>/2 angles agreed` on the locator line — a
+in for is published instead as `<n>/2 angles agreed` on the locator line: a
 count a reader can weigh, and one that a deep review's `<n>/3` can be compared
 against without anybody supplying a word for the difference.
 
@@ -213,11 +213,12 @@ and a grouped finding arrives carrying a `merged` object.
 Write it as **one** `### [SEVERITY]` entry:
 
 - one locator line per site, each with that site's vote;
-- a final locator line reading `Same defect because: <merged.sameDefectBecause>`
-  — a shared cause, not a shared file;
+- a final locator line reading
+  `Same defect because: <merged.sameDefectBecause>`, naming a shared cause and
+  not a shared file;
 - one **Fix.**, which is the point of the merge: one change at one place.
 
-Do not split it back into one entry per site — a maintainer should see one bug
+Do not split it back into one entry per site. A maintainer should see one bug
 once, and `published` in the stamp would then be wrong. Do not drop a site
 either: each is a place the defect is reachable and a place the fix has to
 hold.
@@ -234,8 +235,8 @@ throws away the expensive part.
 
 One line each: the proposal, what killed it, the `file:line`. Not the story of
 how it was considered. Two proposals killed by the same line may share one
-bullet naming both sites — only when the refutation is genuinely the same one,
-and never by dropping a site.
+bullet naming both sites, but only when the refutation is genuinely the same
+one, and never by dropping a site.
 
 Emit the heading even when nothing was refuted (`- none`). `labels.py` stops
 reading there, and a report without it has no stopping point.
@@ -254,7 +255,7 @@ lines, each one line long. Never a paragraph.
   no second pass behind it. If this line is not "none", it also goes in the
   summary.
 - **This tier** is the fixed sentence in the template. Do not rewrite it per
-  report and do not soften it — those four gaps are the whole basis on which
+  report and do not soften it: those four gaps are the whole basis on which
   somebody decides a change has earned the deep pass. It replaces a 90-word
   paragraph that said the same four things in every report this tier has ever
   written.
@@ -262,7 +263,7 @@ lines, each one line long. Never a paragraph.
   reading is reported as that reader's own account, not as established fact.
 - **Handed on** covers every observation one reader passed to another rather
   than filing. One that did not hold is reported with the reason. One nobody
-  could settle goes in **Not covered** with its file and line — that stage is
+  could settle goes in **Not covered** with its file and line. That stage is
   the only thing standing between an observation somebody wrote down and nobody
   ever reading it.
 - **Corrections** is omitted when there is nothing to correct.
@@ -273,7 +274,7 @@ the total against the changed-file list.
 
 **No workflow field names in this section.** `seamPassApplicable`,
 `coverage.unaccounted`, `mergeApplicable`, `reLookApplicable`, "cells",
-"lenses", "the mapper" — none of these mean anything to a maintainer. Read the
+"lenses", "the mapper": none of these mean anything to a maintainer. Read the
 value and write the fact: "every changed file is accounted for", "no pass
 looked across areas", "nothing was nominated as a duplicate". The stamp is
 where field names belong, and it is invisible when rendered.
@@ -287,8 +288,8 @@ do not soften something real to be kind about the code.
 # Nominate the durable refutations
 
 Where a refutation settles something about this codebase rather than about this
-diff — what epee's serializer really bounds, what a zero scalar does, which
-zone a limit applies to — say so, and name it as worth adding to
+diff (what epee's serializer really bounds, what a zero scalar does, which zone
+a limit applies to), say so, and name it as worth adding to
 `.claude/skills/monero-security-review/references/refutations.md`. That file is
 why the next review does not re-propose it. Do not edit it from here: propose,
 and let a human land it.
@@ -298,7 +299,7 @@ and let a human land it.
 The last line of the file, an HTML comment, invisible in the rendered issue and
 read by `.github/workflows/review.yml` before it publishes anything. Emit it
 **always**, as the final line, with every field present and every value a plain
-integer taken verbatim from the returned `coverage` object — never a number you
+integer taken verbatim from the returned `coverage` object, never a number you
 reasoned your way to.
 
 | field | source |
@@ -309,16 +310,16 @@ reasoned your way to.
 | `failedCells` | `coverage.failedCells` |
 | `angles` | the literal `2` |
 | `candidates` | `coverage.candidatesDistinct` |
-| `confirmed` | `coverage.confirmed` — proposals whose panel said holds, **not** the number of entries in `findings`. Those two used to be the same number and the merge stage separated them |
-| `published` | `coverage.published` — the number of `###` entries you write under `## Findings` |
-| `merged` | `coverage.merged` — confirmed proposals folded into another entry |
+| `confirmed` | `coverage.confirmed`: proposals whose panel said holds, **not** the number of entries in `findings`. Those two used to be the same number and the merge stage separated them |
+| `published` | `coverage.published`: the number of `###` entries you write under `## Findings` |
+| `merged` | `coverage.merged`: confirmed proposals folded into another entry |
 | `refuted` | the number of entries in `refuted` |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
-| `deferred` | `coverage.deferredUnclaimed.length` — the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone", so stamping the total says on the issue that settled observations were abandoned |
+| `deferred` | `coverage.deferredUnclaimed.length`: the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone", so stamping the total says on the issue that settled observations were abandoned |
 
 `cells` is `coverage.cells` and **not** `coverage.researchAccount.length`. The
-account holds one entry per pass that had something to report — readers and
+account holds one entry per pass that had something to report, readers and
 adjudicators alike, distinguished by `kind`. On a clean run it is **empty**.
 `coverage.cells` is the number of readers dispatched and `coverage.failedCells`
 counts only the ones that came back unusable.
@@ -327,7 +328,7 @@ counts only the ones that came back unusable.
 proposal ends in exactly one of those buckets. `published + merged` must equal
 `confirmed`, because every confirmed proposal either gets an entry of its own
 or is folded into somebody else's. The harness checks both. A stamp that fails
-either was not copied from a real result, and the report is not published — so
+either was not copied from a real result, and the report is not published. So
 if your numbers do not add up, you took them from the wrong place. Go back to
 `coverage` rather than adjusting one to fit.
 
@@ -338,13 +339,13 @@ confirmed.
 
 Write the stamp even when everything failed. That is the case it exists for. A
 run whose readers all died returns no findings, and from outside that is
-indistinguishable from a clean change — except by these numbers. The harness
+indistinguishable from a clean change, except by these numbers. The harness
 refuses to publish on them, which leaves the pull request in the queue to be
 reviewed again instead of filing the issue that retires it forever.
 
 # Never cross-reference the upstream pull request
 
-Write `monero-project/monero PR 9559` or "this pull request" — never
+Write `monero-project/monero PR 9559` or "this pull request". Never
 `monero-project/monero#9559`, and never a github.com pull URL. Either shape in
 a published issue body makes GitHub file a reference event on the upstream pull
 request, putting a notification on a stranger's work. This pipeline reads
@@ -372,7 +373,7 @@ So:
 - **a bracketed-severity `###` heading appears only under `## Findings`.**
   Everything above the first `## Refuted` is read as a finding, so such a
   heading anywhere else there labels the issue as though a panel had confirmed
-  it. The triage table is safe — it has no `###` heading — and so is a
+  it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
 - `## Not covered`, `## Checked and clear` and `## Coverage` sit below

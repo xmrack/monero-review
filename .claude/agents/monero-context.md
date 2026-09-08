@@ -32,10 +32,10 @@ against master returns the whole branch divergence instead of the change
 
 ## Already on disk, so you never fetch anything
 
-- `PR_CONTEXT.md` — the PR's title and description.
-- `PR_DISCUSSION.md` — upstream review comments and CI status for this head.
-- `PR_HISTORY.md` — recent commit history of each changed file.
-- `PR_SUBMODULES.md` — written by the GitHub harness, and only when this PR
+- `PR_CONTEXT.md`: the PR's title and description.
+- `PR_DISCUSSION.md`: upstream review comments and CI status for this head.
+- `PR_HISTORY.md`: recent commit history of each changed file.
+- `PR_SUBMODULES.md`: written by the GitHub harness, and only when this PR
   actually moves a submodule. It carries the bump range AND each moved
   submodule's own `git log`, because that history is otherwise unreadable:
   `git -C`, `git --git-dir=`, `GIT_DIR=` and `cd <sub> && git` are all refused
@@ -45,18 +45,18 @@ against master returns the whole branch divergence instead of the change
   it at all, so on a local run there is nothing here either way. Settle it
   from the diff -- `git diff origin/base...HEAD --submodule=log` -- rather
   than reading an absent file as an answer.
-- `PR_COMMITS.md` — the patch of each commit *within* this pull request, taken
+- `PR_COMMITS.md`: the patch of each commit *within* this pull request, taken
   from the GitHub API. This is a blobless clone: `git log` lists the PR's own
   commits but `git show <intermediate-sha>` dies with `upload-pack: not our
   ref`. Read this file instead of rediscovering that. It is the way to settle
   "was a guard added and then dropped during a rebase". Written by the GitHub
   harness only; absent under `review-local.sh`.
-- `PR_FILES.md` — the changed-file list, one path per line, written by the
+- `PR_FILES.md`: the changed-file list, one path per line, written by the
   harness from `git diff --name-only origin/base...HEAD` before anything
   started. Lines beginning `#` are not paths. It is what the run's coverage
   arithmetic is checked against, so it is the authoritative list -- if your
   own `git diff --name-only` disagrees with it, say so rather than picking one.
-- `RUST_DEPS.md` and `rust-deps/` — the Rust dependencies this pull request
+- `RUST_DEPS.md` and `rust-deps/`: the Rust dependencies this pull request
   pins by git revision, fetched at exactly those commits. monero-oxide is the
   one that matters: every FCMP++ change depends on it, it is NOT a submodule
   and NOT vendored in the tree, and before this existed a review simply could
@@ -89,10 +89,10 @@ against master returns the whole branch divergence instead of the change
   that directory is what you diff the fork against. Unchanged packages are
   verified but NOT on disk; if a claim turns on one, say so rather than
   guessing what it contains.
-- `TOOLING.md` — which optional analysers this run has, and whether
+- `TOOLING.md`: which optional analysers this run has, and whether
   `deps-include/` landed. Read it rather than probing for binaries. It does not
   say whether the symbol index was built; check that yourself, below.
-- `deps-include/` — normally a copy of `/usr/include`, which is itself outside
+- `deps-include/`: normally a copy of `/usr/include`, which is itself outside
   the sandbox and refused, so the substitution is mechanical: `/usr/include/X`
   becomes `deps-include/X`. The copy is best-effort: check `TOOLING.md` or the
   directory before depending on a system header.
@@ -107,24 +107,24 @@ it real.
 How the codebase works, in `.claude/references/monero/` (shared by every skill
 here; `README.md` is the index):
 
-- `macros.md` — **read this before you trust a grep.** Most control flow and
+- `macros.md`: **read this before you trust a grep.** Most control flow and
   every wire-facing serializer here is macro-generated and has no text form.
   "Nothing calls this" and "this field is unvalidated" are usually claims
   about a macro.
-- `flows.md` — six end-to-end traces naming, step by step, where a check
+- `flows.md`: six end-to-end traces naming, step by step, where a check
   happens and where none does.
 - `architecture.md` and the `subsystems-*.md` for whatever you were assigned.
-- `errors-and-concurrency.md` — before you call a failure unhandled or a
+- `errors-and-concurrency.md`: read it before you call a failure unhandled or a
   sequence a race.
-- `navigation.md` — the search recipes that actually work in this tree.
+- `navigation.md`: the search recipes that actually work in this tree.
 
 What to suspect:
 
-- `.claude/skills/monero-security-review/references/trust-boundaries.md` —
+- `.claude/skills/monero-security-review/references/trust-boundaries.md`:
   who can reach what, and which inputs are attacker-controlled.
-- `.claude/skills/monero-security-review/references/codebase-notes.md` — how
+- `.claude/skills/monero-security-review/references/codebase-notes.md`: how
   this tree is laid out and what is surprising about it.
-- `.claude/skills/monero-security-review/references/refutations.md` — claims
+- `.claude/skills/monero-security-review/references/refutations.md`: claims
   already settled in past reviews. Check it before proposing something, and
   cite it when it answers you.
 
