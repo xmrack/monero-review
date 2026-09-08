@@ -32,6 +32,8 @@ the most useful summary there is.>
 **Impact.** <What it gets someone. First, because it sets the priority.>
 
 **Where.** `path/to/file.cpp:123` in `function_name`
+<For a finding carrying `merged`: one line per site in `merged.sites`, and a
+final line giving `merged.sameDefectBecause` — why these are one defect.>
 
 **What.** <Two or three sentences naming the untrusted input, what it reaches,
 and why nothing stops it, with a citation for each.>
@@ -43,16 +45,21 @@ a victim action. "None" is worth writing when it is true.>
 
 **Fix.** <What to change, at the cause rather than at one caller.>
 
-**Verification.** <n>/3 angles agreed (<which>). <For a finding carrying
-`rescued`: say plainly that the panel REJECTED it two to one and an advocate
-restored it, name what each rejection relied on, and give the line the advocate
-showed they were wrong about. That sentence is what a confidence word used to
-stand in for, and it says more.>
+**Verification.** <n>/3 angles agreed (<which>). <For a merged finding, the
+vote for each site: `src/rpc/c.cpp:42 3/3, src/rpc/c.cpp:51 2/3`.> <For a
+finding carrying `rescued`: say plainly that the panel REJECTED it two to one
+and an advocate restored it, name what each rejection relied on, and give the
+line the advocate showed they were wrong about — and when `rescuedMemberId` is
+set, which site of a merged finding that was. That sentence is what a confidence
+word used to stand in for, and it says more.>
 
 ## Refuted
 
 - ~~<candidate>~~ — <the angle that took it apart and the line that settled
   it.>
+<Two refuted candidates killed by the same line share one bullet naming both
+sites. Nothing merges the refuted list upstream, so this is yours to do — but
+only for a genuinely identical refutation, and never by dropping a site.>
 
 ## Coverage
 
@@ -69,6 +76,12 @@ Then the deferrals: every observation a researcher handed on rather than filing,
 and how the adjudicator that was given it ruled. One that did not hold is
 reported with the reason it did not; one nobody could settle is named under
 Not covered with its file and line.
+Then the merge, when `coverage.mergeApplicable` is true: how many confirmed
+candidates were read as one defect and published as a single entry, and which
+ids went into each. When it is false nothing was even nominated and there is
+nothing to say. When `coverage.mergeFailed` is non-zero, say that a merge group
+came back unusable and its findings are published separately — that is a
+possible duplicate in the report, not a hidden one.
 Then the counts: candidates proposed, candidates left after merging duplicates,
 how many stood up, how many were one vote short and re-looked, and how many of
 those the advocate rescued. Anything a researcher said it could not finish
@@ -84,7 +97,7 @@ reading is reported as that researcher's own account, not as established fact.>
 - <What could not be settled and why: a tool this run lacked, a claim needing
   a running binary, a submodule whose source was absent.>
 
-<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
+<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
 
 # The summary is two or three sentences
@@ -149,6 +162,20 @@ content. Do not pad, and do not soften something real to be kind about the code.
 more than a LOW, because they are the part a "no findings" would otherwise
 overstate.
 
+**A merged finding is one entry.** Several confirmed candidates can be one
+defect -- the same missing check at two call sites, one unvalidated field filed
+once as an overflow and once as a resource exhaustion. A merge stage settles
+that after the panel and before you, and a grouped finding arrives carrying a
+`merged` object: one `### [SEVERITY]` entry, **Where.** listing every site in
+`merged.sites`, a Verification line giving the vote per site, and one line of
+`merged.sameDefectBecause` naming the shared cause. Do not split it back out --
+a maintainer should see one bug once, and `published` in the stamp would then be
+wrong. Do not drop a site to shorten it either: each is a place the defect is
+reachable and a place the fix has to hold. `coverage.mergeGroups`,
+`coverage.mergeClusters` and `coverage.mergeFailed` are what Coverage reports
+about the stage, and a non-zero `mergeFailed` means a possible duplicate is
+still in the report and the reader should be told why.
+
 # The coverage stamp is not decoration
 
 The last line is an HTML comment, invisible when rendered, and the harness
@@ -164,7 +191,9 @@ object -- never a number you reasoned your way to.
 | `failedCells` | `coverage.failedCells` |
 | `angles` | the literal `3`. The medium profile runs two, and the harness reads this rather than assuming |
 | `candidates` | `coverage.candidatesDistinct` |
-| `confirmed` | the returned `findings` array's length |
+| `confirmed` | `coverage.confirmed` -- CANDIDATES whose panel said holds. **Not** the returned `findings` array's length: those two were the same number until the merge stage separated them |
+| `published` | `coverage.published` -- the number of `###` entries you write under `## Findings`, which is the `findings` array's length |
+| `merged` | `coverage.merged` -- confirmed candidates folded into another entry |
 | `refuted` | the returned `refuted` array's length |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
@@ -179,9 +208,11 @@ the number of research cells dispatched and `coverage.failedCells` counts only
 the `kind: "cell"` failures among them, so those two are the pair that can
 honestly be divided into each other -- which is exactly what the harness does.
 
-`confirmed + refuted + unverified` must equal `candidates`. That is not a rule
-imposed on you -- every candidate ends in exactly one of those three buckets,
-so it holds by construction in any real result. The harness checks it, and a
+`confirmed + refuted + unverified` must equal `candidates`, and
+`published + merged` must equal `confirmed`. Neither is a rule imposed on you --
+every candidate ends in exactly one of those three buckets, and every confirmed
+one either gets an entry of its own or is folded into somebody else's, so both
+hold by construction in any real result. The harness checks it, and a
 stamp that fails it is treated as fabricated and the report is not published.
 If your numbers do not add up, you took them from the wrong place; go back to
 `coverage` rather than adjusting one to fit.

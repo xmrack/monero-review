@@ -23,6 +23,7 @@ heuristic and nothing to configure.
 | a second look at every unit | no | yes |
 | verifier angles per candidate | 2 (reachability, introduced-by-this-diff) | 3 |
 | an advocate for a candidate one vote short | no | yes |
+| findings that are one defect merged into one entry | yes | yes |
 | highest confidence it can publish | `medium` | `high` |
 | chosen by | default, always | a human, by PR number |
 
@@ -31,6 +32,18 @@ profiles — and both read with the same model at the same care. Deep buys more
 agents, not a better reader. Every candidate either tier proposes goes to a
 panel whose votes are counted in JavaScript rather than argued in prose, with
 severity lowered and confidence capped by the count.
+
+What survives the panel then goes through one more stage at both tiers. Several
+researchers reaching the same defect from different directions produce several
+confirmed findings, and publishing each under its own heading shows a maintainer
+one bug three times — which also makes the real finding read as one of three.
+Findings sharing a file, a symbol or nearly a title are put to an agent that
+decides whether **one change at one place would fix them all**, and a group that
+passes becomes a single entry naming every site. The grouping is a partition
+checked in JavaScript and the severity is the worst member's, so the stage can
+cost the report a heading but never a finding: `published + merged == confirmed`
+is in the coverage stamp and the harness refuses to publish a report that fails
+it. Most reviews nominate nothing and the stage never runs.
 
 What the standard tier gives up is named in every report it writes, under
 `## Coverage`, without hedging: no cross-unit trace, no second look at a unit

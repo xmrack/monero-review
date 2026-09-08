@@ -34,6 +34,8 @@ the most useful summary there is.>
 **Impact.** <What it gets someone. First, because it sets the priority.>
 
 **Where.** `path/to/file.cpp:123` in `function_name`
+<For a finding carrying `merged`: one line per site in `merged.sites`, and a
+final line giving `merged.sameDefectBecause` — why these are one defect.>
 
 **What.** <Two or three sentences naming the untrusted input, what it reaches,
 and why nothing stops it, with a citation for each.>
@@ -45,12 +47,16 @@ a victim action. "None" is worth writing when it is true.>
 
 **Fix.** <What to change, at the cause rather than at one caller.>
 
-**Verification.** <n>/2 angles agreed (<which>).
+**Verification.** <n>/2 angles agreed (<which>). <For a merged finding, the
+vote for each site: `src/rpc/c.cpp:42 2/2, src/rpc/c.cpp:51 2/2`.>
 
 ## Refuted
 
 - ~~<candidate>~~ — <the angle that took it apart and the line that settled
   it.>
+<Two refuted candidates killed by the same line share one bullet naming both
+sites. Nothing merges the refuted list upstream, so this is yours to do — but
+only for a genuinely identical refutation, and never by dropping a site.>
 
 ## Coverage
 
@@ -66,6 +72,12 @@ Then the deferrals: every observation a researcher handed on rather than
 filing, and how its adjudicator ruled. One that did not hold is reported with
 the reason; one nobody could settle is named under Not covered with its file
 and line.
+Then the merge, when `coverage.mergeApplicable` is true: how many confirmed
+candidates were read as one defect and published as a single entry, and which
+ids went into each. When it is false there was nothing to nominate and there is
+nothing to say. When `coverage.mergeFailed` is non-zero, say that a merge group
+came back unusable and its findings are published separately — that is a
+possible duplicate in the report, not a hidden one.
 Then the counts: candidates proposed, candidates left after merging
 duplicates, how many stood up, how many were refuted, and how many got no
 verdict. Anything a researcher said it could not finish reading is reported as
@@ -82,7 +94,7 @@ that researcher's own account, not as established fact.>
   a running binary, a submodule whose source was absent, a deferral nobody
   adjudicated.>
 
-<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
+<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
 
 # The summary is two or three sentences
@@ -150,7 +162,9 @@ read by `.github/workflows/review.yml` before it publishes anything.
 | `failedCells` | `coverage.failedCells` |
 | `angles` | the literal `2` |
 | `candidates` | `coverage.candidatesDistinct` |
-| `confirmed` | the number of entries in `findings` |
+| `confirmed` | `coverage.confirmed` — CANDIDATES whose panel said holds, **not** the number of entries in `findings`. Those two used to be the same number and the merge stage separated them |
+| `published` | `coverage.published` — the number of `###` entries you write under `## Findings` |
+| `merged` | `coverage.merged` — confirmed candidates folded into another entry |
 | `refuted` | the number of entries in `refuted` |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
@@ -166,6 +180,37 @@ and `coverage.failedCells` counts only the ones that came back unusable.
 candidate ends in exactly one of those buckets. The harness checks that
 identity: a stamp failing it was not copied from a real result, and the report
 is not published.
+
+`published + merged` must equal `confirmed`, for the same kind of reason: every
+confirmed candidate either gets an entry of its own or is folded into somebody
+else's, and there is no third place for it to go. The harness checks this one
+too. It is what makes the merge stage auditable from outside — a report with
+five confirmed candidates and two entries has to say that three were folded, and
+cannot quietly publish three fewer findings than the panel confirmed.
+
+# Merged findings
+
+Several confirmed candidates can turn out to be one defect: the same missing
+check reported at two call sites, or one unvalidated field filed once as an
+overflow and once as a resource exhaustion. A merge stage runs after the panel
+and before you, and a finding it grouped arrives carrying a `merged` object.
+
+Write it as **one** `### [SEVERITY]` entry. Its **Where.** lists every site in
+`merged.sites`, its Verification line gives the vote per site, and one line says
+why they are one defect — `merged.sameDefectBecause`, which names a shared
+cause rather than a shared file.
+
+Two things not to do with it. Do not split it back into one entry per site: the
+whole point is that a maintainer sees one bug once, and `published` in the stamp
+would then be wrong. And do not drop a site to shorten the entry — each one is a
+place the defect is reachable and a place the fix has to hold.
+
+Everything the merge did is in `coverage`: `mergeGroups` names the groups and
+their member ids, `mergeClusters` how many groups were examined, and
+`mergeFailed` how many came back unusable. A non-zero `mergeFailed` means those
+findings are published unmerged, which may leave a duplicate in the report. Say
+so in Coverage rather than leaving the reader to wonder why two entries look
+alike.
 
 Write the stamp even when everything failed. That is the case it exists for.
 A run whose researchers all died returns no findings, and from outside

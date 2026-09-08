@@ -203,23 +203,23 @@ env:
   # the fallback reviewer at .claude/skills/monero-security-review/ still runs
   # on the first list alone.
   #
-  # `Workflow` runs that script; the four `Agent` entries are the fleet it
+  # `Workflow` runs that script; the five `Agent` entries are the fleet it
   # dispatches. The fallback reviewer's skill and the refutation skill were never
   # written to supervise a fleet, so granting these to them would let a
   # single-reviewer skill fan out unsupervised -- keep them here. (The one
   # Agent grant they DO get, `Agent(monero-explore)`, is in ALLOWED_TOOLS
   # above, with the reasoning for why that one is different.)
   #
-  # Four separate `Agent(name)` entries rather than one `Agent(a, b, c, d)`.
+  # Five separate `Agent(name)` entries rather than one `Agent(a, b, c, d, e)`.
   # Rules in this list union -- that is exactly how the 76 `Bash(...)` rules
-  # in the 82-entry list above work -- so four scoped rules grant the same
-  # four agents, and they do it without asking whether a comma inside
+  # in the 82-entry list above work -- so five scoped rules grant the same
+  # five agents, and they do it without asking whether a comma inside
   # parentheses survives the split.
   #
   # Never a bare `Agent`. That would grant every agent type on disk, including
   # the built-in general-purpose one, whose own tool set is unrestricted --
   # which would hand a session reviewing a stranger's code a way straight
-  # around this allowlist. Scoped to the four read-only monero agents or
+  # around this allowlist. Scoped to the five read-only monero agents or
   # nothing.
   #
   # If this is wrong, it is wrong LOUDLY and in a readable place: the CLI logs
@@ -252,7 +252,7 @@ env:
   # established here, so it is left alone. If a future run shows the fleet
   # terminated while the Lead was still working, that variable is the first
   # thing to try.
-  FLEET_EXTRA_TOOLS: "Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-explore)"
+  FLEET_EXTRA_TOOLS: "Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-explore)"
 
 # One review at a time, repo-wide. Rapid ticks collapse into a single pending
 # run rather than stacking, and no two runs can pick the same PR concurrently.
@@ -1334,6 +1334,16 @@ jobs:
           # on -- a deferral is a researcher doing the right thing, and the
           # ones that matter (nobody settled them) are named in the report.
           defer=$(num deferred)
+          # The merge stage's two numbers: how many entries the report actually
+          # writes under `## Findings`, and how many confirmed candidates were
+          # folded into another entry. Optional the same way `angles` is --
+          # stamps written before the stage existed carry neither, and an
+          # absent pair is not an error. When BOTH are present the identity
+          # below is checked; when only one is, the stamp is half-copied and
+          # that IS an error, because the pair is written together or not at
+          # all.
+          pub=$(num published)
+          merg=$(num merged)
           # How many verifier angles the pipeline actually ran: 3 at deep,
           # 2 at medium. Read rather than assumed, so the note below cannot
           # tell a reader a medium finding faced three verifiers. Older
@@ -1390,6 +1400,20 @@ jobs:
             # way to. Either way it is not evidence.
             state=unverified
             note="**NOT VERIFIED** — the coverage stamp does not add up ($conf confirmed + $refut refuted + $unver unverified is not $cands candidates), so it was not taken from a real pipeline result and proves nothing about what ran."
+          elif { [ -n "$pub" ] && [ -z "$merg" ]; } || { [ -z "$pub" ] && [ -n "$merg" ]; }; then
+            # Half a pair. The pipeline returns coverage.published and
+            # coverage.merged together and always, so a stamp carrying one
+            # without the other was assembled by hand.
+            state=unverified
+            note="**NOT VERIFIED** — the coverage stamp carries one of \`published\`/\`merged\` and not the other. The pipeline returns both on every run, so this stamp was not copied from its result."
+          elif [ -n "$pub" ] && [ -n "$merg" ] && [ "$(( pub + merg ))" -ne "$conf" ]; then
+            # Every confirmed candidate either gets an entry of its own or is
+            # folded into another one's; there is no third place for it. A
+            # stamp failing this has either lost a confirmed finding between
+            # the panel and the report -- the one thing the merge stage must
+            # never do -- or was not taken from a real result.
+            state=unverified
+            note="**NOT VERIFIED** — the coverage stamp does not add up ($pub published + $merg merged is not $conf confirmed), so either a confirmed finding went missing between the panel and the report, or the numbers were not taken from a real pipeline result."
           elif [ "$cells" -eq 0 ]; then
             state=unverified
             note="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
@@ -1429,6 +1453,12 @@ jobs:
             fi
             if [ "$unver" != "0" ]; then
               note="$note $unver candidate(s) got no verdict from any angle and are named in the report as undecided, not as clean."
+            fi
+            # Say it out loud. The reader is looking at fewer findings than the
+            # panel confirmed, and the only honest way to publish that is to
+            # give both numbers rather than let the smaller one stand alone.
+            if [ -n "$merg" ] && [ "$merg" != "0" ]; then
+              note="$note $merg of the $conf confirmed candidate(s) were judged the same defect as another and published inside its entry, so the report carries $pub finding(s); each one names every site it covers."
             fi
             # `if`, not `&&`: a false && chain as the last statement of this
             # block returns 1 and `set -e` takes the whole step down.

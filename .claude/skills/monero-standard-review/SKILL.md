@@ -2,7 +2,7 @@
 name: monero-standard-review
 description: "The review every pull request on this queue gets. The diff is partitioned into units, one researcher takes each unit with all of its weakness classes, and every candidate faces a two-angle panel whose votes are counted in code. The bounded half of the pair: far cheaper than the deep review, and it reads the change in pieces rather than all at once."
 disable-model-invocation: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Workflow, TaskOutput, Agent(monero-mapper), Agent(monero-researcher), Agent(monero-verifier), Agent(monero-explore), Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
+allowed-tools: Read, Grep, Glob, Write, Edit, Workflow, TaskOutput, Agent(monero-mapper), Agent(monero-researcher), Agent(monero-verifier), Agent(monero-merger), Agent(monero-explore), Skill, Bash(git diff:*), Bash(git fetch origin:*), Bash(git log:*), Bash(git show:*), Bash(git merge-base:*), Bash(git grep:*), Bash(git rev-parse:*), Bash(git rev-list:*), Bash(git cat-file:*), Bash(git ls-files:*), Bash(git ls-tree:*), Bash(git describe:*), Bash(git shortlog:*), Bash(git name-rev:*), Bash(git --no-pager:*), Bash(readtags:*), Bash(cscope:*), Bash(rg:*), Bash(grep:*), Bash(sed:*), Bash(awk:*), Bash(head:*), Bash(tail:*), Bash(wc:*), Bash(sort:*), Bash(uniq:*), Bash(cut:*), Bash(tr:*), Bash(nl:*), Bash(comm:*), Bash(diff:*), Bash(find:*), Bash(ls:*), Bash(cat:*), Bash(file:*), Bash(stat:*), Bash(xxd:*), Bash(od:*), Bash(strings:*), Bash(basename:*), Bash(dirname:*), Bash(jq:*), Bash(bc:*), Bash(shellcheck:*), Bash(g++ -E:*), Bash(weggli:*), Bash(cd:*), Bash(echo:*), Bash(printf:*), Bash(pwd:*), Bash(realpath:*), Bash(readlink:*), Bash(test:*), Bash(true:*), Bash(false:*), Bash(seq:*), Bash(date:*), Bash(tac:*), Bash(rev:*), Bash(fold:*), Bash(fmt:*), Bash(column:*), Bash(paste:*), Bash(join:*), Bash(cmp:*), Bash(md5sum:*), Bash(sha1sum:*), Bash(sha256sum:*), Bash(cksum:*), Bash(du:*), Bash(git show-ref:*), Bash(git for-each-ref:*), Bash(git symbolic-ref:*), Bash(git diff-tree:*), Bash(git submodule status:*), Bash(git count-objects:*)
 ---
 
 # Monero standard review
@@ -40,7 +40,16 @@ This is the deep pipeline with the expensive parts removed. It runs the same
   confidence word in a heading at either tier -- two graded words in one
   bracket read as one scale and blur the severity;
 - runs no advocate re-look. That stage is defined on a two-to-one split, and a
-  two-angle panel cannot produce one.
+  two-angle panel cannot produce one;
+- **merges the findings that survive**, exactly as the deep pass does. Several
+  confirmed candidates can be one defect reached from two directions, and
+  publishing each under its own heading shows a maintainer the same bug twice
+  and makes the real finding read as one of three. A group nominated
+  mechanically -- shared file, symbol or title -- goes to one agent that decides
+  whether one change at one place would fix them all; the group is a partition
+  checked in code, the severity is the worst member's, and every member's line
+  and vote is carried into the entry that replaces it. Nothing is nominated on
+  most reports, and the stage then costs nothing at all.
 
 What you give up is real and the report has to say so: no cross-unit trace, no
 second look at a unit whose lens assignment was made before anyone read the
@@ -59,7 +68,7 @@ gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
 gh workflow run review.yml --repo xmrack/monero-review -f mode=standard -f pr=sweep
 ```
 
-The workflow appends `Workflow`, `TaskOutput` and the four `Agent(...)` grants
+The workflow appends `Workflow`, `TaskOutput` and the five `Agent(...)` grants
 when it dispatches this skill, exactly as it does for the deep pass, and runs
 no `/monero-review-refute` pass -- this pipeline is its own adversary, and that
 pass would rewrite `review.md` in place and throw `## Coverage` away.
