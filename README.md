@@ -103,28 +103,3 @@ workflow script serves both tiers, keyed on `profile`: what they share is the
 coverage arithmetic, the candidate schema and the vote counting, which are
 exactly the parts that must not drift. `.claude/agents/monero-context.md` is
 the context contract every agent opens with.
-
-**Scripts:**
-
-- `fetch_rust_deps.py` — puts the Rust dependencies a PR pins on disk so a
-  review can read them. Git-pinned crates arrive at exactly that commit;
-  monero-oxide is the one that matters, since every FCMP++ change depends on it
-  and it is neither a submodule nor vendored. That URL comes from the PR, so
-  that half holds an owner allowlist and reports what it refuses.
-  For crates.io packages it checks every lockfile sha256 against what the
-  registry published; a mismatch is a finding, not a gap. It unpacks source
-  only for what the PR adds or bumps, plus the registry original of anything
-  `[patch.crates-io]` replaces.
-- `select_prs.py` — picks the next PR, skipping ones already reviewed.
-- `dispatch.sh` and `drip.sh` — run reviews unattended on a timer.
-  `dispatch.sh` goes through GitHub and files issues; `drip.sh` runs locally
-  and leaves results in `reviews/`. **Use one or the other:** they keep
-  separate records, so running both double-reviews PRs.
-- `build_index.sh` — builds a ctags/cscope symbol index so a review can answer
-  "who calls this" instead of guessing from grep. Degrades silently to grep.
-- `attempt.py` — reads the execution log to decide whether a failed run was the
-  PR's fault or the infrastructure's, so a broken runner does not burn the PR's
-  place in the queue.
-- `coverage.py`, `labels.py`, `telemetry.py`, `denials.py`, `status.py` — the
-  harness around a report: coverage check, severity labels, the footer, denied
-  tool calls, queue state.
