@@ -74,51 +74,6 @@ site. Most reviews nominate nothing and the stage never runs.
 Each standard report names what the tier gave up, under `## Coverage`. Those
 lines are how somebody decides a change has earned the deep pass.
 
-## Every review says what it read
-
-A review that opened five of forty files and wrote "No findings" publishes like
-a thorough one. The issue it files *is* the dedup record, so that PR is never
-looked at again. A coverage hole is permanent.
-
-Both tiers settle this in JavaScript. Every changed file must land in a unit,
-or in an exclusion with a reason. The workflow checks that against the real
-changed-file list and returns anything left over as `unaccounted`, which the
-report has to name.
-
-Each report also ends with a machine-readable stamp. The harness refuses to
-publish a run whose research mostly died, or whose panels mostly returned no
-verdict — such a run is indistinguishable from a clean one, and publishing it
-retires the PR for good.
-
-The fallback reviewer has its own version of the same check, in
-`scripts/coverage.py`.
-
-## What it costs
-
-| tier | diff | wall | cost |
-| --- | --- | --- | --- |
-| standard | 13 files | 16m41s | $6.62 |
-| standard | 25 files, +2878/-7019 | 27m58s | $11.91 |
-| deep | 50 files, +11398 | 3h13m | $99.79 |
-
-Few samples, and both scale with the size of the change — read the telemetry
-footer on each run rather than treating these as a distribution. The runner
-caps concurrent agents at two, so fan-out is paid for in wall clock.
-
-Every number in that footer is whole-run, agents included:
-
-```
-`claude-opus-5` · standard · 8 agents + lead · 20m37s wall ·
-7.22M in (6.69M cached) / 150.6k out, 68% thinking · ~$10.74 at API rates ·
-25 lead turns · [run]
-```
-
-`N agents + lead` is counted from the workflow journal, so it is measured
-rather than claimed. `lead turns` is a signal about the orchestrator, not a
-proxy for effort. If the CLI schema moves and the whole-run block goes missing,
-the footer prints the Lead's own numbers marked `[lead only]` rather than
-passing them off as the run.
-
 ## Where things are
 
 **References**, shared by every skill and owned by none:
