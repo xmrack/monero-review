@@ -64,6 +64,14 @@ against master returns the whole branch divergence instead of the change
   crates come from it. Untracked, like `external/` and `deps-include/`, so
   `git ls-files` and `git grep` cannot see them -- use `rg` or `find` under
   `rust-deps/`.
+  **When this PR MOVES a pin**, `RUST_DEPS.md` says so and carries the
+  file-level diff between the two revisions, the commit list where it could be
+  obtained, and a path to the full patch under `rust-deps/<repo>.bump.diff`.
+  Read that: you cannot compute it yourself, because `git -C` is not
+  allowlisted here and `cd <dir> && git` is refused by a hooks-safety
+  heuristic, so git cannot be run inside `rust-deps/` at all. A published
+  review lost exactly this -- "every git invocation against its .git was
+  refused by the sandbox, so 71da8f03 -> 31c26d96 could not be diffed".
   A source `RUST_DEPS.md` reports as NOT FETCHED or FETCH FAILED was not read
   by anybody: say so under Not covered rather than reasoning about what the
   crate probably does.
