@@ -15,32 +15,14 @@ They will check your citations. Write as though they will.
 ```markdown
 # Security review — <PR title>
 
+**Author:** <the `Opened by:` login from PR_CONTEXT.md> · head `<sha12>`
 **Scope:** <N> files, +<A>/-<B> lines · <subsystems touched>
 **Boundaries:** <the trust boundaries the change reaches, or "none reachable">
 **Result:** <2 findings: 1 MEDIUM, 1 LOW> — or "No findings."
 
-## Coverage
-
-<The units the change was split into and the weakness classes run over each.
-Then the changed files deliberately excluded, with the reason for each.
-Then, if the workflow reported any, the changed files nobody accounted for --
-named individually and described as neither reviewed nor excluded.
-Then the limits of this tier, in one short paragraph and without hedging:
-one researcher per unit rather than one per weakness class, no pass looking
-across unit boundaries, no second look at any unit, and two verifier angles
-per candidate rather than three.
-Then the deferrals: every observation a researcher handed on rather than
-filing, and how its adjudicator ruled. One that did not hold is reported with
-the reason; one nobody could settle is named under Not covered with its file
-and line.
-Then the counts: candidates proposed, candidates left after merging
-duplicates, how many stood up, how many were refuted, and how many got no
-verdict. Anything a researcher said it could not finish reading is reported as
-that researcher's own account, not as established fact.>
-
 ## Findings
 
-### [SEVERITY / CONFIDENCE] Short title
+### [SEVERITY] Short title
 
 **Impact.** <What it gets someone. First, because it sets the priority.>
 
@@ -63,6 +45,25 @@ a victim action. "None" is worth writing when it is true.>
 - ~~<candidate>~~ — <the angle that took it apart and the line that settled
   it.>
 
+## Coverage
+
+<The units the change was split into and the weakness classes run over each.
+Then the changed files deliberately excluded, with the reason for each.
+Then, if the workflow reported any, the changed files nobody accounted for --
+named individually and described as neither reviewed nor excluded.
+Then the limits of this tier, in one short paragraph and without hedging:
+one researcher per unit rather than one per weakness class, no pass looking
+across unit boundaries, no second look at any unit, and two verifier angles
+per candidate rather than three.
+Then the deferrals: every observation a researcher handed on rather than
+filing, and how its adjudicator ruled. One that did not hold is reported with
+the reason; one nobody could settle is named under Not covered with its file
+and line.
+Then the counts: candidates proposed, candidates left after merging
+duplicates, how many stood up, how many were refuted, and how many got no
+verdict. Anything a researcher said it could not finish reading is reported as
+that researcher's own account, not as established fact.>
+
 ## Checked and clear
 
 - <What was examined, the check that was made, and the evidence. A short
@@ -77,14 +78,21 @@ a victim action. "None" is worth writing when it is true.>
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```
 
-# Confidence at this tier
+# There is no confidence word, on purpose
 
-`high` needs three agreeing angles and there are two, so the workflow caps
-every surviving finding at `medium` however sure its proposer was. Publish what
-it returns. Do not talk a finding up to `high` in prose because the argument
-reads strongly to you — the cap is the honest statement of what two agreeing
-verifiers establish, and a reader comparing a standard review against a deep one
-is entitled to that difference being visible.
+The heading is `### [SEVERITY] Title` and nothing else. It used to carry a
+confidence beside the severity, and two graded words in one bracket read as one
+scale: `[MEDIUM / medium]` tells a reader almost nothing and actively muddies
+how bad the finding is, which is the only thing severity is for.
+
+What confidence was standing in for is published instead, as a count the reader
+can weigh: **`<n>/2 angles agreed`** on the Verification line. Two agreeing
+verifiers on two angles is exactly as strong as that sentence sounds, and a
+reader comparing this against a deep review's `<n>/3` can see the difference
+without being told a word for it.
+
+The workflow still computes a confidence internally — it orders findings and
+decides which near-misses an advocate revisits. Do not publish it.
 
 # The Verification line is a count, not a claim
 

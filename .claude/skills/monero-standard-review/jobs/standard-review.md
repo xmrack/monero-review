@@ -126,12 +126,15 @@ produce.
 Read the REPORT SPEC now — not before — and write `review.md` in the repository
 root with `Write`.
 
-Severity and confidence arrive already settled: the workflow lowered any
-severity its agreeing verifiers rated below the proposal, and capped confidence
-by the count. Publish them as returned. Nothing at this tier reaches `high`
-confidence, because that needs three agreeing angles and there are two —
-`coverage.angles` names them. `coverage.severityLowered` names each finding
-whose severity moved, with both values.
+Severity arrives already settled: the workflow lowered any severity its
+agreeing verifiers rated below the proposal. Publish it as returned.
+
+**Do not publish a confidence.** The heading is `### [SEVERITY] Title`. The
+workflow returns a confidence and uses it internally, but two graded words in
+one bracket read as one scale and blur how bad a finding is. The Verification
+line carries the vote instead, which is the same information as a number, and
+`coverage.angles` names the angles that voted. `coverage.severityLowered` names
+each finding whose severity moved, with both values.
 
 Before you write a finding down, read its cited line and check it still says
 what the candidate quoted. Nothing upstream does that for you, and a wrong

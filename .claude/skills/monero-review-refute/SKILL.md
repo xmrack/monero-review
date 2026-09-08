@@ -348,7 +348,7 @@ cannot state a finding's mechanism in a dozen lines, you have not finished
 reducing it.
 
 ```markdown
-### [SEVERITY / CONFIRMED] Short title
+### [SEVERITY] Short title
 (the finding, corrected where the first pass got details wrong)
 - **Verification:** anchor holds at `file.cpp:123` — then what you attacked it
   with, and the `file:line` that failed to kill it. One or two sentences.
@@ -356,6 +356,18 @@ reducing it.
 ## Refuted
 - ~~Title~~ — the guard, with `file:line`.
 ```
+
+**Do not add a confidence or a verdict word to a surviving heading.** It is
+`### [SEVERITY] Title`. The `**Verification:**` line already says what you
+attacked it with and what failed to kill it, which is the thing a reader
+weighs; a second graded word beside the severity only muddies how bad the
+finding is.
+
+The one exception is a finding you REFUTED and, for some reason, left in place
+rather than moving to `## Refuted`: mark that one `### [SEVERITY / REFUTED]`.
+`scripts/labels.py` reads the word `refuted` in a heading to keep a dead
+finding from labelling the issue, and that guard is the only thing standing
+between a killed candidate and a severity label on the published issue.
 
 **One line per refuted candidate.** You did the work of killing it; the reader
 needs the verdict and the citation, not the account. Six paragraphs of
