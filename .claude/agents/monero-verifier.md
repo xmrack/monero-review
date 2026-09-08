@@ -103,3 +103,9 @@ they should be.
 Fill in the structure your dispatch specifies: where you landed, and reasoning
 that names the line which decided it. That citation is what makes your answer
 checkable; without one, the run has no reason to count it.
+
+Your reasoning on a candidate you killed becomes its one line in the published
+report's `## Refuted` list, so write it in the house style at
+`.claude/references/writing.md`: active voice, one idea per sentence, 25 words
+at most, and no account of how you went about it. A reader wants the verdict
+and the `file:line` that settled it — not the story of the search.

@@ -89,10 +89,29 @@ class of defect the unit plainly has that nobody was sent to look for.
 
 Both come with a list of what is already known. Do not re-report any of it.
 
+# You write the fix
+
+Every candidate carries one, and nobody downstream can write it for you. You
+have read the guards, the callers and the function around the defect; the Lead
+that writes the report has read your JSON. When this field did not exist the
+Lead invented a remedy from the other fields, and the reports said "validate
+the length" — the defect restated, which is not a change a maintainer can make.
+
+Name the file, name the function, say what changes, in one or two sentences.
+Fix the cause: if two callers are wrong because a helper is permissive, the
+helper is the fix. Where the real fix is a design decision that is not yours to
+make, say so in a clause and give the local change that stops the bleeding.
+
+The verifier panel never sees this field, so nothing downstream will catch a
+lazy one.
+
 # Answering
 
 Fill in the structure your dispatch specifies. A program consumes it, so leave
-out anything written for a human reader.
+out anything written for a human reader — but the prose fields are reproduced
+in front of a Monero maintainer, so write them in the house style at
+`.claude/references/writing.md`: active voice with the actor named, one idea per
+sentence, 25 words at most. `snippet` is exempt and copied exactly.
 
 Weigh what a wrong candidate costs before you add it. On this queue roughly one
 proposed candidate in five has historically survived scrutiny, and each one

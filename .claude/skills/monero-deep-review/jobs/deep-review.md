@@ -38,7 +38,7 @@ prevent.
 
 An empty list means there is nothing to review: say so and stop.
 
-For the report's Scope line: `git diff --shortstat origin/base...HEAD`
+For the report's `Change:` line: `git diff --shortstat origin/base...HEAD`
 
 ## 3. Confirm you can actually run it
 
@@ -128,93 +128,119 @@ produce.
 
 ## 5. Write `review.md`
 
-Read the REPORT SPEC now — not before — and write `review.md` in the repository
-root with `Write`.
+Read the REPORT SPEC now — not before. Then read the house style,
+`.claude/references/writing.md`: Orwell's six rules, the Simplified Technical
+English rules that apply, the words to cut, and the five-step pass to run over
+the draft. Then write `review.md` in the repository root with `Write`.
+
+The reader is a Monero maintainer with a queue and an afternoon, answering
+three questions: is something wrong, where is it, what do I change. The
+structure follows those three, and the `next` line in the workflow result maps
+each returned field onto the template. Follow it. A deep review buys more
+agents, not more words.
+
+**Publish the fix that came back.** Each finding carries a `fix` written by the
+researcher that read the guards and the callers. Check it names a real file and
+function and that it covers the defect; correct it and say so where reading the
+code contradicts it. Do not replace it with a restatement of the defect —
+"validate the length" is what this field exists to stop. On a merged finding
+there is one **Fix.** for the whole entry, because one change at one place
+fixing them all is what the merge decided.
 
 Severity arrives already settled: the workflow lowered any severity its
-agreeing verifiers rated below the proposal. Publish it as returned.
+agreeing verifiers rated below the proposal. Publish it as returned, and put
+every entry in `coverage.severityLowered` on Coverage's **Corrections.** line
+with both values.
 
 **Do not publish a confidence.** The heading is `### [SEVERITY] Title`. The
 workflow returns a confidence and uses it internally, but two graded words in
-one bracket read as one scale and blur how bad a finding is. The Verification
-line carries the vote instead, which is the same information as a number. `coverage.severityLowered` names each
-one that moved, with both values.
+one bracket read as one scale and blur how bad a finding is. The locator line
+carries `<n>/3 angles agreed` instead, which is the same information as a
+number.
 
 Before you write a finding down, read its cited line and check it still says
-what the candidate quoted. Nothing upstream does that for you, and a wrong
+what the proposal quoted. Nothing upstream does that for you, and a wrong
 citation is the fastest way to lose the reader.
 
-Coverage is not a formality. It must name:
+A finding carrying `rescued` gets a **Panel split.** line above **Defect.**:
+the real split from its vote record, what the two rejections relied on, and the
+line the advocate showed they were wrong about. When `rescuedMemberId` is set,
+name which site of the merged finding that was. Say it plainly — this is a
+finding a majority of the panel rejected, and the reader is entitled to know
+that before the claim rather than after it.
 
-- the units and the weakness classes run over each;
+Coverage is a table and nine labelled lines — never a paragraph, and never a
+field name from the returned object in front of the reader. It must carry:
+
+- the areas and the weakness classes read over each;
 - every excluded file with its reason;
-- **every path in `coverage.unaccounted`**, as neither reviewed nor excluded;
-- whether the seam pass ran at all. `coverage.seamPassApplicable` is false on a
-  single-unit change; `coverage.seamFailed` true means it was applicable and
-  nobody looked, which is a limit on the review and must never be written up as
-  a clean cross-unit result. Only when `coverage.seamRan` is true does
-  `coverage.seamFresh` mean anything, and then it is worth stating at zero;
-- what the per-unit second look found (`coverage.gapFresh`), and how many units
-  it failed to cover (`coverage.gapFailed`);
-- any id in `coverage.anchorDoubted` — a finding two verifiers could not find at
-  its cited line. Re-anchor it from the code or drop the finding, and say which
-  you did;
+- **every path in `coverage.unaccounted`**, named, as neither read nor
+  excluded;
+- **what the pass across the areas did.** `coverage.seamPassApplicable` is
+  false on a single-area change, and that is the reason to give;
+  `coverage.seamFailed` true means it was applicable and nobody looked, which
+  is a limit on the review and must never be written up as a clean cross-area
+  result. Only when `coverage.seamRan` is true does `coverage.seamFresh` mean
+  anything, and then it is worth stating at zero;
+- what the second look over each area found (`coverage.gapFresh`), and how many
+  areas it failed to cover (`coverage.gapFailed`);
+- any id in `coverage.anchorDoubted` — a finding two verifiers could not find
+  at its cited line. Re-anchor it from the code or drop the finding, and say
+  which you did in **Corrections.**;
 - `coverage.marginalReLooked` and `coverage.rescuedOnReLook`: how many
-  candidates fell one vote short, and which the advocate saved;
-- any research cell that came back empty-handed through failure rather than
-  judgement — `coverage.failedCells` is the count, and the entries in
-  `coverage.researchAccount` with `failed: true` name them;
-- any candidate no panel decided: the `unverified` list names them, and
+  proposals fell one vote short, and which the advocate saved;
+- **any area whose reader failed.** `coverage.failedCells` is the count and the
+  `failed: true` entries in `coverage.researchAccount` name them. If this is
+  not zero it goes in the summary too;
+- any proposal no panel decided: the `unverified` list names them, and
   `coverage.candidatesUnverified` counts them;
-- **the deferrals, all of them.** `coverage.deferred` holds every observation a
-  researcher noticed, judged somebody else's unit, and handed on instead of
-  filing. Each got an adjudicator of its own and carries a `ruling`: `filed`
-  means it became a candidate and is already accounted for among the findings or
-  the refutations, and needs no separate mention; `did-not-hold` means somebody
-  read the code and it did not survive — say what it was and give the reason the
-  adjudicator returned, which is in `coverage.researchAccount` under the
-  matching `deferred/<n>` tag. Do not drop a `did-not-hold` silently: an
-  observation somebody wrote down and somebody else disposed of is exactly the
-  kind of thing the next reviewer will otherwise propose again;
+- **the observations one reader handed to another, all of them.**
+  `coverage.deferred` holds every one, each with its own adjudicator and a
+  `ruling`. `filed` became a proposal and is already accounted for among the
+  findings or the refutations. `did-not-hold` means somebody read the code and
+  it did not survive — say what it was and give the adjudicator's reason, which
+  is in `coverage.researchAccount` under the matching `deferred/<n>` tag. Do
+  not drop a `did-not-hold` silently: an observation somebody wrote down and
+  somebody else disposed of is exactly what the next reviewer will otherwise
+  propose again;
 - **every entry in `coverage.deferredUnclaimed`**, quoted with its file and
-  line, under *Not covered*. These are the deferrals whose adjudicator came back
-  unusable, so nothing ever looked at them. They were not refuted; they were
-  missed. On the first CI deep run — before this stage existed — exactly that
-  happened to both deferrals the run produced: one named a file, a line, a
-  mechanism and an impact, reached no panel, and appeared nowhere in the report;
-- `coverage.mapperFallback` when the partition was unusable and the whole change
-  was read as one unit — complete, but blunter;
-- `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the cap
-  scales with the size of the change.
+  line, in **Not covered**. Their adjudicator came back unusable, so nothing
+  ever looked at them. They were not refuted; they were missed. On the first CI
+  deep run — before that stage existed — exactly this happened to both
+  observations the run produced: one named a file, a line, a mechanism and an
+  impact, reached no panel, and appeared nowhere in the report;
+- `coverage.mapperFallback` when the partition was unusable and the whole
+  change was read as one area — complete, but blunter;
+- `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the
+  cap scales with the size of the change;
+- the merge, from `coverage.mergeGroups` and `coverage.mergeClusters`. A
+  non-zero `coverage.mergeFailed` means a group came back unusable and its
+  findings publish separately — say so in **Corrections.**, because that is a
+  possible duplicate in the report rather than a hidden one.
 
-When Coverage names a researcher's account and promises the reader what is in
-it — "three things it could not read to the bottom" — reproduce those items.
-Do not point at an account and then print a different, more general list; that
-sentence is a promise a reader will try to cash.
+When Coverage names what a reader could not finish and promises the reader
+what is in it — "three things it could not read to the bottom" — reproduce
+those items. Do not point at an account and then print a different, more
+general list; that sentence is a promise a reader will try to cash.
 
-Give the file arithmetic so it can be checked: every unit's file list either
-names every path or gives a count and names none, and Coverage states the total
-accounted for against `coverage.unaccounted`. "4 x CMakeLists.txt" when there
-are five makes the table sum to 49 of 50, and a reader adding it up cannot tell
-a prose slip from a coverage hole.
+Give the file arithmetic so it can be checked: every area's file list either
+names every path or gives a count and names none, and **Accounted for** states
+the total against `coverage.unaccounted`. "4 x CMakeLists.txt" when there are
+five makes the table sum to 49 of 50, and a reader adding it up cannot tell a
+prose slip from a coverage hole.
 
-A finding carrying `merged` is several confirmed candidates a merge agent read
-as **one defect**. Write it as one `### [SEVERITY]` entry: **Where.** lists every
-site in `merged.sites`, the Verification line gives the vote per site, and one
-line of `merged.sameDefectBecause` says why they are the same bug. Never split it
-back into one entry per site and never drop a site — the first makes the stamp's
-`published` wrong, the second loses a place the fix has to hold. When
-`rescuedMemberId` is set, the site the advocate saved is named on the
-Verification line with the rest of that split. Coverage reports the stage from
-`coverage.mergeGroups`, `coverage.mergeClusters` and `coverage.mergeFailed`; a
-non-zero `mergeFailed` means a possible duplicate is still in the report and the
-reader is told why.
+A finding carrying `merged` is several confirmed proposals a merge agent read
+as **one defect**. Write it as one `### [SEVERITY]` entry: a locator line per
+site in `merged.sites` with that site's vote, a final line giving
+`merged.sameDefectBecause`, and one **Fix.** Never split it back into one entry
+per site and never drop a site — the first makes the stamp's `published` wrong,
+the second loses a place the fix has to hold.
 
-Keep `refuted` in the report. It is most of what this pipeline produces and it
-is how the next reviewer avoids buying a panel for the same idea twice. Nothing
-merges that list upstream, so two candidates killed by the same line may share
-one bullet naming both sites — but only when the refutation is genuinely the
-same one, and never by dropping a site.
+Keep `refuted` in the report, one line each. It is most of what this pipeline
+produces and it is how the next reviewer avoids buying a panel for the same
+idea twice. Nothing merges that list upstream, so two proposals killed by the
+same line may share one bullet naming both sites — but only when the refutation
+is genuinely the same one, and never by dropping a site.
 
 End the file with the coverage stamp the REPORT SPEC describes — the HTML
 comment carrying `cells`, `failedCells` and the rest, straight from `coverage`.
@@ -222,6 +248,7 @@ The harness reads it and refuses to publish a run whose research mostly failed,
 or whose panels mostly returned no verdict, because such a run and a genuinely
 clean one are otherwise indistinguishable from the outside. Write it even when
 everything failed; that is the case it exists for.
+
 
 ## 6. Say what happened
 

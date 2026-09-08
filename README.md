@@ -158,6 +158,14 @@ show only the Lead's own conversation.
 
 ## Where things are
 
+- `.claude/references/writing.md` — **how a report is written.** Orwell's six
+  rules and the Simplified Technical English writing rules, applied to a
+  security finding, with the words to cut and a five-step pass to run over the
+  draft. Every skill here points at it, and so do the agents whose prose ends
+  up in front of a reader. The reports were the thing people complained
+  about — too long, and not saying plainly what was broken or what to change —
+  so the structure answers three questions in order (is something wrong, where
+  is it, what do I change) and this file is what keeps the prose inside it.
 - `.claude/references/monero/` — how the Monero codebase actually works:
   architecture, six end-to-end flows, per-subsystem notes, the macro families
   that make grep lie, the coding dialects, errors and concurrency, build and

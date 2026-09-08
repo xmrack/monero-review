@@ -35,7 +35,7 @@ This is the deep pipeline with the expensive parts removed. It runs the same
   observation somebody wrote down and nobody ever reading it;
 - puts each candidate to **two** verifier angles, REACHABILITY and INTRODUCED,
   and requires both. No candidate can reach three agreeing votes, and the
-  report says so where it counts: the Verification line on every finding reads
+  report says so where it counts: the locator line on every finding reads
   `<n>/2 angles agreed`, against a deep review's `<n>/3`. There is no
   confidence word in a heading at either tier -- two graded words in one
   bracket read as one scale and blur the severity;
@@ -82,6 +82,10 @@ There is one job. Read its recipe and follow it as written:
 ## Environment and paths (use verbatim)
 
 - [REPORT SPEC -- the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
+- [HOUSE STYLE -- how the prose is written](.claude/references/writing.md).
+  Orwell's six rules, the Simplified Technical English rules that apply, the
+  words to cut, and the pass to run over the draft. Read it with the REPORT
+  SPEC: that one is the structure, this one is the writing.
 - [FINDING SPEC -- the shape of a candidate](.claude/skills/monero-deep-review/specs/finding-spec.md),
   shared with the deep review and enforced as a schema in the workflow. Not
   duplicated here: the candidate standard does not change with the tier, only

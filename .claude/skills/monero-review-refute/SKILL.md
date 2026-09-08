@@ -266,9 +266,9 @@ file and line. Does the code say what the finding says it says? Misread control
 flow is the most common first-pass error. If the citation is wrong, that alone
 is REFUTED.
 
-**Record the answer either way.** Every surviving finding's `**Verification:**`
-line opens by stating that the anchor holds, with the `file:line` you actually
-opened — `anchor holds at core_rpc_server.cpp:412` — and a finding whose
+**Record the answer either way.** Every surviving finding's
+**Checked against.** line opens by stating that the anchor holds, with the
+`file:line` you actually opened — `anchor holds at core_rpc_server.cpp:412` — and a finding whose
 citation you had to move says the old line and the new one. The deep pipeline
 makes each of its verifiers return this as a field and publishes the ids where
 two of them could not find the code at all; here there is one of you, so the
@@ -312,15 +312,21 @@ MEDIUM when keys are in the process — correct it upward and say so.
 ## Output
 
 Rewrite `review.md` in place, keeping the header block, `## Summary`,
-`## Coverage`, `## Checked and clear` and `## Not covered`, and updating them
-where you proved the first pass wrong.
+`## Not covered`, `## Checked and clear` and `## Coverage`, in that order, and
+updating them where you proved the first pass wrong.
 
-**`## Summary` is the one you should expect to change.** It is two or three
-sentences of judgement written before anything was attacked, so a pass that
-kills the only finding has made it wrong: rewrite it to say what the change
-does and that nothing survived. Keep it to two or three sentences, keep it out
-of the business of describing this pass, and do not let it contradict the
-`Result:` line above it.
+**Read the house style before you rewrite anything:**
+`.claude/references/writing.md` — Orwell's six rules, the Simplified Technical
+English rules that apply, the words to cut, and the five-step pass to run over
+the draft. This pass is where a report gets shorter, so it is the pass where
+that file earns the most.
+
+**`## Summary` is the one you should expect to change.** It is judgement written
+before anything was attacked, so a pass that kills the only finding has made it
+wrong: rewrite it to say what the change does and that nothing survived. The
+budget is 3 sentences, 75 words, nothing over 25. Keep it out of the business of
+describing this pass, and do not let it contradict the `Result:` line above
+it.
 
 ### Carry `## Coverage` and the stamp through unchanged
 
@@ -356,16 +362,28 @@ reducing it.
 
 ```markdown
 ### [SEVERITY] Short title
-(the finding, corrected where the first pass got details wrong)
-- **Verification:** anchor holds at `file.cpp:123` — then what you attacked it
-  with, and the `file:line` that failed to kill it. One or two sentences.
+
+`path/to/file.cpp:123` · `function_name` · one reviewer, no panel
+
+**Defect.** (corrected where the first pass got details wrong)
+**Impact.** … **Needs:** …
+**Fix.** …
+**Why it is new.** …
+**Checked against.** anchor holds at `file.cpp:123` — then what you attacked it
+with, and the `file:line` that failed to kill it. One or two sentences.
 
 ## Refuted
 - ~~Title~~ — the guard, with `file:line`.
 ```
 
+Keep the five blocks in that order and add none of your own. **Fix** is third
+because it is what a maintainer acts on; if the first pass wrote a fix that is
+a restatement of the defect — "validate the length" — replacing it with a real
+one, naming the file and the function to change, is the single most useful
+thing this pass can do to a finding that survives.
+
 **Do not add a confidence or a verdict word to a surviving heading.** It is
-`### [SEVERITY] Title`. The `**Verification:**` line already says what you
+`### [SEVERITY] Title`. The **Checked against.** line already says what you
 attacked it with and what failed to kill it, which is the thing a reader
 weighs; a second graded word beside the severity only muddies how bad the
 finding is.
@@ -382,8 +400,9 @@ refutation narrative buries the findings that survived, which are the only part
 anyone acts on. Keep the `## Refuted` heading exactly as spelled — the harness
 reads it so dead findings cannot label the issue.
 
-If every finding is refuted, say "No findings." in the header block and let
-`Refuted` and `Checked and clear` carry the report.
+If every finding is refuted, the `Result:` line reads "No findings" and says
+what the change reaches, and `Refuted`, `Not covered` and `Checked and clear`
+carry the report.
 
 Correcting the first pass counts as a result and belongs in the finding, not in
 a preamble: a severity you moved, a magnitude you narrowed, a citation you
@@ -392,13 +411,13 @@ fixed. State the corrected value and why, in a clause.
 ### The verification notes are the deliverable
 
 A reader cannot tell a verified finding from a rubber-stamped one except by
-what you write down, so the `**Verification:**` line is mandatory on every
-surviving finding and every killed candidate gets its line under `## Refuted`
+what you write down, so the **Checked against.** line is mandatory on every
+surviving finding, and every killed candidate gets its line under `## Refuted`
 with a `file:line`. Across the first 51 reviews of this harness neither
 appeared even once, and the harness now says so on the published issue when
 they are missing — an omission is visible, not invisible.
 
-Terse is not the same as absent. `- **Verification:** re-read the guard at
+Terse is not the same as absent. `**Checked against.** re-read the guard at
 x.cpp:41; it only covers the len < 8 case` is short and is evidence.
 "Verified." is neither.
 

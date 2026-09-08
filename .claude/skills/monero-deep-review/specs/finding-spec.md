@@ -38,6 +38,57 @@ re-anchors it for you: if the line moved, the citation is simply wrong, and a
 wrong citation costs more than silence because the reader loses confidence in
 everything around it while chasing it.
 
+# The fix, and why it has to come from you
+
+`fix` is required. One or two sentences naming **the file, the function, and
+what changes**.
+
+You are the only agent in this run that can write it. You have read the guards,
+the callers and the function around the defect; the Lead has read your JSON.
+When this field was absent the Lead invented a fix out of `reaches` and
+`missingGuard`, and what came out was "validate the length" — the defect said
+backwards, which is not a change anybody can make. "How do I fix it" is one of
+the three questions the report exists to answer, and it is answered here or not
+at all.
+
+Four things make a fix usable:
+
+- **It names places.** `reject the packet in
+  handle_notify_new_transactions before the resize at :412` is a fix. `add
+  bounds checking` is a category.
+- **It is at the cause.** If two callers are wrong because a helper is
+  permissive, the helper is the fix. A fix applied at one call site leaves the
+  next caller to rediscover the bug.
+- **It survives being read alone.** A maintainer scanning the triage table sees
+  your fix in ten words with none of your reasoning. Write the first clause so
+  that it still means something there.
+- **It admits a design question when there is one.** Sometimes the right fix is
+  not yours to choose — where validation belongs, whether an error is fatal.
+  Say that in a clause and give the local change that stops the bleeding. That
+  is more useful than a confident wrong answer and more useful than silence.
+
+The panel never sees this field. The two angles are reachability and
+introduced-by-this-diff; a plausible-looking remedy is evidence for neither,
+and showing one to a verifier only adds a cue that the finding must be real. So
+nothing downstream corrects a lazy fix. The merge stage does see it, because
+"would one change at one place fix both" is exactly the question it answers.
+
+# The prose fields are read by a human
+
+`untrustedInput`, `reaches`, `missingGuard`, `whyThisDiff`, `fix` and
+`rationale` are consumed by a program and then largely reproduced in front of a
+Monero maintainer. Write them in the house style —
+`.claude/references/writing.md`, which is Orwell's six rules and the Simplified
+Technical English rules that apply. The two that matter most here:
+
+- **Active voice, with the actor named.** "the length is not checked" hides the
+  question the reader is about to ask. "no caller checks the length" answers
+  it.
+- **One idea per sentence, 25 words maximum.** Three clauses joined by dashes
+  is three sentences that have not been separated yet.
+
+None of this applies to `snippet`, which is copied exactly, whatever its style.
+
 # Category
 
 `consensus-divergence`, `wire-deserialization`, `p2p-levin`, `rpc-surface`,

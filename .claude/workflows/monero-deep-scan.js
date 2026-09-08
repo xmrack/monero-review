@@ -114,6 +114,17 @@ const CANDIDATES_SCHEMA = {
           reaches: { type: 'string' },
           missingGuard: { type: 'string' },
           whyThisDiff: { type: 'string' },
+          // Required, because "how do I fix it" is one of the three questions
+          // the report exists to answer and the Lead cannot answer it. The
+          // researcher is the only agent in the run that read the guards, the
+          // callers and the surrounding function; a Lead inventing a fix from
+          // `reaches` and `missingGuard` writes "validate the length", which
+          // is a restatement of the defect rather than a change anybody can
+          // make. It is NOT shown to the verifier panel: the angles are
+          // reachability and introduced-by-this-diff, a plausible-looking
+          // remedy is evidence for neither, and putting one in front of a
+          // verifier only adds a cue that the finding must be real.
+          fix: { type: 'string' },
           severity: { type: 'string', enum: SEVERITIES },
           confidence: { type: 'string', enum: CONFIDENCES },
           rationale: { type: 'string' },
@@ -121,7 +132,7 @@ const CANDIDATES_SCHEMA = {
         },
         required: ['title', 'file', 'line', 'symbol', 'snippet', 'category',
                    'untrustedInput', 'reaches', 'missingGuard', 'whyThisDiff',
-                   'severity', 'confidence', 'rationale'],
+                   'fix', 'severity', 'confidence', 'rationale'],
       },
     },
     notFinished: { type: 'array', items: { type: 'string' } },
@@ -387,6 +398,15 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'steering a reviewer is a finding on sight, with its file and line.',
    'Returning nothing is right and common when your class does not fit this unit.',
    'List in notFinished any path here you did not read to a conclusion.',
+   '',
+   'Every candidate carries a `fix`, and you are the only one who can write it:',
+   'you have read the guards, the callers and the function around the defect,',
+   'and nobody downstream will. Name the file and the function to change and say',
+   'what changes, in one or two sentences. Fix the CAUSE -- if two callers are',
+   'wrong because a helper is permissive, the fix is the helper. "Validate the',
+   'length" is not a fix, it is the defect said backwards. If the real fix is a',
+   'design decision that is not yours, say so in a clause and give the local',
+   'change that stops the bleeding.',
    '',
    'Use Agent(monero-explore) for "where is this defined / what reaches it".',
    'It answers reachability questions in its own context and hands you back the',
@@ -707,7 +727,21 @@ if (!candidates.length) {
                 // value for is how a stamp stops being copied from a result.
                 confirmed: 0, published: 0, merged: 0,
                 mergeApplicable: false, mergeClusters: 0, mergeFailed: 0, mergeGroups: [] },
-    next: 'Nothing was proposed. Write review.md per the REPORT SPEC as a no-findings report, with Coverage carrying the units, the exclusions and their reasons, and any unaccounted files. If coverage.deferred is non-empty, say what each deferred observation was and how its adjudicator ruled -- a no-findings report that silently drops an observation somebody wrote down is the exact failure this stage exists to prevent.',
+    next: [
+      'Nothing was proposed. Read the REPORT SPEC, then the house style at',
+      '.claude/references/writing.md, then write review.md as a no-findings report.',
+      'The Result line reads "No findings" and says what the change reaches, or that',
+      'it reaches nothing. Summary, Not covered and Checked and clear are the whole',
+      'report and they carry it: on this outcome the summary is the most valuable',
+      'section in the file, because it is what lets a maintainer stop reading.',
+      'Coverage is the table and the labelled lines, with every area and its weakness',
+      'classes, every exclusion and its reason, and every path in coverage.unaccounted',
+      'named as neither read nor excluded.',
+      'If coverage.deferred is non-empty, say what each observation was and how its',
+      'adjudicator ruled -- a no-findings report that silently drops an observation',
+      'somebody wrote down is the exact failure that stage exists to prevent. Stamp',
+      '`deferred` from coverage.deferredUnclaimed, the ones nobody settled.',
+    ].join('\n'),
   }
 }
 
@@ -930,6 +964,10 @@ const describe = (r) => [
   '      untrusted input:  ' + r.candidate.untrustedInput,
   '      which reaches:    ' + r.candidate.reaches,
   '      missing guard:    ' + r.candidate.missingGuard,
+  // The merge test is literally "would ONE CHANGE AT ONE PLACE fix both", so
+  // each member's proposed fix is the most directly relevant field here --
+  // unlike at the verifier, where it is deliberately withheld.
+  '      proposed fix:     ' + (r.candidate.fix || '(none given)'),
   '      reasoning:        ' + r.candidate.rationale,
 ].join('\n')
 
@@ -945,6 +983,12 @@ const rulingsPerCluster = mergeApplicable
        'or nearly a title. That is why you are looking; it is not evidence. Merge',
        'two only when ONE CHANGE AT ONE PLACE would fix both, and go read the code',
        'to answer that rather than comparing the two write-ups.',
+       '',
+       'Each carries the fix its proposer wrote. Two fixes at the same place are a',
+       'reason to look harder at merging; two at different places usually mean two',
+       'defects, however alike the titles read. Neither is proof -- the code is --',
+       'but a group you merge has to be one a single fix covers, because the report',
+       'will publish exactly one for it.',
        '',
        'The findings:',
        cl.map((i) => describe(holds[i])).join('\n\n'),
@@ -1052,7 +1096,8 @@ const findings = assembled.map((entry) => {
       title: entry.title || primary.candidate.title,
       sameDefectBecause: entry.sameDefectBecause,
       // Every member's anchor, so nothing loses its line. The report prints
-      // these as the sites of one defect under one **Where.**
+      // one locator line per site, each with that site's own vote, under a
+      // single finding heading.
       sites: members.map((m) => ({
         id: m.candidate.id,
         file: m.candidate.file,
@@ -1126,5 +1171,68 @@ return {
     severityLowered: findings.filter((r) => r.severityLowered)
       .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityLowered })),
   },
-  next: 'Write review.md per the REPORT SPEC. Publish the severities as returned -- they are already settled by the count. A finding carrying `merged` is several confirmed candidates that a merge agent read as ONE defect: write it as ONE `### [SEVERITY]` entry whose **Where.** lists every site in `merged.sites` (each `file:line in symbol`), give the reason from `merged.sameDefectBecause`, and put the vote for each site on the Verification line. Never split it back out, and never publish a site as a finding of its own -- it is already inside that entry. The stamp counts CANDIDATES, not entries: `confirmed` is coverage.confirmed and NOT the length of `findings`, `published` is coverage.published, `merged` is coverage.merged, and both `confirmed + refuted + unverified == candidates` and `published + merged == confirmed` are checked by the harness. Do NOT publish a confidence: the heading is `### [SEVERITY] Title`, and the Verification line carries the vote instead. Coverage must name the units and their weakness classes, every exclusion with its reason, every path in coverage.unaccounted, and the counts. For anything that has to be named individually use the lists, not the tallies: the top-level `unverified` array holds the candidates no panel decided (coverage.candidatesUnverified is its count, plus any whose panel threw, which are a count with no record), and coverage.researchAccount entries with failed:true are the passes that came back unusable. Say whether the seam pass ran at all: coverage.seamFailed true means nobody looked across the unit boundaries, which is a limit on the review and must never be published as a clean cross-unit result. Any id in coverage.anchorDoubted is a finding two verifiers could not find at its cited line: re-anchor it from the code or drop it, and say which. A finding carrying `rescued` was rejected by a majority and then saved on re-look: say so plainly and give the real split from its vote record, which is what the old `low` confidence was standing in for. coverage.deferred holds the observations a researcher noticed and handed on rather than filing; each was given its own adjudicator and carries a `ruling`. Report a `did-not-hold` ruling with the reason the adjudicator gave -- it is in coverage.researchAccount under the matching deferred/<n> tag -- rather than dropping it silently; a `filed` one is already among the candidates and needs no separate mention. Every entry in coverage.deferredUnclaimed is one whose adjudicator came back unusable, so nothing looked at it: name those under Not covered, quoted with their file and line.',
+  // Read the REPORT SPEC as the shape and this as the mapping onto it: which
+  // returned field answers which line of the template, and the four places a
+  // report has historically gone wrong. Sectioned rather than run together,
+  // because the Lead reads it once at delivery and acts on it line by line.
+  next: [
+    'Read the REPORT SPEC now, then the house style at .claude/references/writing.md, then write review.md.',
+    '',
+    'EACH FINDING is a locator line and four blocks, in this order: the locator',
+    '(`file:line` then the symbol then the vote), **Defect.**, **Impact.** with its',
+    '**Needs:** line, **Fix.**, **Why it is new.** Nothing else gets a block.',
+    '',
+    'THE FIX IS RETURNED, not yours to invent: publish `fix` from the finding, which',
+    'the researcher that read the code wrote. Check it names a real file and function',
+    'and covers the defect; where reading the code contradicts it, correct it and say',
+    'so. Never replace it with a restatement of the defect.',
+    '',
+    'SEVERITY is already settled by the count -- publish it as returned, and note any',
+    'entry in coverage.severityLowered on the Coverage **Corrections.** line. Publish',
+    'NO confidence word: the heading is `### [SEVERITY] Title` and the vote on the',
+    'locator line is what stands in for it.',
+    '',
+    'A MERGED FINDING (one carrying `merged`) is several confirmed proposals that a',
+    'merge agent read as ONE defect. Write ONE `### [SEVERITY]` entry: one locator',
+    'line per site in `merged.sites`, each with that site vote, then a final locator',
+    'line reading `Same defect because: <merged.sameDefectBecause>`, then ONE **Fix.**',
+    'Never split it back out and never publish a site as a finding of its own -- it is',
+    'already inside that entry.',
+    '',
+    'A RESCUED FINDING (one carrying `rescued`) was rejected by a majority and then',
+    'restored on re-look. It gets a **Panel split.** line above **Defect.**: the real',
+    'split from its vote record, what the two rejections relied on, and the line the',
+    'advocate showed they were wrong about. That is what the old `low` confidence was',
+    'standing in for.',
+    '',
+    'COVERAGE is the table and the labelled lines in the spec, one line each, never a',
+    'paragraph, and with no field name from this object in it -- read the value and',
+    'write the fact. It must account for every area and its weakness classes, every',
+    'exclusion with its reason, every path in coverage.unaccounted, and the counts.',
+    'Where something has to be named individually use the LISTS, not the tallies: the',
+    'top-level `unverified` array holds the proposals no panel decided',
+    '(coverage.candidatesUnverified is its count, plus any whose panel threw, which',
+    'are a count with no record), and coverage.researchAccount entries with',
+    'failed:true are the passes that came back unusable.',
+    '',
+    'FOUR THINGS A REPORT HAS GOT WRONG BEFORE:',
+    '- coverage.seamFailed true means nobody looked across the areas. That is a limit',
+    '  on the review and must never be published as a clean cross-area result.',
+    '- an id in coverage.anchorDoubted is a finding the verifiers could not find at',
+    '  its cited line. Re-anchor it from the code or drop it, and say which.',
+    '- coverage.deferred holds the observations a researcher handed on rather than',
+    '  filing; each got its own adjudicator and carries a `ruling`. Report a',
+    '  `did-not-hold` with the reason the adjudicator gave, which is in',
+    '  coverage.researchAccount under the matching deferred/<n> tag. A `filed` one is',
+    '  already among the proposals and needs no separate mention.',
+    '- every entry in coverage.deferredUnclaimed is one whose adjudicator came back',
+    '  unusable, so nothing looked at it. Name those under Not covered with their file',
+    '  and line, and stamp `deferred` from THIS list, not from coverage.deferred --',
+    '  the harness publishes that number as observations nobody settled.',
+    '',
+    'THE STAMP counts PROPOSALS, not entries: `confirmed` is coverage.confirmed and',
+    'NOT the length of `findings`, `published` is coverage.published, `merged` is',
+    'coverage.merged. Both `confirmed + refuted + unverified == candidates` and',
+    '`published + merged == confirmed` are checked by the harness.',
+  ].join('\n'),
 }

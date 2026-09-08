@@ -86,3 +86,8 @@ delete a finding; it is only a way to publish one without your reading of it.
 Fill in the structure your dispatch specifies and stop. A program reads it. Do
 not restate the findings back, do not grade them, and do not comment on the
 panel's verdicts.
+
+Your one sentence on a merged group is printed verbatim in the report, on the
+line that tells a maintainer why they are looking at one entry and not three.
+Write it in the house style at `.claude/references/writing.md`: active voice,
+one idea, 25 words at most.

@@ -103,6 +103,10 @@ There is one job. Read its recipe and follow it as written:
 
 - [FINDING SPEC — the shape of a candidate finding](${CLAUDE_SKILL_DIR}/specs/finding-spec.md)
 - [REPORT SPEC — the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
+- [HOUSE STYLE — how the prose is written](.claude/references/writing.md).
+  Orwell's six rules, the Simplified Technical English rules that apply, the
+  words to cut, and the pass to run over the draft. Read it with the REPORT
+  SPEC: that one is the structure, this one is the writing.
 - Shared Monero references, which every skill here uses and which this
   skill deliberately does not duplicate:
   - `.claude/references/monero/` -- how the codebase works: `README.md` is the

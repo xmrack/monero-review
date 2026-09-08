@@ -706,7 +706,7 @@ which blurs the only thing severity is there to say.
 The bar for reporting has not moved, it just goes in the prose instead:
 
 - Report a finding when you traced the path end to end, named the entry point,
-  and read every guard along the way. Say so in `Verification:`.
+  and read every guard along the way. Say so in **Checked against.**
 - Report one where the path is likely but a single link is unverified **only**
   if you name that link, in the finding, in a clause.
 - Anything weaker than that does not get reported at all.
@@ -716,56 +716,108 @@ The bar for reporting has not moved, it just goes in the prose instead:
 Write your findings to `review.md` in the repository root, as GitHub-flavored
 Markdown. Create no other files and write nothing else.
 
+**Read the house style first: `.claude/references/writing.md`.** Orwell's six
+rules, the Simplified Technical English rules that apply, the words to cut, and
+the five-step pass to run over the draft. It is shared by every review in this
+repository, so a fallback report reads like a fleet one.
+
 **Write for an engineer who will check every claim you make.** Facts with
 citations, not narration. No preamble, no restating your method, no commentary
 on the review itself or on how much effort something took. If a sentence does
 not carry a fact the reader can verify, cut it.
 
+One reader, three questions: is something wrong, where is it, what do I change.
+The structure below follows those three, and the fix is third of five rather
+than last, because it is what a maintainer acts on.
+
 ```markdown
 # Security review — <PR title>
 
-**Author:** <the `Opened by:` login from PR_CONTEXT.md> · head `<sha12>`
-**Scope:** <N> files, +<A>/-<B> lines · <subsystems touched>
-**Boundaries:** <which trust boundaries the diff reaches, or "none reachable">
-**Result:** <2 findings: 1 MEDIUM, 1 LOW> — or "No findings."
+**Result:** <2 findings: 1 MEDIUM, 1 LOW> · <what it reaches, ≤10 words> — or
+`**Result:** No findings · nothing in the diff reaches a trust boundary`
+**Change:** <N> files, +<A>/-<B> · <subsystems touched>
+**Head:** `<sha12>` · opened by <the `Opened by:` login from PR_CONTEXT.md>
 
 ## Summary
 
-<Two or three sentences. What the change actually does, in your own words rather
-than the author's title, and the one thing a maintainer needs to know before
-deciding whether to read on. If nothing here matters, say that plainly — it is
-the most useful summary there is.>
+<At most 3 sentences and at most 75 words. No sentence over 25 words. What the
+change does, in your own words, and the one thing a maintainer needs before
+deciding whether to read on.>
 
 ## Findings
 
+<With two or more findings, this table first. With one, skip it.>
+
+| id | sev | what is wrong | where | the fix |
+| --- | --- | --- | --- | --- |
+| F1 | MEDIUM | <≤10 words> | `file.cpp:123` | <≤10 words> |
+
 ### [SEVERITY] Short title
-- **Where:** `file.cpp:123`, `file.h:45`
-- **Reach:** `handle_notify_new_transactions` → `parse_tx` → `resize`
-  (or: "not reachable today — <one clause>")
-- **Effect:** what an attacker gains, concretely.
-- **Verification:** the check that would have killed this, and the `file:line`
-  where it turned out not to.
-- **Fix:** the minimal change.
+
+`path/to/file.cpp:123` · `function_name` · one reviewer, no panel
+
+**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why
+nothing stops it, with the chain from entry point to sink —
+`handle_notify_new_transactions` → `parse_tx` → `resize` — and a citation for
+each step. Or: "not reachable today", in one clause.>
+
+**Impact.** <One sentence. What someone gets.>
+**Needs:** <what has to hold, or "nothing">
+
+**Fix.** <At most 3 sentences. The file and the function to change, and the
+change. At the cause, not at one caller.>
+
+**Why it is new.** <At most 2 sentences. What the diff did, and what
+`origin/base` reads.>
+
+**Checked against.** <The check that would have killed this finding, and the
+`file:line` where it turned out not to. This is the only evidence a reader has
+that you attacked your own claim — there is no panel here to do it for you.>
 
 ## Refuted
-- ~~Title~~ — the guard that kills it, with `file:line`.
-
-## Coverage
-
-<Every changed file, in one of two states. Reviewed: name it, or group several
-under one line with a count. Excluded: name it with the reason you did not read
-it for defects. Group where grouping is honest -- "4 CMakeLists.txt: target
-rename only" is fine, "the build files" is not, because a reader cannot check
-it. Nothing may be in neither state.>
-
-## Checked and clear
-- <area> — what you established. `file:line`
+- ~~Title~~ — the guard that kills it, with `file:line`. One line each.
 
 ## Not covered
 - <what you could not check, and why>
 
+## Checked and clear
+- <area> — what you established. `file:line`
+
+## Coverage
+
+<Every changed file, in one of two states. Read: name it, or group several
+under one line with a count. Excluded: name it with the reason you did not read
+it for defects. Group where grouping is honest — "4 CMakeLists.txt: target
+rename only" is fine, "the build files" is not, because a reader cannot check
+it. Nothing may be in neither state.>
+
 <!-- scan files=<n> reviewed=<n> excluded=<n> -->
 ```
+
+### The header is three lines
+
+**Result first**, because it is the only line some readers finish. It carries
+the count and, after a `·`, what the change reaches — the boundary in a clause,
+not a paragraph. "none reachable" is a complete and valuable answer. `Change`
+and `Head` are facts; do not let either grow a clause.
+
+### The finding is a locator and five blocks
+
+The locator line is what a reader copies into an editor. `one reviewer, no
+panel` is not modesty, it is the honest marker that separates this tier from a
+fleet report whose locator reads `2/2 angles agreed` — and a reader comparing
+the two can see the difference without being given a word for it.
+
+**Defect** answers "is something wrong" in plain words before any evidence.
+**Impact** and its **Needs:** line decide whether a MEDIUM is this afternoon or
+next month. **Fix** must survive being read alone: name the file, name the
+function, say what changes. "Validate the length" is not a fix; "reject the
+packet in `handle_notify_new_transactions` before the resize at `:412`" is. Fix
+the cause — if two callers are wrong because a helper is permissive, the helper
+is the fix.
+
+**Nothing else gets a block.** No Notes, no Discussion, no confidence word.
+
 
 ### `## Coverage` and the stamp are not optional
 
@@ -807,31 +859,39 @@ stamp, and say in `Not covered` that the harness did not provide the list.
 
 Length budgets, because a report nobody finishes protects nobody:
 
-- **Header:** those four lines. Not a paragraph.
-- **Summary: two or three sentences, and they are the ones most likely to be
-  read.** Say what the change does in your own words — not the author's title —
-  and the one thing a maintainer needs before deciding whether to read on. Do
-  not restate `Result:` one line above it, do not describe the review itself,
-  and do not hedge: "some areas may warrant further review" is a way of not
-  writing a summary. On a no-findings review this is the most valuable section
-  in the file, because it is what lets a maintainer stop reading.
+- **Header:** those three lines. Not a paragraph.
+- **Summary: 3 sentences, 75 words, nothing over 25** — and they are the ones
+  most likely to be read. The sentence cap alone does not work: told only "two
+  or three sentences", a writer packs 53 words into one and calls it brief.
+  Both limits hold at once. Say what the change does in your own words, not the
+  author's title, and the one thing a maintainer needs before deciding whether
+  to read on. Do not restate `Result:` two lines above it, do not describe the
+  review itself, and do not hedge — "some areas may warrant further review" is
+  a way of not writing a summary. On a no-findings review this is the most
+  valuable section in the file, because it is what lets a maintainer stop
+  reading. A changed file you never accounted for goes here whatever else does.
 - **Each finding:** around a dozen lines. A mechanism that needs more than that
   is usually two findings or one you have not finished reducing.
 - **Refuted: one line each.** Title, and the `file:line` that kills it. The
   reader wants to know a candidate was considered and why it died — not the
   story of how you considered it. Keep the `## Refuted` heading exactly as
-  spelled: the harness reads it to keep dead findings from labelling the issue.
+  spelled: the harness reads it to keep dead findings from labelling the issue,
+  and emit it even when nothing was refuted (`- none`), because that heading is
+  where `labels.py` stops reading.
+- **Not covered:** above `Checked and clear`, because an open gap decides
+  whether a maintainer needs to look themselves and a closed check does not.
 - **Checked and clear:** one line per area, each ending in a citation. On a
   clean PR this section *is* the report, so it earns its lines — but they are
   bullets, not paragraphs.
-- **Coverage:** a short list, and grouping is what keeps it short. A fifty-file
-  diff does not get fifty lines; it gets a handful of groups whose counts add
-  up. `Checked and clear` says what you *established*; `Coverage` says what you
-  *opened*. They are different questions and a file can appear in one without
-  the other.
+- **Coverage: last**, and a short list. Grouping is what keeps it short: a
+  fifty-file diff does not get fifty lines, it gets a handful of groups whose
+  counts add up. It is the audit trail, which is why it sits below everything a
+  maintainer acts on. `Checked and clear` says what you *established*;
+  `Coverage` says what you *opened*. They are different questions and a file
+  can appear in one without the other.
 
-If nothing meets the bar, omit `Findings`, say "No findings." in the header,
-and let `Checked and clear` carry the weight.
+If nothing meets the bar, omit `Findings`, say "No findings" in the header, and
+let `Not covered` and `Checked and clear` carry the weight.
 
 Do not write a `Verification:` footer, or any other claim about whether an
 adversarial pass ran. The harness appends that line itself, from what actually
