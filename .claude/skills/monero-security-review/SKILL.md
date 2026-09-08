@@ -697,13 +697,19 @@ that is a good outcome — say so and show the work.
 - **LOW** — defence-in-depth, hardening, or a bug with no attacker-reachable
   impact you could establish.
 
-## Confidence
+## No confidence word in the heading
 
-- **CONFIRMED** — you traced the path end to end, named the entry point, and
-  read every guard along the way.
-- **PLAUSIBLE** — the path is likely but one link is unverified. Say which link.
+The heading is `### [SEVERITY] Title` and nothing else. A confidence beside the
+severity puts two graded words in one bracket, and they read as one scale —
+which blurs the only thing severity is there to say.
 
-Anything weaker than PLAUSIBLE does not get reported.
+The bar for reporting has not moved, it just goes in the prose instead:
+
+- Report a finding when you traced the path end to end, named the entry point,
+  and read every guard along the way. Say so in `Verification:`.
+- Report one where the path is likely but a single link is unverified **only**
+  if you name that link, in the finding, in a clause.
+- Anything weaker than that does not get reported at all.
 
 ## Output
 
@@ -718,21 +724,14 @@ not carry a fact the reader can verify, cut it.
 ```markdown
 # Security review — <PR title>
 
+**Author:** <the `Opened by:` login from PR_CONTEXT.md> · head `<sha12>`
 **Scope:** <N> files, +<A>/-<B> lines · <subsystems touched>
 **Boundaries:** <which trust boundaries the diff reaches, or "none reachable">
 **Result:** <2 findings: 1 MEDIUM, 1 LOW> — or "No findings."
 
-## Coverage
-
-<Every changed file, in one of two states. Reviewed: name it, or group several
-under one line with a count. Excluded: name it with the reason you did not read
-it for defects. Group where grouping is honest -- "4 CMakeLists.txt: target
-rename only" is fine, "the build files" is not, because a reader cannot check
-it. Nothing may be in neither state.>
-
 ## Findings
 
-### [SEVERITY / CONFIDENCE] Short title
+### [SEVERITY] Short title
 - **Where:** `file.cpp:123`, `file.h:45`
 - **Reach:** `handle_notify_new_transactions` → `parse_tx` → `resize`
   (or: "not reachable today — <one clause>")
@@ -743,6 +742,14 @@ it. Nothing may be in neither state.>
 
 ## Refuted
 - ~~Title~~ — the guard that kills it, with `file:line`.
+
+## Coverage
+
+<Every changed file, in one of two states. Reviewed: name it, or group several
+under one line with a count. Excluded: name it with the reason you did not read
+it for defects. Group where grouping is honest -- "4 CMakeLists.txt: target
+rename only" is fine, "the build files" is not, because a reader cannot check
+it. Nothing may be in neither state.>
 
 ## Checked and clear
 - <area> — what you established. `file:line`

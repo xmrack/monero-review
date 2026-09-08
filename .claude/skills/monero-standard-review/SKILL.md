@@ -34,9 +34,11 @@ This is the deep pipeline with the expensive parts removed. It runs the same
   That stage is cheap and it is the only thing standing between an
   observation somebody wrote down and nobody ever reading it;
 - puts each candidate to **two** verifier angles, REACHABILITY and INTRODUCED,
-  and requires both. No candidate can reach three agreeing votes, so nothing
-  here publishes at `high` confidence -- which is the honest reading of a
-  two-angle panel, not a defect;
+  and requires both. No candidate can reach three agreeing votes, and the
+  report says so where it counts: the Verification line on every finding reads
+  `<n>/2 angles agreed`, against a deep review's `<n>/3`. There is no
+  confidence word in a heading at either tier -- two graded words in one
+  bracket read as one scale and blur the severity;
 - runs no advocate re-look. That stage is defined on a two-to-one split, and a
   two-angle panel cannot produce one.
 

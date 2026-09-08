@@ -32,7 +32,7 @@ the run and into writing something a maintainer will act on.
 
 The run happens as the `monero-deep-scan` workflow. Its script adds up the
 verifiers' answers, brings severity down where they rated something lower than
-its proposer did, caps confidence by how many agreed, and checks the mapper's
+its proposer did, caps a confidence it uses internally, and checks the mapper's
 placement of files against the real changed-file list. Those results are what
 you report.
 
