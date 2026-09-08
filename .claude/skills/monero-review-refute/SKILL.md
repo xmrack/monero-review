@@ -324,9 +324,15 @@ updating them where you proved the first pass wrong.
 
 **Read the house style before you rewrite anything:**
 `.claude/references/writing.md` — Orwell's six rules, the Simplified Technical
-English rules that apply, the words to cut, and the five-step pass to run over
+English rules that apply, the words to cut, and the six-step pass to run over
 the draft. This pass is where a report gets shorter, so it is the pass where
 that file earns the most.
+
+**Never re-wrap a paragraph you touch.** One paragraph is one long line, because
+GitHub renders a newline in an issue body as a line break. A rewrite that tidies
+prose back to 78 columns undoes that and ships ragged short lines — and this
+pass edits in place, so it is the likeliest place for it to creep back in. Step
+6 of the pass applies to every line you rewrite.
 
 **`## Summary` is the one you should expect to change.** It is judgement written
 before anything was attacked, so a pass that kills the only finding has made it

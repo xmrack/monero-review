@@ -8,7 +8,7 @@
 
 **Read `.claude/references/writing.md` before you write a line of this file.**
 It is the house style: Orwell's six rules, the Simplified Technical English
-rules that apply, the words to cut, and the five-step pass to run over the
+rules that apply, the words to cut, and the six-step pass to run over the
 draft. This spec gives the structure; that file gives the prose. A report that
 follows this spec in 1,800 words of hedged passive voice has failed.
 
@@ -37,14 +37,11 @@ you claim cannot weigh what you cite.
 
 ## Summary
 
-<At most 3 sentences and at most 75 words. No sentence over 25 words. What the
-change does, in your own words, and the one thing a maintainer needs before
-deciding whether to read on.>
+<At most 3 sentences and at most 75 words. No sentence over 25 words. What the change does, in your own words, and the one thing a maintainer needs before deciding whether to read on. ONE LINE — do not wrap it, see `writing.md`.>
 
 ## Findings
 
-<With two or more findings, this table first. With one, skip it — the finding
-is already its own summary.>
+<With two or more findings, this table first. With one, skip it — the finding is already its own summary.>
 
 | id | sev | what is wrong | where | the fix |
 | --- | --- | --- | --- | --- |
@@ -54,19 +51,14 @@ is already its own summary.>
 
 `path/to/file.cpp:123` · `function_name` · <n>/2 angles agreed
 
-**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why
-nothing stops it. A citation for each.>
+**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why nothing stops it. A citation for each. One line.>
 
 **Impact.** <One sentence. What someone gets.>
-**Needs:** <what has to hold — a non-default flag, an attacker position, a
-victim action. Write "nothing" when that is true; it is the strongest thing
-this line can say.>
+**Needs:** <what has to hold — a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line — the break above this label is deliberate, the only one in the block.>
 
-**Fix.** <At most 3 sentences. The file and the function to change, and the
-change. At the cause, not at one caller.>
+**Fix.** <At most 3 sentences. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
-**Why it is new.** <At most 2 sentences. What the diff did, and what
-`origin/base` reads.>
+**Why it is new.** <At most 2 sentences. What the diff did, and what `origin/base` reads. One line.>
 
 ## Refuted
 
@@ -74,9 +66,7 @@ change. At the cause, not at one caller.>
 
 ## Not covered
 
-- <What could not be settled, and why: a tool this run lacked, a claim needing
-  a running binary, a submodule whose source was absent, an observation nobody
-  adjudicated, a third party's report this run reached no verdict on.>
+- <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet.>
 
 ## Checked and clear
 
@@ -88,19 +78,13 @@ change. At the cause, not at one caller.>
 | --- | --- | --- |
 | <plain name> | <paths, or a count> | <weakness classes> |
 
-**Accounted for.** <N> of <N> changed files — <N> read, <N> excluded
-(<reason per exclusion, one clause each>).
+**Accounted for.** <N> of <N> changed files — <N> read, <N> excluded (<reason per exclusion, one clause each>).
 **Not accounted for.** <each path nobody placed, named — or "none">
 **Not read.** <any area a reader failed on, named — or "none">
-**This tier.** standard — one reader per area rather than one per weakness
-class, no pass across areas, no second look, two verifiers per finding rather
-than three.
-**Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n>
-folded into another entry>.
-**Handed on.** <each observation one reader passed to another, and how it was
-settled — or "none">
-**Corrections.** <a severity lowered, an anchor re-checked, two entries that
-may be one defect — or omit the line>
+**This tier.** standard — one reader per area rather than one per weakness class, no pass across areas, no second look, two verifiers per finding rather than three.
+**Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>.
+**Handed on.** <each observation one reader passed to another, and how it was settled — or "none">
+**Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect — or omit the line>
 
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```

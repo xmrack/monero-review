@@ -125,7 +125,7 @@ produce.
 
 Read the REPORT SPEC now — not before. Then read the house style,
 `.claude/references/writing.md`: Orwell's six rules, the Simplified Technical
-English rules that apply, the words to cut, and the five-step pass to run over
+English rules that apply, the words to cut, and the six-step pass to run over
 the draft. Then write `review.md` in the repository root with `Write`.
 
 The reader is a Monero maintainer with a queue and an afternoon, answering

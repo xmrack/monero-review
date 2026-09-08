@@ -6,7 +6,7 @@
 
 **Read `.claude/references/writing.md` before you write a line of this file.**
 It is the house style: Orwell's six rules, the Simplified Technical English
-rules that apply, the words to cut, and the five-step pass to run over the
+rules that apply, the words to cut, and the six-step pass to run over the
 draft. This spec gives the structure; that file gives the prose. A deep review
 buys more agents, not more words — a report that follows this spec in 3,000
 words of hedged passive voice has failed.
@@ -37,14 +37,11 @@ though they will.
 
 ## Summary
 
-<At most 3 sentences and at most 75 words. No sentence over 25 words. What the
-change does, in your own words, and the one thing a maintainer needs before
-deciding whether to read on.>
+<At most 3 sentences and at most 75 words. No sentence over 25 words. What the change does, in your own words, and the one thing a maintainer needs before deciding whether to read on. ONE LINE — do not wrap it, see `writing.md`.>
 
 ## Findings
 
-<With two or more findings, this table first. With one, skip it — the finding
-is already its own summary.>
+<With two or more findings, this table first. With one, skip it — the finding is already its own summary.>
 
 | id | sev | what is wrong | where | the fix |
 | --- | --- | --- | --- | --- |
@@ -53,30 +50,18 @@ is already its own summary.>
 ### [SEVERITY] Short title
 
 `path/to/file.cpp:123` · `function_name` · <n>/3 angles agreed
-<For a finding carrying `merged`: one such line per site in `merged.sites`,
-each with that site's own vote, then a final line reading
-`Same defect because: <merged.sameDefectBecause>`.>
+<For a finding carrying `merged`: one such line per site in `merged.sites`, each with that site's own vote, then a final line reading `Same defect because: <merged.sameDefectBecause>`. These breaks ARE deliberate — one site per line.>
 
-**Panel split.** <Only for a finding carrying `rescued`. At most 2 sentences:
-that the panel rejected it two to one and an advocate restored it, what the two
-rejections relied on, and the line the advocate showed they were wrong about.
-When `rescuedMemberId` is set, say which site of the merged finding that was.
-This is what a confidence word used to stand in for, and it says more. Omit the
-line entirely on an ordinary finding.>
+**Panel split.** <Only for a finding carrying `rescued`. At most 2 sentences: that the panel rejected it two to one and an advocate restored it, what the two rejections relied on, and the line the advocate showed they were wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
 
-**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why
-nothing stops it. A citation for each.>
+**Defect.** <At most 3 sentences: the untrusted input, what it reaches, and why nothing stops it. A citation for each. One line.>
 
 **Impact.** <One sentence. What someone gets.>
-**Needs:** <what has to hold — a non-default flag, an attacker position, a
-victim action. Write "nothing" when that is true; it is the strongest thing
-this line can say.>
+**Needs:** <what has to hold — a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line — the break above this label is deliberate, the only one in the block.>
 
-**Fix.** <At most 3 sentences. The file and the function to change, and the
-change. At the cause, not at one caller.>
+**Fix.** <At most 3 sentences. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
-**Why it is new.** <At most 2 sentences. What the diff did, and what
-`origin/base` reads.>
+**Why it is new.** <At most 2 sentences. What the diff did, and what `origin/base` reads. One line.>
 
 ## Refuted
 
@@ -84,9 +69,7 @@ change. At the cause, not at one caller.>
 
 ## Not covered
 
-- <What could not be settled, and why: a tool this run lacked, a claim needing
-  a running binary, a submodule whose source was absent, an observation nobody
-  adjudicated, a third party's report this run reached no verdict on.>
+- <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet.>
 
 ## Checked and clear
 
@@ -98,23 +81,15 @@ change. At the cause, not at one caller.>
 | --- | --- | --- |
 | <plain name> | <paths, or a count> | <weakness classes> |
 
-**Accounted for.** <N> of <N> changed files — <N> read, <N> excluded
-(<reason per exclusion, one clause each>).
+**Accounted for.** <N> of <N> changed files — <N> read, <N> excluded (<reason per exclusion, one clause each>).
 **Not accounted for.** <each path nobody placed, named — or "none">
 **Not read.** <any area a reader failed on, named — or "none">
-**This tier.** deep — one reader per area per weakness class, a pass across the
-areas, a second look at every area, three verifiers per finding.
-**Across areas.** <what the pass looking only at what crosses between areas
-found, including "nothing"; or that it did not run, and why>
-**Second look.** <what the second pass over each area found that the first
-missed, including "nothing">
-**Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n>
-folded into another entry>, <n> one vote short and re-looked, <n> restored by
-an advocate.
-**Handed on.** <each observation one reader passed to another, and how it was
-settled — or "none">
-**Corrections.** <a severity lowered, an anchor re-checked, two entries that
-may be one defect — or omit the line>
+**This tier.** deep — one reader per area per weakness class, a pass across the areas, a second look at every area, three verifiers per finding.
+**Across areas.** <what the pass looking only at what crosses between areas found, including "nothing"; or that it did not run, and why>
+**Second look.** <what the second pass over each area found that the first missed, including "nothing">
+**Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>, <n> one vote short and re-looked, <n> restored by an advocate.
+**Handed on.** <each observation one reader passed to another, and how it was settled — or "none">
+**Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect — or omit the line>
 
 <!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
 ```

@@ -201,9 +201,40 @@ than about the code.
 - **The coverage stamp.** A machine's line, exempt from all of the above and
   copied field for field.
 
+# One paragraph is one line
+
+Do not hard-wrap prose in `review.md`. A paragraph is a single long line,
+however long that is; let the reader's browser wrap it.
+
+This is not a style preference, it is where the file is read. GitHub renders a
+single newline in an ISSUE BODY as a line break — a GFM extension for
+user-authored content, and the opposite of how the same Markdown renders as a
+file in a repository. So prose wrapped at 78 columns, which looks tidy in an
+editor and correct in every `.md` file in this repository, reaches the reader as
+a column of short ragged lines with the right-hand third of the page empty. It
+has already shipped that way.
+
+Which means a newline in your prose is a DELIBERATE BREAK and reads as one.
+Use it where you want one and nowhere else:
+
+- between `**Impact.**` and the `**Needs:**` line that follows it;
+- between the locator lines of a merged finding, one site per line;
+- between list items, table rows, and the header's three lines.
+
+Everything else — the summary, each labelled block of a finding, a refuted
+entry's explanation, a Coverage paragraph — is one line per paragraph, with a
+blank line between paragraphs.
+
+THE SPEC FILES AND THIS ONE ARE WRAPPED AT 78 COLUMNS. That is for the people
+who edit them, and it is the one piece of their formatting you must not copy.
+The template blocks show the shape of the report, not the shape of its lines.
+
+Code fences, tables and the coverage stamp are unaffected: their line breaks are
+structural and were never prose.
+
 # The pass to run before you write the file
 
-Not a suggestion — do these five things, in this order, over what you are about
+Not a suggestion — do these six things, in this order, over what you are about
 to write:
 
 1. **Find your longest sentence.** Count its words. Over 25, split it. Do this
@@ -219,5 +250,9 @@ to write:
    maintainer who has not read the finding act on it? It names a file, a
    function, and a change. If it names a principle instead, it is not a fix
    yet.
+6. **Unwrap every paragraph.** Each one is a single line before you save the
+   file. Any newline still inside prose is a break you meant. This is last
+   because it is mechanical and it is easy to undo the other four while doing
+   it — check nothing else changed.
 
 The report is finished when cutting anything else would remove a fact.

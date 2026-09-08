@@ -31,7 +31,7 @@ the run and into writing something a maintainer will act on.
 That second half is the one people complain about, so it has a standard of its
 own: `.claude/references/writing.md`, the house style for every report in this
 repository. Orwell's six rules and the Simplified Technical English rules that
-apply, plus the words to cut and a five-step pass to run over the draft. Read
+apply, plus the words to cut and a six-step pass to run over the draft. Read
 it before you write `review.md`, not after. The report answers three questions
 for one reader -- is something wrong, where is it, what do I change -- and a
 report that answers them in a thousand words of hedged passive voice has

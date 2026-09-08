@@ -731,8 +731,14 @@ Markdown. Create no other files and write nothing else.
 
 **Read the house style first: `.claude/references/writing.md`.** Orwell's six
 rules, the Simplified Technical English rules that apply, the words to cut, and
-the five-step pass to run over the draft. It is shared by every review in this
+the six-step pass to run over the draft. It is shared by every review in this
 repository, so a fallback report reads like a fleet one.
+
+**Do not hard-wrap prose in `review.md`.** One paragraph is one long line.
+GitHub renders a newline in an issue body as a line break, so a paragraph
+wrapped at 78 columns reaches the reader as a column of short ragged lines. The
+rule and its exceptions are in `writing.md` under "One paragraph is one line";
+the wrapping of this file is for whoever edits it and is not a model to copy.
 
 **Write for an engineer who will check every claim you make.** Facts with
 citations, not narration. No preamble, no restating your method, no commentary
