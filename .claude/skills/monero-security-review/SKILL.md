@@ -729,6 +729,13 @@ not carry a fact the reader can verify, cut it.
 **Boundaries:** <which trust boundaries the diff reaches, or "none reachable">
 **Result:** <2 findings: 1 MEDIUM, 1 LOW> — or "No findings."
 
+## Summary
+
+<Two or three sentences. What the change actually does, in your own words rather
+than the author's title, and the one thing a maintainer needs to know before
+deciding whether to read on. If nothing here matters, say that plainly — it is
+the most useful summary there is.>
+
 ## Findings
 
 ### [SEVERITY] Short title
@@ -800,7 +807,14 @@ stamp, and say in `Not covered` that the harness did not provide the list.
 
 Length budgets, because a report nobody finishes protects nobody:
 
-- **Header:** those three lines. Not a paragraph.
+- **Header:** those four lines. Not a paragraph.
+- **Summary: two or three sentences, and they are the ones most likely to be
+  read.** Say what the change does in your own words — not the author's title —
+  and the one thing a maintainer needs before deciding whether to read on. Do
+  not restate `Result:` one line above it, do not describe the review itself,
+  and do not hedge: "some areas may warrant further review" is a way of not
+  writing a summary. On a no-findings review this is the most valuable section
+  in the file, because it is what lets a maintainer stop reading.
 - **Each finding:** around a dozen lines. A mechanism that needs more than that
   is usually two findings or one you have not finished reducing.
 - **Refuted: one line each.** Title, and the `file:line` that kills it. The
