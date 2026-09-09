@@ -198,7 +198,7 @@ const BOUNDED = PROFILE === 'standard'
 // Scale to the change. A two-file diff does not need eight units and three
 // lenses each; the cap the recipe passes is a ceiling, not a target. Medium
 // carries a lower ceiling because its whole premise is a bounded fan-out.
-const UNIT_CEILING = a.maxUnits || (BOUNDED ? 5 : 8)
+const UNIT_CEILING = a.maxUnits || (BOUNDED ? 4 : 8)
 const MAX_UNITS = Math.max(1, Math.min(UNIT_CEILING, Math.ceil(CHANGED.length / 2)))
 // Two angles at standard, three at deep. REACHABILITY and INTRODUCED are the
 // two kept, because they are where candidates on this queue actually die:

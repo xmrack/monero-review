@@ -35,7 +35,7 @@ on:
       # Which review runs. TWO TIERS, and that is the whole of it.
       #
       #   default / standard   the agent fleet at bounded width: the diff is
-      #                        mapped into at most 5 units, one researcher takes
+      #                        mapped into at most 4 units, one researcher takes
       #                        each with all of its weakness classes, and every
       #                        candidate faces two verifier angles counted in
       #                        code. Every scheduled tick gets this.
@@ -434,7 +434,7 @@ jobs:
     # 240 for the standard tier, not the 120 a single reviewer got. That
     # reviewer finished in 4-24 minutes and a hung one should fail fast; the
     # standard tier is a fleet at an effective concurrency of 2, so a
-    # five-unit change is around eight waves. Most runs are a few files and
+    # four-unit change is around seven waves. Most runs are a few files and
     # well under an hour, and 240 is the ceiling a wide one needs rather than
     # the time one takes.
     #

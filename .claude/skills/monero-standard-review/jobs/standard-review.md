@@ -70,7 +70,7 @@ Workflow({ name: "monero-deep-scan",
                    pr: <number from PR_CONTEXT.md, or null>,
                    profile: "standard",
                    changedFiles: [<the list from step 2, verbatim>],
-                   maxUnits: 5 } })
+                   maxUnits: 4 } })
 ```
 
 `profile: "standard"` is not optional and not a hint. The workflow defaults an
@@ -105,8 +105,8 @@ TaskOutput({ task_id: "<the Task ID>", block: true, timeout: 600000 })
 
 600000ms is the maximum per call. If it comes back `not_ready` or still
 running, **call it again**, and keep calling until it returns the workflow's
-result. This tier is a smaller fleet than the deep one. On a five-unit change
-it is about eight agents at an effective concurrency of two, and on an ordinary
+result. This tier is a smaller fleet than the deep one. On a four-unit change
+it is about seven agents at an effective concurrency of two, and on an ordinary
 few-file diff it is three or four, so expect several calls, not dozens. Do not end your turn, do not start writing
 `review.md`, and do not summarise anything until that result is in your hands.
 

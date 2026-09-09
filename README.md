@@ -51,7 +51,7 @@ Every PR the sweep picks up gets **standard**. A human escalates one to
 
 | | standard | deep |
 | --- | --- | --- |
-| units the diff is split into | at most 5 | at most 8 |
+| units the diff is split into | at most 4 | at most 8 |
 | researchers | one per unit, all its weakness classes | one per unit **per weakness class** |
 | a pass across the unit seams | no | yes |
 | a second look at every unit | no | yes |
