@@ -169,7 +169,7 @@ name which site of the merged finding that was. Say it plainly, because this is 
 finding a majority of the panel rejected, and the reader is entitled to know
 that before the claim rather than after it.
 
-Coverage is a table and nine labelled lines, never a paragraph, and never a
+Coverage is a table and ten labelled lines, never a paragraph, and never a
 field name from the returned object in front of the reader. It must carry:
 
 - the areas and the weakness classes read over each;
@@ -235,6 +235,16 @@ site in `merged.sites` with that site's vote, a final line giving
 `merged.sameDefectBecause`, and one **Fix.** Never split it back into one entry
 per site and never drop a site: the first makes the stamp's `published` wrong,
 the second loses a place the fix has to hold.
+
+`refactorDrift` is not a finding and not a refutation. Each entry is a hunk
+that presents itself as a refactor and does not behave like one: no panel saw
+it, it has no severity and no vote, and it must never get a `### [SEVERITY]`
+heading. Write the entries under `## Not just a refactor`, below `## Refuted`,
+one bullet each carrying the `file:line`, what made the hunk look like a
+refactor, what `origin/base` does and what the head does instead, and leave
+which one was intended to the reader. Omit the heading when the array is empty.
+The Coverage **Refactors.** line says what was checked either way, so an absent
+section reads as "nothing drifted" rather than "nobody looked".
 
 Keep `refuted` in the report, one line each. It is most of what this pipeline
 produces and it is how the next reviewer avoids buying a panel for the same

@@ -798,6 +798,9 @@ that you attacked your own claim: there is no panel here to do it for you.>
 ## Refuted
 - ~~Title~~: the guard that kills it, with `file:line`. One line each.
 
+## Not just a refactor
+- <`file:line`, what made the hunk look like a refactor, what `origin/base` does, what the head does instead. Omit this whole section when nothing drifted. No severity: this is for a human to check, not a finding.>
+
 ## Not covered
 - <what you could not check, and why>
 
@@ -838,6 +841,19 @@ the cause: if two callers are wrong because a helper is permissive, the helper
 is the fix.
 
 **Nothing else gets a block.** No Notes, no Discussion, no confidence word.
+
+**A refactor that is not one goes in its own section, not in a finding.** For
+every hunk that restructures code that already existed rather than adding
+something new, read `origin/base` and check the behaviour is the same. Where it
+is not, put it under `## Not just a refactor` with the `file:line`, what made
+it look like a refactor, what `origin/base` does and what the head does
+instead. It carries no severity, because most of these have no untrusted input
+behind them and are not security findings: they are the author's own "no
+functional change" turning out to be false, which a maintainer wants to know
+regardless. Where it is also attacker-reachable, file the finding too. Treat a
+claim of refactor or cleanup as the reason to read that hunk closely, not the
+reason to skim it, and expect it to hide in a pull request that is part new
+feature and part cleanup, where the new code takes the attention.
 
 
 ### `## Coverage` and the stamp are not optional

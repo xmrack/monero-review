@@ -25,6 +25,15 @@ Four things have to be true, and each needs a line you actually read:
 aimed at steering a reviewer is a finding on sight, with its file and line, and
 needs no reachability argument.
 
+A behaviour change inside something presented as a refactor is **not a
+candidate at all**, and does not belong in `candidates`. It goes in
+`refactorDrift`, which is returned whole, reaches no verifier and carries no
+severity. Most of these would fail test 1 for want of an untrusted input and
+be refuted correctly, which is the reason they need a channel of their own:
+"the author says this hunk changes nothing and it does" is worth a
+maintainer's attention whether or not anybody can reach it, and it is not a
+security claim, so it must not be published as one.
+
 # Where it is
 
 - `file`, repository-relative.

@@ -64,6 +64,12 @@ you claim cannot weigh what you cite.
 
 - ~~<proposal>~~: <what took it apart, and the line that settled it.>
 
+## Not just a refactor
+
+<Only when the run returned `refactorDrift`. Omit the heading entirely when it is empty.>
+
+- `path/to/file.cpp:123` · <what made it look like a refactor, quoted: the title, the sentence in the description, the commit subject, or that the hunk is a move with no new caller>. <What `origin/base` does.> <What the head does instead.> <Which one was intended is a question for a human.>
+
 ## Not covered
 
 - <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet.>
@@ -84,6 +90,7 @@ you claim cannot weigh what you cite.
 **This tier.** standard: one reader per area rather than one per weakness class, no pass across areas, no second look, two verifiers per finding rather than three.
 **Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>.
 **Handed on.** <each observation one reader passed to another, and how it was settled, or "none">
+**Refactors.** <what was read for a behaviour change inside a restructuring, and what came back: the count in `## Not just a refactor`, or "nothing in this change presents itself as a refactor", or "no hunk restructures existing code">
 **Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect, or omit the line>
 
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
@@ -239,6 +246,36 @@ When a nominated group came back unusable its findings are published
 separately. Say so in **Corrections.**, because that is a possible duplicate in
 the report and the reader should be told why two entries look alike.
 
+# Not just a refactor
+
+A hunk that presents itself as a refactor and does not behave like one. The
+claim can be the pull request's title, a sentence in its description, a commit
+subject, or nothing said at all where the code is plainly a move of something
+that already existed.
+
+**This is not a finding and it is not a refutation.** It reached no panel, it
+carries no severity and no vote, and it never gets a `### [SEVERITY]` heading:
+that would label the published issue as though a panel had confirmed a security
+defect, which nobody did. It is an observation for a human to check, and the
+entry says so.
+
+One bullet each, with four things in it: the `file:line`, what made the hunk
+look like a refactor, what `origin/base` does, and what the head does instead.
+The reader decides which was intended; this section does not guess. Where the
+same drift is also attacker-reachable it is a finding as well, published
+normally above, and the bullet here is not a substitute for it.
+
+Omit the heading when nothing drifted. The Coverage **Refactors.** line carries
+the fact either way, so an absent section reads as "nothing drifted" rather
+than "nobody looked".
+
+Why it gets its own section rather than a place among the findings: most of
+these have no untrusted input behind them, so the four-part candidate test
+throws them out and is right to. That test is asking whether an attacker can do
+something. This section is asking a different question, which is whether the
+change does what it says. A maintainer wants the answer to both, and only one
+of them is a severity.
+
 # Refuted stays in
 
 It is most of what this pipeline produces, and it is how the next reviewer
@@ -253,7 +290,7 @@ one, and never by dropping a site.
 Emit the heading even when nothing was refuted (`- none`). `labels.py` stops
 reading there, and a report without it has no stopping point.
 
-# Coverage is a table and seven lines
+# Coverage is a table and eight lines
 
 It used to be an essay, and most of it was the same essay every time. The
 structure above is the whole of it: a table of areas, then those labelled
@@ -388,9 +425,12 @@ So:
   it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
-- `## Not covered`, `## Checked and clear` and `## Coverage` sit below
-  `## Refuted`, where `labels.py` has already stopped reading. That is why they
-  can be reordered and the three sections above them cannot.
+- `## Not just a refactor`, `## Not covered`, `## Checked and clear` and
+  `## Coverage` sit below `## Refuted`, where `labels.py` has already stopped
+  reading. That is why they can be reordered and the three sections above them
+  cannot. It is also why `## Not just a refactor` is safe where it is and would
+  not be one line higher: its entries are observations nobody graded, and above
+  `## Refuted` a bracketed severity in one would label the issue.
 
 Measured against `labels.py`, not assumed: a report written from this template
 with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity
