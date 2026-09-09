@@ -110,6 +110,39 @@ Changes under `tests/` do not ship. They matter only if they also modify
 non-test code, or if they weaken a fuzz harness in a way that would hide future
 bugs — the latter is worth a LOW note, not a vulnerability report.
 
+## A wrong return value the API tells the caller not to trust
+
+A function that returns the wrong boolean is a bug. It is a SECURITY finding
+only if something acts on the boolean and does damage. Three questions settle
+it, and all three have to go your way:
+
+1. **Does any state change behind the wrong answer?** No funds moved, no file
+   written, no key touched means the caller was misinformed and nothing else
+   happened. A wrong answer with no act behind it is a correctness bug.
+2. **Does the API document a second check the caller is required to make?**
+   The wallet API in `src/wallet/api/wallet2_api.h` pairs many calls with
+   `status()` and `errorString()`, and says so in the header. A caller that
+   skips a documented check is a caller with a bug, and you are then reporting
+   somebody else's hypothetical code rather than this tree.
+3. **Is there an in-tree caller that actually gets hurt?** Find it. "An
+   external consumer might" is not a path, and neither is a shape a user
+   reaches by mistyping an address, because there is no attacker in it.
+
+MEASURED, on 11185: `PendingTransactionImpl::commit` was proposed as reporting
+success after broadcasting nothing. The new `m_status = Status_Ok` at
+`src/wallet/api/pending_transaction.cpp:162` genuinely does overwrite a prior
+`Status_Error` on an empty `m_pending_tx`. It died on all three questions at
+once: nothing is broadcast so no state moves, `src/wallet/api/wallet2_api.h:858`
+documents the `status()` check that catches it, and the only in-tree caller,
+`WalletImpl::submitTransaction` at `src/wallet/api/wallet.cpp:1289`, builds its
+own pending transaction through `load_tx` and never holds an errored empty
+object.
+
+Where it dies here it is usually still worth telling a maintainer, because the
+author did not mean to write it. That is what `## Needs human review` is for:
+no severity, no vote, and the input that tells the two versions apart. Refuting
+a security claim is not the same as deciding the code is fine.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
