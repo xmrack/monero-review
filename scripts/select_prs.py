@@ -4,7 +4,7 @@
 Prints `prs=<json array>` on stdout for $GITHUB_OUTPUT; diagnostics on stderr.
 
 Selection is a queue, not a recency window:
-  - open, non-draft, updated within MAX_AGE_DAYS
+  - open, non-draft, targeting BASE_BRANCH, updated within MAX_AGE_DAYS
   - head SHA not already present in this repo's issue titles (the dedup record)
   - a PR already reviewed once is held until its head stops moving
   - touches something worth reviewing (see WORTHLESS)
@@ -25,10 +25,11 @@ separate the PRs actually in line from the doc-only residue:
   docs      of those, the doc-only ones, which will never be picked
   settling  of those, the re-reviews being held until the head stops moving
   unprobed  queued PRs the MAX_PROBES budget did not reach
+  offbranch open PRs not targeting BASE_BRANCH, dropped before the queue
   open      open PRs upstream
 
 Env: UPSTREAM, REVIEW_REPO, MAX_AGE_DAYS, BATCH, SETTLE_MINUTES,
-     GH_TOKEN (optional), API (optional base URL, for testing).
+     BASE_BRANCH, GH_TOKEN (optional), API (optional base URL, for testing).
 """
 import collections
 import datetime
@@ -124,6 +125,22 @@ MAX_ATTEMPTS = 2
 # which is the wanted answer: nothing is lost, because the review it would have
 # bought was going to be superseded anyway, and it stops occupying the slot.
 SETTLE_MINUTES = int(os.environ.get("SETTLE_MINUTES", "90"))
+
+# Only pull requests targeting the upstream's main development branch are
+# swept. `master` for monero-project/monero, confirmed against the remote
+# rather than assumed: `git ls-remote --symref <upstream> HEAD` answers
+# `ref: refs/heads/master`.
+#
+# The rest are backports and long-lived branch work. They are real changes and
+# the harness reviews them correctly when asked by number -- `origin/base` is
+# whatever branch the pull request targets, which is what stopped a two-file
+# backport diffing as 353 files -- but they are not where this queue's money
+# should go: a backport is code that already landed on master and was already
+# read there, and the branch it lands on is maintained by people who chose it
+# deliberately.
+#
+# Set to an empty string to sweep every branch again.
+BASE_BRANCH = os.environ.get("BASE_BRANCH", "master")
 
 # Pages of open PRs to consider, 100 each. Upstream runs ~300 open, so one page
 # would hide the backlog behind the most-recently-updated 100.
@@ -298,14 +315,35 @@ def main():
             return False
         return True
 
-    queue = [p for p in prs
+    # Off-branch pull requests are dropped BEFORE the queue rather than
+    # probed and skipped like doc-only ones, because nothing about them can
+    # change: a doc-only pull request becomes eligible the moment it grows a
+    # code file, while a backport's target branch is what it is. Probing them
+    # would spend a file listing each, every tick, to reach the same answer.
+    offbranch = collections.Counter()
+    if BASE_BRANCH:
+        for p in prs:
+            ref = (p.get("base") or {}).get("ref") or "(unknown)"
+            if ref != BASE_BRANCH:
+                offbranch[ref] += 1
+        prs_on_branch = [p for p in prs
+                         if ((p.get("base") or {}).get("ref") == BASE_BRANCH)]
+    else:
+        prs_on_branch = prs
+    if offbranch:
+        detail = ", ".join(f"{ref} ({n})" for ref, n in offbranch.most_common())
+        print(f"{sum(offbranch.values())} open PR(s) not targeting "
+              f"{BASE_BRANCH}, not swept: {detail}", file=sys.stderr)
+
+    queue = [p for p in prs_on_branch
              if not p["draft"]
              and p["updated_at"] > cutoff
              and pending(p)]
     queue.sort(key=lambda p: p["updated_at"], reverse=True)
     scope = f"updated since {cutoff}" if cutoff else "of any age"
-    print(f"{len(queue)} unreviewed PR(s) {scope}, out of {len(prs)} open",
-          file=sys.stderr)
+    on = f" targeting {BASE_BRANCH}" if BASE_BRANCH else ""
+    print(f"{len(queue)} unreviewed PR(s){on} {scope}, "
+          f"out of {len(prs)} open", file=sys.stderr)
 
     # Probing continues past the point where BATCH is filled, which is the
     # whole reason the footer can distinguish a real backlog from a pile of
@@ -372,10 +410,15 @@ def main():
     # time the review job finishes, an hour of upstream pushes later,
     # recomputing would answer a different question.
     #
-    # `queue` is kept at its original meaning -- every unreviewed non-draft PR
-    # in the age window, doc-only ones included -- because 400-odd published
-    # issues already carry that number in their footers and silently redefining
-    # it would make them incomparable. `ready` is the new one worth reading,
+    # `queue` keeps its original shape -- every unreviewed non-draft PR in the
+    # age window, doc-only ones included -- because 400-odd published issues
+    # already carry that number in their footers and silently redefining it
+    # would make them incomparable. It is now narrowed to pull requests
+    # targeting BASE_BRANCH, which IS a redefinition, and a deliberate one:
+    # counting work this pipeline has decided never to do would report a
+    # backlog that can never drain, which is the exact failure the doc-only
+    # probing was built to fix. `offbranch` is published beside it so the
+    # difference from `open` is visible rather than inferred. `ready` is the new one worth reading,
     # and it counts the PR this run is about to review. A settling PR is in
     # `queue` and in NEITHER `ready` nor `docs`: it has reviewable code and it
     # is not being reviewed, and folding it into either would hide a decision
@@ -386,6 +429,7 @@ def main():
     print(f"docs={docs}")
     print(f"settling={settling}")
     print(f"unprobed={unprobed}")
+    print(f"offbranch={sum(offbranch.values())}")
     print(f"open={len(prs)}")
 
 

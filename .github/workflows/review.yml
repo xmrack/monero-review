@@ -105,6 +105,18 @@ on:
 
 env:
   UPSTREAM: monero-project/monero
+  # Only pull requests targeting this branch are swept. `master` is upstream's
+  # default, confirmed against the remote rather than assumed:
+  # `git ls-remote --symref https://github.com/monero-project/monero HEAD`
+  # answers `ref: refs/heads/master`.
+  #
+  # Backports and long-lived branch work are still REVIEWABLE, and a dispatch
+  # by number reviews one correctly -- `origin/base` is whatever branch the
+  # pull request targets, which is what stopped a two-file backport diffing as
+  # 353 files. They are simply not what the sweep spends its budget on: a
+  # backport is code that already landed on master, where this queue has
+  # already read it. Set to an empty string to sweep every branch again.
+  BASE_BRANCH: master
   # What a run gets when nothing names a model -- every `schedule` tick, and
   # any dispatch that omits the input. Keep the `model:` input default above
   # identical, or the dropdown lies about scheduled runs again.
@@ -351,6 +363,10 @@ jobs:
       docs: ${{ steps.pick.outputs.docs }}
       settling: ${{ steps.pick.outputs.settling }}
       unprobed: ${{ steps.pick.outputs.unprobed }}
+      # Open upstream PRs the sweep does not consider because they target
+      # another branch. Published beside `open` so the gap between the two is
+      # visible in the footer rather than left for a reader to wonder about.
+      offbranch: ${{ steps.pick.outputs.offbranch }}
       open: ${{ steps.pick.outputs.open }}
     steps:
       - uses: actions/checkout@v6
@@ -475,6 +491,16 @@ jobs:
             exit 1
           fi
           echo "PR ${{ matrix.pr }} targets $BASE"
+
+          # The sweep never selects one of these, so reaching here means a
+          # human dispatched it by number. That is an explicit choice and it
+          # is honoured: the review runs, correctly, against the branch the
+          # pull request actually targets. Say so loudly, because the reason
+          # the sweep skips them is that a backport is code master already
+          # carries and this queue has already read.
+          if [ -n "${BASE_BRANCH:-}" ] && [ "$BASE" != "$BASE_BRANCH" ]; then
+            echo "::warning::PR ${{ matrix.pr }} targets $BASE, not $BASE_BRANCH. The sweep does not pick these up; reviewing it because this run asked for it by number."
+          fi
 
           git clone --filter=blob:none --no-tags --single-branch --branch "$BASE" \
             "https://github.com/$UPSTREAM.git" .
@@ -1551,6 +1577,7 @@ jobs:
           DOCS: ${{ needs.select.outputs.docs }}
           SETTLING: ${{ needs.select.outputs.settling }}
           UNPROBED: ${{ needs.select.outputs.unprobed }}
+          OFFBRANCH: ${{ needs.select.outputs.offbranch }}
           OPEN: ${{ needs.select.outputs.open }}
         run: |
           set -euo pipefail
@@ -1576,6 +1603,12 @@ jobs:
           # unclassified count is a gap in what was measured, not a bucket.
           if [ -n "${UNPROBED:-}" ] && [ "$UNPROBED" != "0" ]; then
             line="$line, $UNPROBED unclassified (probe cap)"
+          fi
+          # Otherwise the open count looks wildly larger than the queue and a
+          # reader is left guessing whether the bot is behind. It is not: those
+          # pull requests target another branch and are never swept.
+          if [ -n "${OFFBRANCH:-}" ] && [ "$OFFBRANCH" != "0" ]; then
+            line="$line, $OFFBRANCH not targeting ${BASE_BRANCH:-master}"
           fi
           printf '<sub>%s, of %s open upstream PR(s) when this run started.</sub>\n' \
             "$line" "$OPEN" >> review.md
