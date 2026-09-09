@@ -1,6 +1,6 @@
 # monero-review
 
-Automated security review of monero-project/monero pull requests.
+Automated security review of monero-project/monero pull requests. Created by the MAGIC Monero Fund, please [donate](https://donate.magicgrants.org/monero) to help support this effort.
 
 It fetches a PR's head commit, has Claude read the diff against a
 Monero-specific skill, and files what it finds as an issue here. Every finding
