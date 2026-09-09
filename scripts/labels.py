@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Print the severity labels a review warrants, one per line, highest first.
+"""Print the labels a review warrants, one per line: the severities highest
+first, then `pre-existing` when a surviving finding predates the pull request.
 
     python3 scripts/labels.py [review.md]
 
@@ -24,6 +25,17 @@ HEADING = re.compile(
 )
 REFUTED_SECTION = re.compile(r"^##\s+Refuted\b", re.MULTILINE | re.IGNORECASE)
 
+# A finding the panel settled as `pre-existing` carries this exact phrase on its
+# locator line, which the REPORT SPEC fixes as literal text for that reason: it
+# is both what a reader sees before opening the block and what gets the label
+# onto the issue. Anchored to a locator line -- backtick, path, the middle dot
+# separators -- so the phrase appearing in a summary sentence does not label the
+# issue on its own.
+PRE_EXISTING = re.compile(
+    r"^`[^`]+`\s*·.*·\s*not introduced by this pull request\s*$",
+    re.MULTILINE | re.IGNORECASE,
+)
+
 
 def severities(text):
     cut = REFUTED_SECTION.search(text)
@@ -40,6 +52,14 @@ def severities(text):
     return [s for s in SEVERITIES if s in found]
 
 
+def pre_existing(text):
+    """True when a finding that survived verification was not this PR's own."""
+    cut = REFUTED_SECTION.search(text)
+    if cut:
+        text = text[:cut.start()]
+    return bool(PRE_EXISTING.search(text))
+
+
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else "review.md"
     try:
@@ -49,6 +69,12 @@ def main():
         return
     for sev in severities(text):
         print(sev.lower())
+    # After the severities, so a caller taking the first line as the headline
+    # severity is unaffected. Emitted only when a SURVIVING finding carries it:
+    # the same cut at "## Refuted" applies, because a refuted proposal must not
+    # label the issue whatever it was about.
+    if pre_existing(text):
+        print("pre-existing")
 
 
 if __name__ == "__main__":

@@ -50,7 +50,7 @@ though they will.
 
 ### [SEVERITY] Short title
 
-`path/to/file.cpp:123` · `function_name` · <n>/3 angles agreed
+`path/to/file.cpp:123` · `function_name` · <n>/3 angles agreed<, followed by ` · not introduced by this pull request` when the finding's `provenance` is `pre-existing`>
 <For a finding carrying `merged`: one such line per site in `merged.sites`, each with that site's own vote, then a final line reading `Same defect because: <merged.sameDefectBecause>`. These breaks ARE deliberate: one site per line.>
 
 **Panel split.** <Only for a finding carrying `rescued`. At most 3 sentences: that the panel rejected it two to one and an advocate restored it, what the two rejections relied on, and the line the advocate showed they were wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
@@ -151,6 +151,20 @@ block and a **Verification.** paragraph. The vote is a count and nothing else:
 never "thoroughly verified" or "confirmed by an independent panel". The value
 of this shape over one reviewer is that the number came out of a program;
 adjectives are how it stops being worth more.
+
+**A `pre-existing` finding says so on its locator line**, in those exact words:
+`` · not introduced by this pull request ``, appended after the vote. Two
+reasons it is fixed text rather than yours to phrase. A reader scanning a list
+of findings decides whether this blocks the merge from the locator line alone,
+and should not have to reach **Where it came from.** at the bottom of the block
+to learn that the author did not cause it. And `labels.py` reads that exact
+phrase to put a `pre-existing` label on the published issue, so a paraphrase
+silently drops the label.
+
+Only `pre-existing` gets it. A finding this change introduced, made newly
+reachable, or let past a guard it added is this change's business, and marking
+those as not-introduced would be false. Their **Where it came from.** block
+carries the distinction in full.
 
 **Defect.** Five sentences at most, and at most 120 words. The untrusted
 input, what it reaches, why nothing stops it, each with a line you read. Spend

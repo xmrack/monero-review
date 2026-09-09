@@ -1369,6 +1369,12 @@ jobs:
             echo "labels.py unavailable -- treating findings as unverified" >&2
             sevs=unknown
           fi
+          # labels.py also emits `pre-existing`, which is not a severity. This
+          # step's one test on the list asks "did anything survive the panel",
+          # and a provenance label answering yes to that would describe a
+          # confirmed finding on a report that has none. Strip it here; the
+          # publish step below wants the whole list and takes it unfiltered.
+          sevs=$(printf '%s\n' $sevs | grep -Ev '^pre-existing$' || true)
 
           # BOTH TIERS ARE THE FLEET, so there is one path through this step and no
           # branch for a shape that no longer runs in CI. Last stamp in the file wins,
@@ -1735,17 +1741,25 @@ jobs:
 
           # Severity labels, from findings that survived verification only --
           # refuted ones stay in the report but must not tag the issue.
+          #
+          # `pre-existing` comes off the same list and is not a severity. The
+          # run publishes a real weakness whoever wrote it, and this is how a
+          # maintainer sees which issues are about a hole the pull request
+          # inherited rather than dug, without opening them. It is emitted when
+          # ANY surviving finding is pre-existing, so on a mixed issue it means
+          # "at least one", and the report's Result line carries the split.
           sevs=$(python3 .harness/scripts/labels.py review.md || true)
           for sev in $sevs; do
             case "$sev" in
-              critical) colour=B60205 ;;
-              high)     colour=D93F0B ;;
-              medium)   colour=FBCA04 ;;
-              low)      colour=0E8A16 ;;
-              *)        continue ;;
+              critical)     colour=B60205; desc="Review found a critical severity issue" ;;
+              high)         colour=D93F0B; desc="Review found a high severity issue" ;;
+              medium)       colour=FBCA04; desc="Review found a medium severity issue" ;;
+              low)          colour=0E8A16; desc="Review found a low severity issue" ;;
+              pre-existing) colour=BFD4F2; desc="A finding here predates this pull request" ;;
+              *)            continue ;;
             esac
             gh label create "$sev" --color "$colour" --force \
-              --description "Review found a $sev severity issue" \
+              --description "$desc" \
               >/dev/null 2>&1 || true
             labels="$labels,$sev"
           done

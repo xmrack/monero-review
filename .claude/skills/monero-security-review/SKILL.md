@@ -788,7 +788,7 @@ deciding whether to read on.>
 
 ### [SEVERITY] Short title
 
-`path/to/file.cpp:123` · `function_name` · one reviewer, no panel
+`path/to/file.cpp:123` · `function_name` · one reviewer, no panel<, then ` · not introduced by this pull request` when the finding is pre-existing: `labels.py` reads that exact phrase to label the issue, so it is fixed text and not yours to rephrase>
 
 **Defect.** <At most 5 sentences and at most 120 words: the untrusted input,
 what it reaches, and why nothing stops it, with every frame of the chain from

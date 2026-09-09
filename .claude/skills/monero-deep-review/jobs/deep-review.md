@@ -162,7 +162,13 @@ master" and that split is the first thing they need.
 
 A `pre-existing` finding is a finding. The run traced a real weakness in code
 this change touches, and it is published like any other. What it is not is an
-accusation: never write it as though the author caused it. Put
+accusation: never write it as though the author caused it, and end its locator
+line with ` · not introduced by this pull request`, in those exact words. That
+phrase is what a reader scanning the findings sees before reaching **Where it
+came from.**, and `labels.py` matches it literally to put a `pre-existing`
+label on the issue, so a paraphrase drops the label silently. Only
+`pre-existing` gets it: a finding this change introduced, made newly reachable,
+or let past a guard it added is this change's business. Put
 `coverage.provenanceCorrected` (proposers the panel overruled) and
 `coverage.provenanceDisputed` (verifiers that split, each settled at the
 weakest label any of them would defend)

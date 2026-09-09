@@ -50,7 +50,7 @@ you claim cannot weigh what you cite.
 
 ### [SEVERITY] Short title
 
-`path/to/file.cpp:123` · `function_name` · <n>/2 angles agreed
+`path/to/file.cpp:123` · `function_name` · <n>/2 angles agreed<, followed by ` · not introduced by this pull request` when the finding's `provenance` is `pre-existing`>
 
 **Defect.** <At most 5 sentences and at most 120 words: the untrusted input, what it reaches, why nothing stops it, and every frame the input crosses on the way. A citation for each. One line.>
 
@@ -146,6 +146,20 @@ block and a **Verification.** paragraph. The vote is a count and nothing else:
 never "thoroughly verified" or "confirmed by an independent panel". The value
 of this shape over one reviewer is that the number came out of a program;
 adjectives are how it stops being worth more.
+
+**A `pre-existing` finding says so on its locator line**, in those exact words:
+`` · not introduced by this pull request ``, appended after the vote. Two
+reasons it is fixed text rather than yours to phrase. A reader scanning a list
+of findings decides whether this blocks the merge from the locator line alone,
+and should not have to reach **Where it came from.** at the bottom of the block
+to learn that the author did not cause it. And `labels.py` reads that exact
+phrase to put a `pre-existing` label on the published issue, so a paraphrase
+silently drops the label.
+
+Only `pre-existing` gets it. A finding this change introduced, made newly
+reachable, or let past a guard it added is this change's business, and marking
+those as not-introduced would be false. Their **Where it came from.** block
+carries the distinction in full.
 
 **Defect.** Five sentences at most, and at most 120 words. The untrusted
 input, what it reaches, why nothing stops it, each with a line you read. Spend
