@@ -57,21 +57,25 @@ inventing a finding costs.
 
 # Provenance is a label you report, never a reason to reject
 
-Read `git show origin/base:<path>` and say which of these it is, in
-`provenance`:
+The question is **where the vulnerable code sits, not how old it is**: does
+the cited line appear as a `+` in `git diff origin/base...HEAD`? Read that and
+`git show origin/base:<path>`, then say which of these it is, in `provenance`:
 
-- **`introduced`**: a new line here, or a guard this diff deleted.
-- **`newly-reachable`**: older code the diff exposed to an untrusted input it
-  was not exposed to before.
-- **`incomplete-guard`**: the diff adds a check and this candidate gets past
-  it. The hole underneath may be old; the assurance is new.
-- **`pre-existing`**: older than the diff, in code the diff touches or reaches.
+- **`introduced`**: the code is inside this pull request's changes, a line it
+  adds or modifies, or a guard it deleted. **A hole in a check the diff ADDS
+  belongs here**: the check is the diff's own code, whatever was true of the
+  exposure behind it.
+- **`newly-reachable`**: the code is outside the changes and the diff exposes
+  it to an untrusted input it did not see before.
+- **`pre-existing`**: the code is outside this pull request's changes, and the
+  diff neither wrote it nor made it reachable.
 
 **A candidate does not fail because the answer is `pre-existing`.** That used
 to be an angle of its own and it voted down real vulnerabilities the run had
 already traced: on PR 11196 an unauthenticated cross-site `GET` reaching
-`/stop_daemon` on a default daemon went unreported because the hole predated
-the change. Somebody can still make Monero do something it should not, and this
+`/stop_daemon` on a default daemon went unreported, on the reasoning that the
+exposure predated the change. That reasoning was wrong twice over, since the
+line that fails to guard is one the pull request adds. Somebody can still make Monero do something it should not, and this
 run is where it was found. Vote on the merits: the input is not
 attacker-controlled, the path does not run, something in between stops it, or
 the impact is not what was claimed.

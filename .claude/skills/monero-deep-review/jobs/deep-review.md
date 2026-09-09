@@ -153,9 +153,11 @@ every entry in `coverage.severityLowered` on Coverage's **Corrections.** line
 with both values.
 
 So does `provenance`, and it is the other thing you publish exactly as
-returned: `introduced`, `newly-reachable`, `incomplete-guard` or
-`pre-existing`, settled by the panel against `origin/base` rather than by the
-agent that proposed it. It goes in the finding's **Where it came from.** block
+returned: `introduced`, `newly-reachable` or `pre-existing`, settled by the
+panel against `origin/base` rather than by the agent that proposed it. It says
+where the vulnerable code sits relative to this change, not how old the code
+is: a line the change adds is the change's own, and only `pre-existing` means
+the code is outside what the pull request touched. It goes in the finding's **Where it came from.** block
 and, whenever any finding is not this change's, on the Result line too, because
 a maintainer is deciding between "do not merge this" and "file this against
 master" and that split is the first thing they need.

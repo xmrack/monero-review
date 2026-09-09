@@ -23,14 +23,16 @@ Three things have to be true, and each needs a line you actually read:
 **Whether this diff caused it is not a fourth requirement.** It used to be, and
 it cost a live finding: on PR 11196 the fleet traced an unauthenticated
 cross-site `GET` reaching `/stop_daemon` on a default daemon, cited the line,
-and published nothing, because the hole was older than the change. A real
-vulnerability in code this change touches or reaches is worth a maintainer's
-time whoever wrote it.
+and published nothing, on the reasoning that the exposure predated the change.
+That reasoning was also false, since the line that fails to guard is one the
+pull request adds. A real vulnerability in code this change touches or reaches
+is worth a maintainer's time whoever wrote it.
 
 What the relationship to the diff decides is not whether to publish but what
 the reader does next, so every candidate carries `provenance`, one of
-`introduced`, `newly-reachable`, `incomplete-guard` or `pre-existing`, with
-`relationToDiff` naming the line that settles it. The panel checks that label
+`introduced`, `newly-reachable` or `pre-existing`, with `relationToDiff`
+naming the line that settles it. The question is where the vulnerable code
+sits, not how old it is. The panel checks that label
 against `origin/base` rather than taking the proposer's word, because it is the
 difference between telling an author they broke something and telling them they
 inherited it.
@@ -171,19 +173,21 @@ code, so that is an honest limit; inventing the result instead is not.
 
 # Labelling how it relates to the diff
 
-Compare with `git show origin/base:<path>` before proposing, and set
-`provenance` from what you read:
+The question is **where the vulnerable code is, not how old it is**, and the
+check is mechanical: does the cited line appear as a `+` in
+`git diff origin/base...HEAD`? Read that and `git show origin/base:<path>`,
+then set `provenance`:
 
-- **`introduced`**: a new line, or a guard the diff deleted. Read the `-` lines
-  for tests, early returns, assertions and validations that are gone, and for
-  widened signatures. This is still where the best findings come from.
-- **`newly-reachable`**: code relocated somewhere newly reachable, so an old
-  weakness now faces an input it never faced.
-- **`incomplete-guard`**: the diff adds a check and the candidate gets past it.
-  The hole may be old; the assurance is new, and a reviewer who trusts it stops
-  looking. Hardening changes are read as strictly-better and skimmed, which is
-  what earns this its own label.
-- **`pre-existing`**: older than the diff, in code it touches or reaches.
+- **`introduced`**: the vulnerable code is inside the pull request's changes, a
+  line it adds or modifies, or a guard it deleted. Read the `-` lines for
+  tests, early returns, assertions and validations that are gone, and for
+  widened signatures. This is still where the best findings come from. **A hole
+  in a check the diff adds belongs here**: the check is the diff's own code,
+  and an old exposure behind it does not make the new line somebody else's.
+- **`newly-reachable`**: the code is outside the changes, and the diff is what
+  exposes it, so an old weakness now faces an input it never faced.
+- **`pre-existing`**: the code is outside the pull request's changes, and the
+  diff neither wrote it nor made it reachable.
 
 In this repository's published history the largest single group of dismissed
 candidates used to be `pre-existing` ones, thrown away as "real observations

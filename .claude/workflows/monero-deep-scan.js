@@ -51,14 +51,23 @@ const CATEGORIES = [
 const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']   // worst first
 const CONFIDENCES = ['high', 'medium', 'low']              // most confident first
 // How a finding relates to the change under review. REPORTED, NEVER A FILTER.
-//   introduced       the diff created it: a new line, or a guard it deleted.
-//   newly-reachable  the code is older, the diff exposed it to something it
-//                    was not exposed to before.
-//   incomplete-guard the diff adds a check and the check can be bypassed. The
-//                    hole may be older; the assurance is new, and a reader
-//                    who trusts it stops looking.
-//   pre-existing     older than the diff, in code the diff touches or reaches.
-const PROVENANCES = ['introduced', 'newly-reachable', 'incomplete-guard', 'pre-existing']
+//
+// The question is WHERE THE VULNERABLE CODE IS, not how old it is. A line this
+// pull request adds is the pull request's, whatever was true of the file last
+// week, and the check is mechanical: does the cited line show up as a `+` in
+// `git diff origin/base...HEAD`.
+//
+//   introduced       the vulnerable code is inside this pull request's
+//                    changes: a line it adds or modifies, or a guard it
+//                    deleted. A hole in a check the diff ADDS lands here, not
+//                    below -- the check is the diff's own code.
+//   newly-reachable  the vulnerable code is outside the changes, and this pull
+//                    request is what exposes it.
+//   pre-existing     the vulnerable code is outside this pull request's
+//                    changes, and the pull request neither wrote it nor made
+//                    it reachable. THIS is the one the report marks and the
+//                    issue is labelled for.
+const PROVENANCES = ['introduced', 'newly-reachable', 'pre-existing']
 // The full panel. `standard` runs a subset -- see ANGLES, resolved once the
 // profile is known.
 //
@@ -138,11 +147,15 @@ const CANDIDATES_SCHEMA = {
           // MEASURED, and the reason this stopped being a filter: on PR 11196
           // the fleet read `is_request_allowed` returning true with neither
           // `Origin` nor `Sec-Fetch-Site`, cited the exact line, and filed
-          // nothing, because the hole predates the diff. An earlier pipeline
-          // with no such filter published the same code as a LOW with the
-          // chain traced to `/stop_daemon` executing on a default daemon.
-          // The filter did not make the report more accurate; it made it
-          // silent about a live vulnerability the run had already found.
+          // nothing, reasoning that the exposure behind it predated the diff.
+          // An earlier pipeline with no such filter published the same code as
+          // a LOW with the chain traced to `/stop_daemon` executing on a
+          // default daemon. The filter did not make the report more accurate;
+          // it made it silent about a live vulnerability the run had already
+          // found -- and the reasoning was false as well, because that
+          // `return true` is a line the pull request adds. Both mistakes are
+          // fixed here: the filter is gone, and the label below asks where the
+          // code IS rather than how old it is.
           //
           // It is still reported, because it changes what the maintainer does
           // with it: block this pull request, or file the older one. Getting
@@ -548,13 +561,16 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'WHETHER THIS DIFF CAUSED IT IS NOT PART OF THAT TEST. A weakness identical on',
    'origin/base is still a weakness, and you are the one who found it: propose it.',
    'What you owe instead is an honest label. Read git show origin/base:<path> and',
-   'set provenance to what you find, with relationToDiff naming the line:',
-   '  introduced       a new line here, or a guard this diff deleted;',
-   '  newly-reachable  older code the diff exposed to an input it did not see;',
-   '  incomplete-guard the diff adds a check and this bypasses it. The hole may',
-   '                   be older; the assurance is new, and a reader who trusts it',
-   '                   stops looking;',
-   '  pre-existing     older than the diff, in code it touches or reaches.',
+   'set provenance to what you find, with relationToDiff naming the line. The',
+   'question is WHERE THE VULNERABLE CODE IS, not how old it is: check whether',
+   'the line you are citing appears as a "+" in git diff origin/base...HEAD.',
+   '  introduced       the code is inside this pull request\'s changes: a line',
+   '                   it adds or modifies, or a guard it deleted. A hole in a',
+   '                   check the diff ADDS belongs here -- the check is the',
+   '                   diff\'s own code, however old the exposure behind it;',
+   '  newly-reachable  the code is outside the changes and the diff exposes it;',
+   '  pre-existing     the code is outside the changes, and the diff neither',
+   '                   wrote it nor made it reachable.',
    'Get that label right in both directions. Calling an old hole `introduced`',
    'blames an author for something they did not do, and the panel will correct',
    'you. Calling a new one `pre-existing` buries the thing the review is for.',
@@ -1196,11 +1212,16 @@ const judged = await parallel(candidates.map((c) => () => parallel(
      'WHETHER THIS DIFF CAUSED IT IS NOT A REASON TO REJECT IT. A weakness that',
      'reads the same on origin/base still lets somebody do something they should',
      'not, and this run found it. Read origin/base to say WHICH of these it is,',
-     'in provenance, and do not let the answer change your vote:',
-     '  introduced       a new line here, or a guard this diff deleted;',
-     '  newly-reachable  older code the diff exposed to something new;',
-     '  incomplete-guard the diff adds a check and this bypasses it;',
-     '  pre-existing     older than the diff, in code it touches or reaches.',
+     'in provenance, and do not let the answer change your vote. The question is',
+     'WHERE THE VULNERABLE CODE IS, not how old it is: check whether the cited',
+     'line appears as a "+" in git diff origin/base...HEAD.',
+     '  introduced       the code is inside this pull request\'s changes: a line',
+     '                   it adds or modifies, or a guard it deleted. A hole in a',
+     '                   check the diff ADDS belongs here, because the check is',
+     '                   the diff\'s own code;',
+     '  newly-reachable  the code is outside the changes and the diff exposes it;',
+     '  pre-existing     the code is outside the changes, and the diff neither',
+     '                   wrote it nor made it reachable.',
      'Reject on the merits only: the input is not attacker-controlled, the path',
      'does not run, something in between stops it, or the impact is not what was',
      'claimed. "It was already broken" is a fact about the finding, not a fault',
@@ -1227,10 +1248,11 @@ const judged = await parallel(candidates.map((c) => () => parallel(
   // claim about the author is the one that has to be earned.
   // On a split, take the WEAKEST attribution any verifier was willing to
   // defend, not a flat fall back to `pre-existing`. Two verifiers who read the
-  // same hunk as `introduced` and `incomplete-guard` disagree about which way
+  // same hunk as `introduced` and `newly-reachable` disagree about which way
   // the diff is implicated, not about whether it is, and answering
   // `pre-existing` there would understate the finding as badly as the strong
-  // answer would overstate it. What the rule guarantees is the thing that
+  // answer would overstate it -- and `pre-existing` is the one that puts a
+  // label on the issue saying the author did not write this. What the rule guarantees is the thing that
   // matters: nothing is published that no verifier would say.
   const provRankV = (p) => { const i = PROVENANCES.indexOf(p); return i < 0 ? PROVENANCES.length : i }
   const provVotes = cast.map((v) => v.provenance).filter(Boolean)
@@ -1674,7 +1696,8 @@ return {
     '',
     'EVERY FINDING CARRIES A `provenance`, settled by the panel and not by its',
     'proposer, and the report must print it in **Where it came from.**:',
-    'introduced, newly-reachable, incomplete-guard or pre-existing. A finding',
+    'introduced, newly-reachable or pre-existing, which say where the vulnerable',
+    'code sits relative to the diff rather than how old it is. A finding',
     'that is not this change\'s is still published -- the run found a real',
     'weakness in code this change touches -- but the reader has to be told, in',
     'the entry and in the Result line, so they can tell "do not merge this" from',

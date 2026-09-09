@@ -62,7 +62,7 @@ though they will.
 
 **Fix.** <At most 4 sentences and at most 100 words. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
-**Where it came from.** <At most 2 sentences. One of: introduced by this change, and the `+` line or the deleted guard; newly reachable, and what now reaches it; an incomplete guard, and the check it gets past; or pre-existing, and what `origin/base` reads. Take the word from the finding's `provenance`, which the panel settled. One line.>
+**Where it came from.** <At most 2 sentences. One of: introduced by this change, and the `+` line or the deleted guard; newly reachable, and what now reaches it; or pre-existing, and where outside the change's own code it sits. Take the word from the finding's `provenance`, which the panel settled. One line.>
 
 ## Refuted
 
@@ -196,20 +196,22 @@ give the local change that stops the bleeding.
 **Where it came from.** Two sentences at most, opening with the finding's
 `provenance` word, which the panel settled and which you publish as returned:
 
-- *introduced by this change*: the `+` line that created it, or the `-` line
-  that removed the guard, and what `origin/base` reads;
-- *newly reachable*: the code is older and untouched, and this is what now
-  reaches it;
-- *an incomplete guard*: the check this change adds, and how the finding gets
-  past it;
-- *pre-existing*: what `origin/base` reads, unchanged.
+- *introduced by this change*: the vulnerable code is inside the change, so
+  give the `+` line that created it, or the `-` line that removed the guard,
+  and what `origin/base` reads. A hole in a check this change ADDS is this,
+  not pre-existing: the check is the change's own code;
+- *newly reachable*: the code sits outside the change and is untouched, and
+  this is what now reaches it;
+- *pre-existing*: the code sits outside the change altogether, which is where
+  you say it lives and what `origin/base` reads there.
 
-The last two are published as findings like any other, because a real
-vulnerability in code this change touches is worth a maintainer's time whoever
-wrote it. What they are not is an accusation. Never write a pre-existing
-finding as though the author caused it: the reader is deciding between "do not
-merge this" and "file this against master", and that sentence is what tells
-them which.
+The distinction is where the vulnerable code is, not how old it is. Only
+*pre-existing* is published as not the author's work, and it is still published
+as a finding, because a real vulnerability in code this change touches or
+reaches is worth a maintainer's time whoever wrote it. What it is not is an
+accusation: never write a pre-existing finding as though the author caused it.
+The reader is deciding between "do not merge this" and "file this against
+master", and that sentence is what tells them which.
 
 It comes last in the block because it is the audit trail: a reader who accepts
 the finding never needs it, and a reader who doubts it needs nothing else.

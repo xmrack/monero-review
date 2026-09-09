@@ -31,30 +31,38 @@ that decision.
 This used to be the fourth leg of the test and it cost a live finding. On
 PR 11196 the fleet read `is_request_allowed` returning true for a request
 carrying neither `Origin` nor `Sec-Fetch-Site`, cited the exact line, and filed
-nothing, because the hole was older than the diff. An earlier pipeline without
-the filter published the same code with the chain traced to `/stop_daemon`
-executing on a default daemon. The filter did not make the report more
-accurate. It made it silent.
+nothing, having reasoned that the exposure behind it predated the change. An
+earlier pipeline without the filter published the same code with the chain
+traced to `/stop_daemon` executing on a default daemon. Two things were wrong
+at once: the filter should not exist, and the reasoning behind it was also
+false, because that `return true` is a line the pull request adds.
 
-What you owe instead is an accurate label. Read `git show origin/base:<path>`
-and set `provenance`, with `relationToDiff` naming the line that settles it:
+What you owe instead is an accurate label, and the question it answers is
+**where the vulnerable code sits, not how old it is**. A line this pull request
+adds is the pull request's, whatever was true of the file last week. The check
+is mechanical: does the line you are citing appear as a `+` in
+`git diff origin/base...HEAD`?
 
-- **`introduced`**: a new line here, or a guard this diff deleted. Read every
-  `-` line in your unit for a bounds test, an early return, an assertion or a
-  validation that is simply gone, and for a signature or type change that
-  quietly widened what gets accepted. This is still your best hunting ground.
-- **`newly-reachable`**: the code is older and untouched, and this diff exposed
-  it to an untrusted input it was not exposed to before.
-- **`incomplete-guard`**: the diff adds a check and this gets past it. The hole
-  underneath may be old; what is new is the assurance, and a reviewer who
-  believes it stops looking. A hardening change is the easiest thing in a queue
-  to wave through, which is what makes this label worth its own name.
-- **`pre-existing`**: older than the diff, in code the diff touches or reaches.
+Set `provenance`, with `relationToDiff` naming the line that settles it:
 
-Get it right in both directions. Calling an old hole `introduced` blames an
-author for something they did not do, and a verifier reading `origin/base` will
-correct you. Calling a new one `pre-existing` buries the thing the review is
-for.
+- **`introduced`**: the vulnerable code is inside this pull request's changes.
+  A line it adds or modifies, or a guard it deleted. Read every `-` line in
+  your unit for a bounds test, an early return, an assertion or a validation
+  that is simply gone, and for a signature or type change that quietly widened
+  what gets accepted. This is still your best hunting ground. **A hole in a
+  check the diff ADDS belongs here**: the check is the diff's own code, and it
+  does not become somebody else's because the exposure behind it is old.
+- **`newly-reachable`**: the code is outside the changes and untouched, and
+  this diff is what exposes it to an untrusted input it did not see before.
+- **`pre-existing`**: the vulnerable code is outside this pull request's
+  changes, and the diff neither wrote it nor made it reachable. You found it
+  while reading around the change, and it is still worth reporting.
+
+Only the last one gets marked as not the author's, so get it right in both
+directions. Calling code the diff added `pre-existing` tells a maintainer the
+author did not write a line the author wrote. Calling an untouched hole
+`introduced` blames somebody for what they inherited, and a verifier reading
+`origin/base` will correct you.
 
 # Your unit is still the scope
 

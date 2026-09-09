@@ -704,10 +704,9 @@ that is a good outcome: say so and show the work.
 vulnerability in code this change touches or reaches is worth a maintainer's
 time whoever wrote it, so report it and say in **Where it came from.** which it
 is: introduced by this change, newly reachable because of it, an incomplete
-guard this change adds, or pre-existing. Measured, on PR 11196: a pipeline that
-treated "older than the diff" as a refutation read an unauthenticated
-cross-site `GET` reaching `/stop_daemon` on a default daemon, cited the line,
-and published nothing.
+or pre-existing. Measured, on PR 11196: a pipeline that treated "older than
+the diff" as a refutation read an unauthenticated cross-site `GET` reaching
+`/stop_daemon` on a default daemon, cited the line, and published nothing.
 
 Get the label right in both directions. Saying an author introduced something
 they inherited is an accusation; saying a new hole is pre-existing buries the
@@ -804,9 +803,11 @@ it worse, or narrower, than it sounds.>
 to change, and the change. At the cause, not at one caller.>
 
 **Where it came from.** <At most 2 sentences, opening with one of: introduced
-by this change, newly reachable, an incomplete guard this change adds, or
-pre-existing. Then the line that settles it: the `+` line, the deleted guard,
-what now reaches it, the check it gets past, or what `origin/base` reads.>
+by this change, newly reachable, or pre-existing. The question is where the
+vulnerable code sits, not how old it is: a line this change adds is this
+change's, and a hole in a check it adds is introduced, not pre-existing. Then
+the line that settles it: the `+` line, the deleted guard, what now reaches it,
+or where outside the change the code lives.>
 
 **Checked against.** <The check that would have killed this finding, and the
 `file:line` where it turned out not to. This is the only evidence a reader has
