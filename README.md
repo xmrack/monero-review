@@ -1,15 +1,13 @@
 # monero-review
 
-Automated security review of monero-project/monero pull requests. Created by the MAGIC Monero Fund, please [donate](https://donate.magicgrants.org/monero) to help support this effort.
+<img width="115" height="115" src="https://github.com/user-attachments/assets/7c680c34-2f05-4614-a262-857eb9aae2a7" />
 
-It fetches a PR's head commit, has Claude read the diff against a
+Automated security review of `monero-project/monero` pull requests. Created by the MAGIC Monero Fund, please [donate](https://donate.magicgrants.org/monero) to help support this effort.
+
+A GitHub runner fetches a new PR's head commit, has Claude read the diff against a
 Monero-specific skill, and files what it finds as an issue here. Every finding
 is attacked by other agents before anything is published, because most
 first-pass findings are wrong.
-
-Nothing from the PR is built or executed. The reviewer has no network and no
-GitHub access: it writes a file, and the script around it decides what to do
-with that.
 
 ## Run a review
 
@@ -46,8 +44,8 @@ gh variable set REVIEW_PAUSED --body 1 --repo xmrack/monero-review
 
 ## Two tiers
 
-Every PR the sweep picks up gets **standard**. A human escalates one to
-**deep**. There is no router, no size heuristic and nothing to configure.
+Every PR the sweep picks up gets a **standard** scan. I can manually launch a 
+**deep** review of a PR. 
 
 | | standard | deep |
 | --- | --- | --- |
@@ -70,9 +68,6 @@ What survives is checked for duplicates. Findings sharing a file, a symbol or
 nearly a title go to an agent that answers one question: would **one change at
 one place fix them all**? A group that passes becomes one entry naming every
 site. Most reviews nominate nothing and the stage never runs.
-
-Each standard report names what the tier gave up, under `## Coverage`. Those
-lines are how somebody decides a change has earned the deep pass.
 
 ## Where things are
 
