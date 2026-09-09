@@ -33,7 +33,7 @@ This is the deep pipeline with the expensive parts removed. It runs the same
 - still adjudicates every observation a researcher hands on rather than files.
   That stage is cheap and it is the only thing standing between an
   observation somebody wrote down and nobody ever reading it;
-- puts each candidate to **two** verifier angles, REACHABILITY and INTRODUCED,
+- puts each candidate to **two** verifier angles, REACHABILITY and GUARD,
   and requires both. No candidate can reach three agreeing votes, and the
   report says so where it counts: the locator line on every finding reads
   `<n>/2 angles agreed`, against a deep review's `<n>/3`. There is no

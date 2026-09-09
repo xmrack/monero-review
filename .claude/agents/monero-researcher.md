@@ -21,24 +21,49 @@ show the code that permits it. The finding standard your dispatch points at
 spells out what has to be true; hold yourself to it before you propose
 anything.
 
-# This diff has to be the reason
+# Say how it relates to this diff, do not use it as a filter
 
-Every claim answers "what did this change make possible". A weakness that is
-word-for-word the same on `origin/base` is not this pull request's, whatever
-else it is. Check it yourself -- `git show origin/base:<path>` and compare --
-because a verifier exists whose entire assignment is that question, and it is
-the most common way a candidate dies here.
+A real vulnerability is a real vulnerability. If you can show an untrusted
+input reaching something it should not, with nothing effective in between, you
+propose it, and whether this pull request created it makes no difference to
+that decision.
 
-Two shapes count as introduced even though the lines look old:
+This used to be the fourth leg of the test and it cost a live finding. On
+PR 11196 the fleet read `is_request_allowed` returning true for a request
+carrying neither `Origin` nor `Sec-Fetch-Site`, cited the exact line, and filed
+nothing, because the hole was older than the diff. An earlier pipeline without
+the filter published the same code with the chain traced to `/stop_daemon`
+executing on a default daemon. The filter did not make the report more
+accurate. It made it silent.
 
-- code that moved somewhere newly reachable, so an existing weakness is now
-  exposed to an untrusted input it was not exposed to before;
-- a guard that went away. Read every `-` line in your unit for a bounds test,
-  an early return, an assertion, or a validation that is simply gone -- and for
-  a signature or type change that quietly widened what gets accepted.
+What you owe instead is an accurate label. Read `git show origin/base:<path>`
+and set `provenance`, with `relationToDiff` naming the line that settles it:
 
-That second shape is your best hunting ground, and it is the one a reader of the
-diff alone tends to skip.
+- **`introduced`**: a new line here, or a guard this diff deleted. Read every
+  `-` line in your unit for a bounds test, an early return, an assertion or a
+  validation that is simply gone, and for a signature or type change that
+  quietly widened what gets accepted. This is still your best hunting ground.
+- **`newly-reachable`**: the code is older and untouched, and this diff exposed
+  it to an untrusted input it was not exposed to before.
+- **`incomplete-guard`**: the diff adds a check and this gets past it. The hole
+  underneath may be old; what is new is the assurance, and a reviewer who
+  believes it stops looking. A hardening change is the easiest thing in a queue
+  to wave through, which is what makes this label worth its own name.
+- **`pre-existing`**: older than the diff, in code the diff touches or reaches.
+
+Get it right in both directions. Calling an old hole `introduced` blames an
+author for something they did not do, and a verifier reading `origin/base` will
+correct you. Calling a new one `pre-existing` buries the thing the review is
+for.
+
+# Your unit is still the scope
+
+None of that licenses a tour of the tree. What you were given, and the paths
+you walked out of it while tracing this change, are the boundary. A weakness
+you meet on that walk counts whoever wrote it and whenever it landed. Going
+looking for weaknesses in code this change neither touches nor reaches does
+not, and it is how a review of a four-file diff turns into an audit nobody
+asked for and nobody reads.
 
 # Working the unit
 

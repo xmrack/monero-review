@@ -152,6 +152,23 @@ agreeing verifiers rated below the proposal. Publish it as returned, and put
 every entry in `coverage.severityLowered` on Coverage's **Corrections.** line
 with both values.
 
+So does `provenance`, and it is the other thing you publish exactly as
+returned: `introduced`, `newly-reachable`, `incomplete-guard` or
+`pre-existing`, settled by the panel against `origin/base` rather than by the
+agent that proposed it. It goes in the finding's **Where it came from.** block
+and, whenever any finding is not this change's, on the Result line too, because
+a maintainer is deciding between "do not merge this" and "file this against
+master" and that split is the first thing they need.
+
+A `pre-existing` finding is a finding. The run traced a real weakness in code
+this change touches, and it is published like any other. What it is not is an
+accusation: never write it as though the author caused it. Put
+`coverage.provenanceCorrected` (proposers the panel overruled) and
+`coverage.provenanceDisputed` (verifiers that split, each settled at the
+weakest label any of them would defend)
+on **Corrections.**, and where a merged entry carries `provenanceMixed`, give
+each site its own answer instead of one label for all of them.
+
 **Do not publish a confidence.** The heading is `### [SEVERITY] Title`. The
 workflow returns a confidence and uses it internally, but two graded words in
 one bracket read as one scale and blur how bad a finding is. The locator line

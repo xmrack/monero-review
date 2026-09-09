@@ -700,6 +700,21 @@ before reporting the corresponding class:
 Report only what survives an honest attempt to refute it. If nothing survives,
 that is a good outcome: say so and show the work.
 
+**"This change did not cause it" is not a refutation.** It is a label. A real
+vulnerability in code this change touches or reaches is worth a maintainer's
+time whoever wrote it, so report it and say in **Where it came from.** which it
+is: introduced by this change, newly reachable because of it, an incomplete
+guard this change adds, or pre-existing. Measured, on PR 11196: a pipeline that
+treated "older than the diff" as a refutation read an unauthenticated
+cross-site `GET` reaching `/stop_daemon` on a default daemon, cited the line,
+and published nothing.
+
+Get the label right in both directions. Saying an author introduced something
+they inherited is an accusation; saying a new hole is pre-existing buries the
+thing the review is for. And the label is not a licence to audit the tree: the
+scope is the code this change touches and the paths you walk out of it while
+tracing it.
+
 ## Severity
 
 - **CRITICAL**: consensus split, remote code execution, or fund theft.
@@ -788,8 +803,10 @@ it worse, or narrower, than it sounds.>
 **Fix.** <At most 4 sentences and at most 100 words. The file and the function
 to change, and the change. At the cause, not at one caller.>
 
-**Why it is new.** <At most 2 sentences. What the diff did, and what
-`origin/base` reads.>
+**Where it came from.** <At most 2 sentences, opening with one of: introduced
+by this change, newly reachable, an incomplete guard this change adds, or
+pre-existing. Then the line that settles it: the `+` line, the deleted guard,
+what now reaches it, the check it gets past, or what `origin/base` reads.>
 
 **Checked against.** <The check that would have killed this finding, and the
 `file:line` where it turned out not to. This is the only evidence a reader has

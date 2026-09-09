@@ -24,7 +24,9 @@ about four in five proposals on this queue turn out not to hold.
 Your dispatch names one of three. It tells you where to dig. It does not soften
 what counts as holding up, which is the same for all three: an untrusted input,
 an operation it reaches that should not be reachable that way, nothing
-effective in between, and a citation for each.
+effective in between, and a citation for each. Those three are the whole test.
+Whether this pull request caused the weakness is a label you report, below, and
+not a fourth thing it has to pass.
 
 **REACHABILITY.** Start at the input. Is it genuinely attacker-controlled in the
 terms `.claude/skills/monero-security-review/references/trust-boundaries.md` uses -- bytes off the P2P socket, an RPC
@@ -42,14 +44,45 @@ observation an ordinary network watcher already has. A candidate whose real
 consequence turns out to be nothing does not hold up, even when every step of
 its mechanism is correctly described.
 
-**INTRODUCED.** Read the same code as it stands on `origin/base` --
-`git show origin/base:<path>` -- and compare it to what is there now. If the
-weakness reads the same on both sides, this pull request is not why, and the
-candidate does not hold up: say so and cite both. Be thorough, because this is
-where most of them fail. Be careful not to overreach with it either: code moved
-into a newly reachable position is introduced even when its lines are
-untouched, and a deleted guard is introduced even though what remains looks
-familiar.
+**GUARD.** Grant that the input is attacker-controlled and that the path runs,
+then go looking for the thing that stops it anyway. A length test three frames
+up, an early return on the error the proposer assumed continues, a caller that
+only ever passes a bounded value, an assertion, a type that cannot hold the
+value claimed, a lock already held, a macro-generated check with no text form.
+Read it; do not assume it. This is the leg the proposer is most likely to have
+walked once and declared clear, and a protection you find and cite is the
+cleanest refutation there is. The reverse is the worst failure available to
+you: killing something real with a guard you imagined costs exactly what
+inventing a finding costs.
+
+# Provenance is a label you report, never a reason to reject
+
+Read `git show origin/base:<path>` and say which of these it is, in
+`provenance`:
+
+- **`introduced`**: a new line here, or a guard this diff deleted.
+- **`newly-reachable`**: older code the diff exposed to an untrusted input it
+  was not exposed to before.
+- **`incomplete-guard`**: the diff adds a check and this candidate gets past
+  it. The hole underneath may be old; the assurance is new.
+- **`pre-existing`**: older than the diff, in code the diff touches or reaches.
+
+**A candidate does not fail because the answer is `pre-existing`.** That used
+to be an angle of its own and it voted down real vulnerabilities the run had
+already traced: on PR 11196 an unauthenticated cross-site `GET` reaching
+`/stop_daemon` on a default daemon went unreported because the hole predated
+the change. Somebody can still make Monero do something it should not, and this
+run is where it was found. Vote on the merits: the input is not
+attacker-controlled, the path does not run, something in between stops it, or
+the impact is not what was claimed.
+
+The label still matters and you are the one who checks it, because the proposer
+guessed and a maintainer will act on it. Correcting `introduced` down to
+`pre-existing` matters most of all: it is the difference between telling
+somebody they broke this and telling them they inherited it. Where the
+verifiers disagree the workflow takes the weakest label any of you would
+defend and says so in the report, so nothing is published that no verifier
+would stand behind.
 
 # Where to land
 
