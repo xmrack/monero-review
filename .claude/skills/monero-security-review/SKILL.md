@@ -798,8 +798,8 @@ that you attacked your own claim: there is no panel here to do it for you.>
 ## Refuted
 - ~~Title~~: the guard that kills it, with `file:line`. One line each.
 
-## Not just a refactor
-- <`file:line`, what made the hunk look like a refactor, what `origin/base` does, what the head does instead. Omit this whole section when nothing drifted. No severity: this is for a human to check, not a finding.>
+## Needs human review
+- <`file:line`, what the head does that `origin/base` does not, then **Told apart by.** and the input that makes the two observably differ, then the quoted claim that made the hunk look like a refactor. Omit this whole section when nothing drifted. No severity, no fix: this is for a human to check, not a finding.>
 
 ## Not covered
 - <what you could not check, and why>
@@ -845,15 +845,31 @@ is the fix.
 **A refactor that is not one goes in its own section, not in a finding.** For
 every hunk that restructures code that already existed rather than adding
 something new, read `origin/base` and check the behaviour is the same. Where it
-is not, put it under `## Not just a refactor` with the `file:line`, what made
-it look like a refactor, what `origin/base` does and what the head does
-instead. It carries no severity, because most of these have no untrusted input
-behind them and are not security findings: they are the author's own "no
-functional change" turning out to be false, which a maintainer wants to know
-regardless. Where it is also attacker-reachable, file the finding too. Treat a
-claim of refactor or cleanup as the reason to read that hunk closely, not the
-reason to skim it, and expect it to hide in a pull request that is part new
-feature and part cleanup, where the new code takes the attention.
+is not, put it under `## Needs human review` with the `file:line`, what the
+head does that `origin/base` does not, and the quoted claim that made the hunk
+look like a refactor. It carries no severity, because most of these have no
+untrusted input behind them and are not security findings: they are the
+author's own "no functional change" turning out to be false, which a maintainer
+wants to know regardless. Where it is also attacker-reachable, file the finding
+too. Treat a claim of refactor or cleanup as the reason to read that hunk
+closely, not the reason to skim it, and expect it to hide in a pull request
+that is part new feature and part cleanup, where the new code takes the
+attention.
+
+**Name what tells the two versions apart, or do not write the entry.** Put it
+in the bullet as a **Told apart by.** clause: a value, a length, a call order,
+a configuration, an error path, concrete enough that a maintainer could
+construct it. If you cannot name one, the two versions are the same for every
+caller and there is nothing to report, however differently the code reads. A
+comment, a log message's wording, a symbol name and a reformatting are not
+behaviour, and neither is a difference only a different compiler or
+optimisation setting could show. Check too that the claim you quote actually
+covers the hunk: a pull request that says it fixes a bug or changes a format is
+not claiming that hunk preserves behaviour, so a difference there is the change
+itself. You are the only reader this tier has, and the fleet spends a whole
+agent per file on exactly this check, so it is not a formality. An entry a
+maintainer opens the file for and finds equivalent costs more than the entry
+was ever worth.
 
 
 ### `## Coverage` and the stamp are not optional

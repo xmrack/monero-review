@@ -114,6 +114,25 @@ an extraction, a rename, a rewrite of the same loop. Where it is not the same,
 report it in `refactorDrift` with the file, the line, what made it look like a
 refactor, what `origin/base` does, and what the head does instead.
 
+**Name what tells the two versions apart before you write one down.** That is
+`distinguishingInput`, and it is required: a value, a length, a call order, a
+configuration, an error path, concrete enough that a maintainer could construct
+it. If you cannot name one, the two versions are the same for every caller and
+there is nothing to report, however differently the code reads. Three things
+that are never a behaviour difference: a comment, a log message's wording or a
+symbol name; a reformatting; anything only a different compiler or optimisation
+setting could show.
+
+**And check the claim actually covers the hunk you are citing.** A pull request
+that says it fixes a bug, adds a parameter or changes a format is not claiming
+that hunk preserves behaviour, so a difference there is the change itself, not
+a drift. Quote the claim you are relying on.
+
+Both rules exist because a weak entry is not free. Every one you raise goes to
+a reader that compares both versions and drops the ones nothing can tell apart,
+so a guess costs the run agents and reaches nobody. What survives is read by a
+maintainer who has been told somebody checked.
+
 This is **not a candidate**. It needs no untrusted input, no sink and no
 reachability argument, and the four-part test does not apply to it. Two rules
 follow, and they point in opposite directions on purpose:

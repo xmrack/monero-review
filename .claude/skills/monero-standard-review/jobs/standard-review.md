@@ -205,14 +205,31 @@ per site and never drop a site: the first makes the stamp's `published` wrong,
 the second loses a place the fix has to hold.
 
 `refactorDrift` is not a finding and not a refutation. Each entry is a hunk
-that presents itself as a refactor and does not behave like one: no panel saw
-it, it has no severity and no vote, and it must never get a `### [SEVERITY]`
-heading. Write the entries under `## Not just a refactor`, below `## Refuted`,
-one bullet each carrying the `file:line`, what made the hunk look like a
-refactor, what `origin/base` does and what the head does instead, and leave
-which one was intended to the reader. Omit the heading when the array is empty.
-The Coverage **Refactors.** line says what was checked either way, so an absent
-section reads as "nothing drifted" rather than "nobody looked".
+that presents itself as behaviour-preserving and does not behave that way: no
+panel graded it, it has no severity and no vote, and it must never get a
+`### [SEVERITY]` heading. Write the entries under `## Needs human review`,
+below `## Refuted`, one bullet each leading with what the head does that
+`origin/base` does not, then the entry's `distinguishingInput` as a **Told
+apart by.** clause, then the quoted claim that made the hunk look like a
+refactor. Leave which behaviour was intended to the reader, and give no
+severity, no fix and no guess at reachability. Omit the heading when the array
+is empty.
+
+What arrives in that array has already been checked: every observation a
+researcher raised went to a reader that did not propose it, and the ones
+nothing could tell apart were dropped before you saw them. Two things follow.
+Publish `distinguishingInput` in every bullet, because a maintainer decides
+whether to open the file on that clause alone and it is what separates this
+section from a list of hunches. And give the arithmetic on the Coverage
+**Refactors.** line: `coverage.driftProposed` raised, `coverage.driftPublished`
+published, the rest dropped by the check. Where an entry carries
+`lineCorrected` the checker moved the citation, which goes on **Corrections.**
+
+`coverage.driftUnchecked` is the other half of the honesty. Those are entries
+whose checker returned nothing usable, so nobody read them. They are not in the
+section and they must not be silently absent: name each one under **Not
+covered** with its file and line. An absent section reads as "nothing drifted",
+which is only true if that list is empty.
 
 Keep `refuted` in the report, one line each. It is most of what this pipeline
 produces and it is how the next reviewer avoids buying a panel for the same

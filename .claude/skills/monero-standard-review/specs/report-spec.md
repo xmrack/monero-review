@@ -64,11 +64,11 @@ you claim cannot weigh what you cite.
 
 - ~~<proposal>~~: <what took it apart, and the line that settled it.>
 
-## Not just a refactor
+## Needs human review
 
 <Only when the run returned `refactorDrift`. Omit the heading entirely when it is empty.>
 
-- `path/to/file.cpp:123` · <what made it look like a refactor, quoted: the title, the sentence in the description, the commit subject, or that the hunk is a move with no new caller>. <What `origin/base` does.> <What the head does instead.> <Which one was intended is a question for a human.>
+- `path/to/file.cpp:123` · <What the head does that `origin/base` does not. One sentence, and it comes first.> **Told apart by.** <The input, state, call order, configuration or error path under which the two observably differ, from the entry's `distinguishingInput`, concrete enough that the reader could construct it.> **Presented as.** <what made the hunk look like a refactor, quoted: the title, the sentence in the description, the commit subject, or that the hunk is a move with no new caller>. <At most three more sentences of evidence, each carrying the line it rests on.> <Which behaviour was intended is a question for a human.>
 
 ## Not covered
 
@@ -90,7 +90,7 @@ you claim cannot weigh what you cite.
 **This tier.** standard: one reader per area rather than one per weakness class, no pass across areas, no second look, two verifiers per finding rather than three.
 **Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>.
 **Handed on.** <each observation one reader passed to another, and how it was settled, or "none">
-**Refactors.** <what was read for a behaviour change inside a restructuring, and what came back: the count in `## Not just a refactor`, or "nothing in this change presents itself as a refactor", or "no hunk restructures existing code">
+**Refactors.** <what was read for a behaviour change inside a restructuring, and the arithmetic: <n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions -- or "nothing in this change presents itself as a refactor", or "no hunk restructures existing code">
 **Corrections.** <a severity lowered, an anchor re-checked, two entries that may be one defect, or omit the line>
 
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
@@ -246,28 +246,65 @@ When a nominated group came back unusable its findings are published
 separately. Say so in **Corrections.**, because that is a possible duplicate in
 the report and the reader should be told why two entries look alike.
 
-# Not just a refactor
+# Needs human review
 
-A hunk that presents itself as a refactor and does not behave like one. The
-claim can be the pull request's title, a sentence in its description, a commit
-subject, or nothing said at all where the code is plainly a move of something
-that already existed.
+A hunk that presents itself as behaviour-preserving and is not. The claim can
+be the pull request's title, a sentence in its description, a commit subject,
+or nothing said at all where the code is plainly a move of something that
+already existed.
 
-**This is not a finding and it is not a refutation.** It reached no panel, it
+**This is not a finding and it is not a refutation.** It faced no panel, it
 carries no severity and no vote, and it never gets a `### [SEVERITY]` heading:
 that would label the published issue as though a panel had confirmed a security
 defect, which nobody did. It is an observation for a human to check, and the
 entry says so.
 
-One bullet each, with four things in it: the `file:line`, what made the hunk
-look like a refactor, what `origin/base` does, and what the head does instead.
-The reader decides which was intended; this section does not guess. Where the
-same drift is also attacker-reachable it is a finding as well, published
-normally above, and the bullet here is not a substitute for it.
+## Everything under this heading was checked
 
-Omit the heading when nothing drifted. The Coverage **Refactors.** line carries
-the fact either way, so an absent section reads as "nothing drifted" rather
-than "nobody looked".
+The run does not publish what a researcher raised. Every observation went to a
+reader that did not propose it, with both versions of the file in front of it
+and one question: name the input under which they observably differ. Three
+answers drop an entry before the report is written, and what the section is
+worth to a maintainer is that all three already happened:
+
+- nothing tells the two versions apart, so the restructuring was faithful;
+- the checker could not name what does, which is the same answer held less
+  firmly;
+- the hunk was never presented as behaviour-preserving, so the difference is
+  the pull request doing what its description says.
+
+Write the entries as checked, because they were. The **Told apart by.** clause
+is the load-bearing half and belongs in every bullet: it is what lets a
+maintainer decide in one line whether this is worth opening the file for, and
+it is the difference between this section and a list of hunches.
+
+Where a checker returned nothing usable its entries are NOT here. Nobody read
+them, and "nobody checked" must never arrive looking like "checked and clear".
+They are in `coverage.driftUnchecked`, and they go under **Not covered** with
+their file and line.
+
+## What never goes in an entry
+
+- a severity, a confidence, or a guess at whether anybody can reach it. That
+  question belongs to the candidate path, and where the drift IS attacker
+  reachable it is a finding as well, published normally above. The bullet here
+  is not a substitute for it;
+- a fix. Which behaviour was intended is the maintainer's to say, and a fix
+  written before that is settled is a guess at what somebody meant;
+- a difference in a comment, a log message's wording, a symbol name, or
+  formatting;
+- a difference only a different compiler, ABI or optimisation setting could
+  show;
+- a restatement of the diff. "The loop moved into a helper" is what the reader
+  can already see. What the helper does differently is the entry.
+
+Keep the bullet to what a maintainer needs in order to decide: the difference,
+the input that shows it, and the claim it contradicts. Five sentences is
+plenty, and most of these take three.
+
+Omit the heading when nothing survived the check. The Coverage **Refactors.**
+line carries the arithmetic either way, so an absent section reads as "nothing
+drifted" rather than "nobody looked".
 
 Why it gets its own section rather than a place among the findings: most of
 these have no untrusted input behind them, so the four-part candidate test
@@ -425,11 +462,11 @@ So:
   it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
-- `## Not just a refactor`, `## Not covered`, `## Checked and clear` and
+- `## Needs human review`, `## Not covered`, `## Checked and clear` and
   `## Coverage` sit below `## Refuted`, where `labels.py` has already stopped
   reading. That is why they can be reordered and the three sections above them
-  cannot. It is also why `## Not just a refactor` is safe where it is and would
-  not be one line higher: its entries are observations nobody graded, and above
+  cannot. It is also why `## Needs human review` is safe where it is and would
+  not be one line higher: its entries are observations nobody graded for severity, and above
   `## Refuted` a bracketed severity in one would label the issue.
 
 Measured against `labels.py`, not assumed: a report written from this template

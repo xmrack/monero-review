@@ -27,12 +27,19 @@ needs no reachability argument.
 
 A behaviour change inside something presented as a refactor is **not a
 candidate at all**, and does not belong in `candidates`. It goes in
-`refactorDrift`, which is returned whole, reaches no verifier and carries no
-severity. Most of these would fail test 1 for want of an untrusted input and
-be refuted correctly, which is the reason they need a channel of their own:
-"the author says this hunk changes nothing and it does" is worth a
-maintainer's attention whether or not anybody can reach it, and it is not a
-security claim, so it must not be published as one.
+`refactorDrift`, which faces no panel and carries no severity. Most of these
+would fail test 1 for want of an untrusted input and be refuted correctly,
+which is the reason they need a channel of their own: "the author says this
+hunk changes nothing and it does" is worth a maintainer's attention whether or
+not anybody can reach it, and it is not a security claim, so it must not be
+published as one.
+
+No panel is not no reader. Each entry goes to somebody who did not propose it,
+with both versions of the file, to answer one question: name the input under
+which they observably differ. That is why `distinguishingInput` is required on
+the entry rather than optional. An entry nothing can tell apart is dropped
+there, which costs the run an agent and the proposer nothing, and is the reason
+a maintainer can trust the ones that survive.
 
 # Where it is
 
