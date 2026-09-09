@@ -1624,6 +1624,45 @@ jobs:
             echo "neutralised $before upstream cross-reference(s) in the issue body"
           fi
 
+          # The harness writes PR_CONTEXT.md, PR_DISCUSSION.md and the rest into
+          # the run's working directory. Every agent reads them; the READER has
+          # none of them, and the checkout they lived in is deleted minutes
+          # later. A published `PR_DISCUSSION.md:58` looks like a citation, has
+          # a line number, and is unopenable -- a reader who tries to check it
+          # learns nothing and trusts the rest of the report less.
+          #
+          # MEASURED on issue 524, which cited `PR_CONTEXT.md:14` once and
+          # PR_DISCUSSION.md four times, with single lines, a range and a comma
+          # list. It fires exactly when the upstream thread is rich enough to be
+          # worth quoting, which is when the report is most worth reading.
+          #
+          # Each filename stands in for "where I read this", so the plain-words
+          # name of the source IS the correct replacement and the sentence
+          # survives it: "(`PR_DISCUSSION.md:58`)" becomes "(the upstream
+          # discussion)". The optional `:lines` suffix is consumed with the
+          # name, since a line number into a file nobody has is the worst half.
+          # deps-include/ maps to what it is a copy of, which the reader does
+          # have.
+          #
+          # This is a regex over model-written prose and the writing rule is
+          # the real fix (see "Our files never reach the reader either" in
+          # .claude/references/writing.md). Do not lean on it.
+          leaked=$(grep -coE '\b(PR_[A-Z_]+|RUST_DEPS|TOOLING)\.md(:[0-9,-]+)?|\bdeps-include/' review.md || true)
+          if [ "${leaked:-0}" != "0" ]; then
+            sed -i -E \
+              -e 's|`?\bPR_CONTEXT\.md(:[0-9,-]+)?`?|the pull request description|g' \
+              -e 's|`?\bPR_DISCUSSION\.md(:[0-9,-]+)?`?|the upstream discussion|g' \
+              -e 's|`?\bPR_HISTORY\.md(:[0-9,-]+)?`?|the file history|g' \
+              -e 's|`?\bPR_COMMITS\.md(:[0-9,-]+)?`?|this pull request'"'"'s own commits|g' \
+              -e 's|`?\bPR_FILES\.md(:[0-9,-]+)?`?|the changed-file list|g' \
+              -e 's|`?\bPR_SUBMODULES\.md(:[0-9,-]+)?`?|the submodule bump record|g' \
+              -e 's|`?\bRUST_DEPS\.md(:[0-9,-]+)?`?|the pinned Rust dependency record|g' \
+              -e 's|`?\bTOOLING\.md(:[0-9,-]+)?`?|the tool list for this run|g' \
+              -e 's|`?\bdeps-include/|`/usr/include/|g' \
+              review.md
+            echo "rewrote $leaked reference(s) to harness files the reader cannot open"
+          fi
+
           # Verification is part of the deliverable, not a bonus. If pass 1 found
           # something and pass 2 did not get to attack it, publishing anyway would
           # file unverified findings under a title indistinguishable from a

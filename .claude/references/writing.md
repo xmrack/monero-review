@@ -165,6 +165,43 @@ The one exception is the coverage stamp, which is an HTML comment, invisible
 when rendered, and written for a program. Field names belong there and nowhere
 else.
 
+# Our files never reach the reader either
+
+The harness writes a working directory for the run: the pull request's
+description, the upstream discussion, the file histories, the changed-file
+list, the dependency record, the tool list. Every agent reads them. **The
+reader has none of them.** They have the Monero source tree and the upstream
+pull request, and that is all, so a citation is worth something only if it
+points at one of those two.
+
+`PR_DISCUSSION.md:58` is the shape this goes wrong in. It looks like a
+citation, it has a line number, and it is unopenable: the file lived in a CI
+checkout that was deleted minutes later. A reader who tries to check it learns
+nothing and trusts the rest of the report less. Name the source in words
+instead, which is both shorter and something they can actually go and read:
+
+| never write | write |
+| --- | --- |
+| `PR_CONTEXT.md` | the pull request description |
+| `PR_DISCUSSION.md` | the upstream discussion, or a reviewer's comment upstream |
+| `PR_HISTORY.md` | the file's history, and the commit's own sha where one settles it |
+| `PR_COMMITS.md` | a commit in this pull request, by its sha and subject |
+| `PR_FILES.md` | the changed-file list |
+| `PR_SUBMODULES.md` | the submodule bump, by its sha range |
+| `RUST_DEPS.md`, `rust-deps/<path>` | the crate by name and pinned revision, then the path inside it |
+| `TOOLING.md`, `tags`, `cscope.out` | what this run could and could not do, said plainly |
+| `deps-include/<path>` | `/usr/include/<path>`, which is what it is a copy of |
+| `review.md` | nothing. The report does not cite itself |
+
+A line number into one of those files is worse than no citation, not better.
+Quote the sentence you are relying on instead: a maintainer recognises their
+own thread.
+
+Paths in the Monero tree are the opposite case and are the whole point.
+`src/net/parse.cpp:167` is exactly what the reader wants, and `origin/base` is
+a real ref in their checkout. This rule is about the files the harness made,
+not about the code under review.
+
 # Words and phrases to cut on sight
 
 Each of these is either a hedge, a filler, or a claim about the review rather
@@ -278,11 +315,14 @@ to write:
    the cut-on-sight table.
 3. **Turn every passive into an active** unless you truly do not know who acts.
    In a finding, if you do not know who acts, that is a gap in the finding.
-4. **Grep your own draft twice.** First for our jargon: unit, cell, lens,
-   angle, seam, candidate, mapper, `coverage.`. Each hit is a fact you have
-   not yet translated. Then for the em dash and the en dash. Each hit outside
-   a quotation is a decision you have not made yet, and the table under
-   *No dashes for punctuation* says which mark makes it.
+4. **Grep your own draft three times.** First for our jargon: unit, cell,
+   lens, angle, seam, candidate, mapper, `coverage.`. Each hit is a fact you
+   have not yet translated. Then for `PR_`, `RUST_DEPS`, `TOOLING`,
+   `rust-deps/`, `deps-include/` and `review.md`. Each hit is a citation the
+   reader cannot open, and the table under *Our files never reach the reader
+   either* says what to put there instead. Then for the em dash and the en
+   dash. Each hit outside a quotation is a decision you have not made yet, and
+   the table under *No dashes for punctuation* says which mark makes it.
 5. **Read the fix alone**, with the rest of the report covered. Could a
    maintainer who has not read the finding act on it? It names a file, a
    function, and a change. If it names a principle instead, it is not a fix
