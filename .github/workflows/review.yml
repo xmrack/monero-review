@@ -92,8 +92,14 @@ on:
   # scripts/dispatch.sh from a machine that keeps time.
   #
   # Two ticks an hour, not `*/5`: a five-minute cron allocates 288 run records
-  # a day, nearly all of which the concurrency group cancels while still
-  # pending. Twice an hour is enough to keep the queue moving.
+  # a day, nearly all of which would find the queue busy and stand down.
+  # Twice an hour is enough to keep the queue moving.
+  #
+  # A tick is now HARMLESS when it lands on a busy queue. It sits in its own
+  # concurrency group (see below), so it cannot cancel a by-number rerun
+  # waiting its turn, and the `pick` step makes it exit without selecting
+  # anything when another run is in flight. Before that split, a late tick
+  # took the single pending slot and destroyed whatever was in it.
   #
   # Do not "fix" a stall by moving the minute. That was tried exhaustively and
   # congestion was never the cause.
@@ -164,12 +170,11 @@ env:
   # dispatches this workflow, not by how much each run swallows.
   #
   # Back to 1. At 2 the legs run sequentially (max-parallel: 1) and each gets
-  # the full timeout-minutes, so one run could hold the concurrency group for
-  # four hours -- and GitHub keeps only ONE pending run per group, so every
-  # tick during that window is discarded rather than queued. At two ticks an
-  # hour that is up to eight lost. One PR per tick keeps each run inside a
-  # single tick interval, which matters more now that reviews are on Opus and
-  # take longer.
+  # the full timeout-minutes, so one run could hold its concurrency group for
+  # four hours, and every sweep tick landing in that window stands down. At two
+  # ticks an hour that is up to eight sweeps that do nothing. One PR per tick
+  # keeps each run inside a single tick interval, which matters more now that
+  # reviews are on Opus and take longer.
   BATCH: 1
   # Quiet time before a pull request this repo has ALREADY reviewed is
   # reviewed again at a new head. The dedup record is the head SHA, so every
@@ -330,8 +335,38 @@ env:
 # If either starts happening often, dispatch deep runs when the queue is
 # short, or set REVIEW_PAUSED for the duration, rather than putting the two
 # back in one group.
+# THREE GROUPS, AND THE SPLIT IS LOAD-BEARING.
+#
+# GitHub keeps exactly ONE pending run per concurrency group, and the NEWEST
+# arrival wins that slot: a third run does not queue behind the second, it
+# CANCELS the second. `cancel-in-progress: false` protects the run that is
+# already executing and nothing else.
+#
+# MEASURED on 2026-09-10. Runs 562 (PR 10077) and 563 (PR 10038) were
+# dispatched by number four seconds apart; 562 ran, 563 went pending. The
+# 14:53 cron tick, delivered late at 15:13:54, took the pending slot and
+# cancelled 563 before a single job started. A deliberate rerun was destroyed
+# by an opportunistic sweep.
+#
+# Nothing inside the workflow can prevent that, because admission to a group
+# is decided before any job runs -- a tick cannot look at the queue and
+# decline the slot, it has already taken it. The only fix is for the sweep
+# not to be in that queue at all. So:
+#
+#   -pr      a dispatch naming a PR number. Deliberate work. Serialises with
+#            other by-number dispatches (1 running + 1 pending) and is
+#            untouchable by any sweep.
+#   -sweep   every sweep, whether it arrives from `schedule` or from an
+#            external drip dispatching pr=sweep. Not gated on event_name, for
+#            the same reason REVIEW_PAUSED is not.
+#   -deep    the escalation, as before.
+#
+# Separate groups alone would let a sweep and a by-number rerun run at the
+# same time, which is two reviews' worth of spend. The `pick` step below
+# closes that: a sweep stands down when anything else is in flight. The split
+# buys the separation, the stand-down keeps it to one review at a time.
 concurrency:
-  group: monero-review${{ github.event.inputs.mode == 'deep' && '-deep' || '' }}
+  group: monero-review${{ inputs.mode == 'deep' && '-deep' || (github.event_name == 'schedule' || inputs.pr == '' || inputs.pr == 'sweep') && '-sweep' || '-pr' }}
   cancel-in-progress: false
 
 permissions: {}
@@ -345,6 +380,10 @@ jobs:
     permissions:
       contents: read
       issues: read
+      # For the busy check in `pick`. The repo is public so the runs API is
+      # readable without it, but the token is what `gh api` presents and a
+      # scope that depends on the repo staying public is not a scope.
+      actions: read
     outputs:
       prs: ${{ steps.pick.outputs.prs }}
       # Queue depth as of this tick, for the published review's footer. Empty
@@ -379,6 +418,8 @@ jobs:
           WANT: ${{ inputs.pr || 'sweep' }}
           MODE: ${{ inputs.mode || 'default' }}
           PAUSED: ${{ vars.REVIEW_PAUSED }}
+          # This run's own id, so the busy check below does not count itself.
+          RUN_ID: ${{ github.run_id }}
         run: |
           set -euo pipefail
           # The deep pass is an escalation a human chooses for a specific PR
@@ -407,6 +448,36 @@ jobs:
             echo "prs=[]" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # A SWEEP NEVER RUNS BESIDE OTHER WORK. Only a by-number dispatch
+          # reaches this file's other concurrency group, so from here the
+          # groups no longer serialise anything for us -- this does.
+          #
+          # Do NOT add `?status=in_progress` or any other status filter. A run
+          # held by a concurrency group reports as `pending`, which is not in
+          # the API's status enum, so filtering hides exactly the run this
+          # check exists to see. Fetch the page and count anything that is not
+          # `completed`.
+          #
+          # FAILS OPEN. If the call errors we sweep anyway: the cost of being
+          # wrong is one extra concurrent review, visible in the run list and
+          # in the next telemetry footer. The cost of failing closed is a queue
+          # that silently stops advancing, which is the failure this file's
+          # cron comment says to suspect first and the hardest one to notice.
+          busy=$(gh api "repos/$REVIEW_REPO/actions/workflows/review.yml/runs?per_page=30" \
+                   --jq '[.workflow_runs[]
+                          | select(.status != "completed")
+                          | select(.id != (env.RUN_ID | tonumber))] | length' \
+                 2>/dev/null) || {
+            echo "::warning::could not read the run list; sweeping without the busy check"
+            busy=0
+          }
+          if [ "${busy:-0}" != "0" ]; then
+            echo "$busy other review run(s) in flight; this sweep stands down"
+            echo "prs=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           python3 scripts/select_prs.py >> "$GITHUB_OUTPUT"
 
   review:
