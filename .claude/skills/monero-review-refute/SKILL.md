@@ -442,7 +442,7 @@ x.cpp:41; it only covers the len < 8 case` is short and is evidence.
 "Verified." is neither.
 
 Do not write a `Verification:` footer or any other claim about whether an
-adversarial pass ran: the harness appends that from what actually happened,
-and a claim of your own will contradict it.
+adversarial pass ran. Nothing appends one any more, so an invented claim would
+stand unchallenged under a maintainer's eye rather than being contradicted.
 
 Write only `review.md`. Create no other files.

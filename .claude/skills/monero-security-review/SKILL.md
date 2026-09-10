@@ -965,8 +965,9 @@ If nothing meets the bar, omit `Findings`, say "No findings" in the header, and
 let `Not covered` and `Checked and clear` carry the weight.
 
 Do not write a `Verification:` footer, or any other claim about whether an
-adversarial pass ran. The harness appends that line itself, from what actually
-happened: a claim you make about it will contradict the record and has done.
+adversarial pass ran. Nothing appends one any more, so an invented claim would
+stand unchallenged under a maintainer's eye rather than being contradicted by
+the record.
 
 Do not report style, naming, or performance without a denial-of-service
 argument. Do not pad. Do not report theoretical issues you cannot trace to an

@@ -513,8 +513,17 @@ model-written prose, which is the weakest kind of guarantee. Do not rely on it.
 
 # Do not write a Verification footer
 
-The harness appends one, from what actually happened. A claim of your own about
-whether an adversarial pass ran will contradict the record and has done.
+Nothing appends one any more. It used to say, under every published issue,
+that the pipeline ran and nothing went wrong -- the same paragraph every time,
+which is a paragraph a reader learns to skip. The states where it carried real
+news are the states that publish no issue at all, so it now goes to the job
+summary and the report ends at the telemetry line.
+
+That the harness no longer contradicts you is not permission to write one. It
+is the reason not to: an invented claim about an adversarial pass would now
+stand unchallenged under a maintainer's eye. What this report says about
+verification is the vote on each finding's locator line, which is a count a
+program produced. Add nothing to it.
 
 # The grammar is load-bearing
 

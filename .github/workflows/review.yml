@@ -1562,14 +1562,28 @@ jobs:
 
           echo "state=$state" >> "$GITHUB_OUTPUT"
           echo "verification state: $state (stamp: ${stamp:-none})"
-          printf '<sub>Verification: %s</sub>\n' "$note" >> review.md
+          echo "verification note: $note"
+          # NOT appended to review.md any more. On every state that publishes,
+          # this note said the pipeline ran and nothing went wrong -- the same
+          # paragraph under every issue, which is the shape a reader learns to
+          # skip. And the states where it carried real news are exactly the
+          # states that file no issue at all (see the allowlist in `Publish
+          # findings`), so its only reader was the job summary. It goes there
+          # directly now, and the report ends at the telemetry line.
+          #
+          # The gate itself is untouched: `state` still decides whether an
+          # issue is filed. This changes what a reader sees, never what runs.
+          { echo 'note<<VERIFY_NOTE_EOF'
+            printf '%s\n' "$note"
+            echo 'VERIFY_NOTE_EOF'
+          } >> "$GITHUB_OUTPUT"
 
       # How much work was waiting when this PR was picked. Taken from the
       # selector's own count rather than a fresh API call: the honest number
       # is the queue as it stood at selection time, and an hour of upstream
-      # pushes later a recount would answer a different question. Third and
-      # last line of the footer block, appended after Verification so all
-      # three sit under one rule.
+      # pushes later a recount would answer a different question. Second and
+      # last line of the footer block, under the same rule as the telemetry
+      # line above it.
       - name: Queue depth
         if: always()
         env:
@@ -1630,6 +1644,10 @@ jobs:
           # `deep` gets a label, because only `deep` is the exception.
           TIER_LABEL: ${{ steps.route.outputs.label }}
           VERIFY_STATE: ${{ steps.verified.outputs.state }}
+          # What the verification step concluded, in words. Printed here
+          # because the report itself no longer carries it and this summary
+          # is now its only reader.
+          VERIFY_NOTE: ${{ steps.verified.outputs.note }}
         run: |
           set -euo pipefail
           # HEAD_SHA is unset if the fetch step never ran; always() gets us here
@@ -1739,8 +1757,9 @@ jobs:
               echo "adversarially checked, so expect false positives, and a"
               echo "quiet report may mean the checking died rather than that the"
               echo "code is clean. No issue was filed, so this PR stays in the"
-              echo "queue and will be reviewed again. The Verification line at"
-              echo "the foot of the report below says what was missing."
+              echo "queue and will be reviewed again. What was missing:"
+              echo
+              echo "> ${VERIFY_NOTE:-no verification note was recorded.}"
               echo
               cat review.md
             } >> "$GITHUB_STEP_SUMMARY"
@@ -1759,8 +1778,8 @@ jobs:
           # Which review this was. Without it a three-hour deep review with a
           # counted three-angle panel behind it is indistinguishable from a
           # nine-minute standard one in the issue list: same title, same
-          # severity labels, and the only difference buried in the
-          # Verification footer at the foot of the body. The title stays out
+          # severity labels, and the tier otherwise visible only in the
+          # telemetry line at the foot of the body. The title stays out
           # of this deliberately -- select_prs.py and status.py parse it as
           # the dedup record, so it is a contract and not a place to describe
           # things.
