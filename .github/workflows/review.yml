@@ -1466,12 +1466,16 @@ jobs:
             echo "labels.py unavailable -- treating findings as unverified" >&2
             sevs=unknown
           fi
-          # labels.py also emits `pre-existing`, which is not a severity. This
-          # step's one test on the list asks "did anything survive the panel",
-          # and a provenance label answering yes to that would describe a
-          # confirmed finding on a report that has none. Strip it here; the
-          # publish step below wants the whole list and takes it unfiltered.
-          sevs=$(printf '%s\n' $sevs | grep -Ev '^pre-existing$' || true)
+          # labels.py emits two labels that are not severities. This step's one
+          # test on the list asks "did anything survive the panel", and either
+          # of them answering yes to that would describe a confirmed finding on
+          # a report that has none. `pre-existing` is a finding's provenance;
+          # `pipeline-update` is a property of the REPORT -- it says the run
+          # nominated a durable refutation, which is most likely on a report
+          # whose findings were all refuted, exactly where a false yes here
+          # would do the most damage. Strip both; the publish step below wants
+          # the whole list and takes it unfiltered.
+          sevs=$(printf '%s\n' $sevs | grep -Ev '^(pre-existing|pipeline-update)$' || true)
 
           # BOTH TIERS ARE THE FLEET, so there is one path through this step and no
           # branch for a shape that no longer runs in CI. Last stamp in the file wins,
@@ -1871,6 +1875,12 @@ jobs:
           # inherited rather than dug, without opening them. It is emitted when
           # ANY surviving finding is pre-existing, so on a mixed issue it means
           # "at least one", and the report's Result line carries the split.
+          #
+          # `pipeline-update` comes off it too and is not about the reviewed
+          # code in any sense: the report nominated a refutation as durable and
+          # somebody should land it in refutations.md. It is deliberately on
+          # the same list rather than in a channel of its own, so that one
+          # `gh issue list --label` finds them.
           sevs=$(python3 .harness/scripts/labels.py review.md || true)
           for sev in $sevs; do
             case "$sev" in
@@ -1879,6 +1889,12 @@ jobs:
               medium)       colour=FBCA04; desc="Review found a medium severity issue" ;;
               low)          colour=0E8A16; desc="Review found a low severity issue" ;;
               pre-existing) colour=BFD4F2; desc="A finding here predates this pull request" ;;
+              # Not about the reviewed code at all: the report proposes an
+              # addition to this pipeline's own reference material, so a
+              # maintainer of THIS repo can find the ones worth landing
+              # without opening every issue. Set by the presence of the
+              # report's `## Nominated refutations` heading.
+              pipeline-update) colour=006B75; desc="The report nominates a durable addition to this pipeline's reference material" ;;
               *)            continue ;;
             esac
             gh label create "$sev" --color "$colour" --force \

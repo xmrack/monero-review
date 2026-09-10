@@ -143,6 +143,78 @@ author did not mean to write it. That is what `## Needs human review` is for:
 no severity, no vote, and the input that tells the two versions apart. Refuting
 a security claim is not the same as deciding the code is fine.
 
+## Nothing in the tree calls it, so the operator has to
+
+A defect in a public-API method that no in-tree code reaches is not a defect an
+attacker reaches either. Somebody has to call it, and the only somebodies are
+the wallet's own operator driving an embedding application -- the GUI, Feather,
+a mobile wallet -- none of which are in this repository. A hostile daemon can
+widen the window once the call is in flight; it cannot start the call.
+
+So say who has to act. "The operator must invoke this" is a real narrowing and
+belongs in **Needs:**; it is usually the difference between a MEDIUM and a LOW,
+and occasionally between a finding and a note.
+
+MEASURED, on 11185: a race was proposed in `WalletImpl::scanTransactions`,
+which calls `scan_tx` outside the refresh lock so that `detach_blockchain` can
+erase `m_transfers` while the refresh thread holds a reference into it. The
+mechanism holds. The reach does not: `grep -rn scanTransactions src tests
+utils` on master returns four lines and every one is a declaration or the
+definition -- `src/wallet/api/wallet.cpp:1293`, `src/wallet/api/wallet.h:176`,
+and the pure virtual with its doc comment at
+`src/wallet/api/wallet2_api.h:957` and `:961`. No caller exists.
+
+Two limits, and both matter:
+
+- **`wallet2_api.h` is a PUBLIC header.** External wallets do call these
+  methods, so this refutes attacker-reachability, never "the code is fine". A
+  crash an operator can trigger in the GUI is still worth telling a maintainer
+  about, under `## Needs human review` or as a LOW.
+- **This one goes stale the moment somebody adds a caller**, which is exactly
+  the kind of thing a pull request does. Re-run the grep on the head you are
+  reviewing. Do not cite this entry as though it were a standing fact; a
+  refutation that has quietly expired is how a real finding gets suppressed.
+
+## The lying daemon's chain view does not survive the resync
+
+A remote node can feed a wallet a false chain, and findings that rest on the
+wallet then holding wrong heights, wrong indices or wrong outputs have to say
+what happens next. What happens next is usually `wallet2::detach_blockchain`
+(`src/wallet/wallet2.cpp:4371`), reached from `wallet2::handle_reorg` (`:4470`)
+when the wallet resyncs against an honest daemon. From the fork height upward
+it erases the transfers, their key images and public keys, the payments, the
+confirmed transactions and the background-sync records, and crops
+`m_blockchain`. The false view is not corrected in place; it is deleted.
+
+So a corruption that lives only in state at or above the fork height is
+transient, and the finding needs to say what damage is done before the detach
+lands -- a spent key image, a leaked address, funds moved. "The wallet believes
+something wrong for a while" is not by itself an impact.
+
+MEASURED, on 11185: pending multisig rescan state is applied by transfer index
+with no check on which output sits at that index, so a reorg during the rescan
+was proposed as writing a composite key image built from another output. The
+wrong indices only arise from a lying daemon's chain view, and the resync
+erases it (`src/wallet/wallet2.cpp:4433`). The code is identical in
+`origin/base`.
+
+Three limits:
+
+- **Only at or above the fork height.** State the daemon influenced below the
+  point the wallet detaches to is untouched, and so is anything already written
+  outside `wallet2`'s own containers -- a key image published to the network,
+  a file on disk, a txid revealed to the node.
+- **It needs the wallet to actually resync against an honest daemon.** A wallet
+  that keeps talking to the hostile node never reorgs and never detaches. If
+  the finding's damage lands while still connected, this refutation does not
+  touch it.
+- **`detach_blockchain` is not guaranteed to complete.** It throws
+  `wallet_internal_error` on a key image or public key it cannot find
+  (`src/wallet/wallet2.cpp:4414`, `:4421`), and `handle_reorg` throws before
+  calling it at all when the daemon claims a reorg below the last checkpoint.
+  A state you can drive into one of those throws is a finding about the detach
+  itself, not something the detach refutes.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you

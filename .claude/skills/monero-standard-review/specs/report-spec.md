@@ -65,6 +65,12 @@ you claim cannot weigh what you cite.
 
 - ~~<proposal>~~: <what took it apart, and the line that settled it.>
 
+## Nominated refutations
+
+<Only when a refutation above settles something about the codebase rather than about this diff. Omit the heading entirely otherwise -- it is what labels the issue, so an empty one sends a maintainer to a report that proposes nothing.>
+
+- <The durable claim, in one sentence, phrased about the codebase and not about this pull request, with the line that settles it.>
+
 ## Needs human review
 
 <Only when the run returned `refactorDrift`. Omit the heading entirely when it is empty.>
@@ -428,6 +434,21 @@ a limit applies to), say so, and name it as worth adding to
 why the next review does not re-propose it. Do not edit it from here: propose,
 and let a human land it.
 
+**Put it under `## Nominated refutations`, and omit that heading when there is
+nothing to nominate.** The heading is what puts the `pipeline-update` label on
+the published issue, and the label is the whole point: this used to be a loose
+paragraph under the refuted bullets, findable only by reading every issue, so
+nominations sat unread and the next review bought a panel for the same idea
+again. `labels.py` reads the heading, not the prose beneath it -- a regex over
+your wording would drift the first time you phrased it differently and the
+label would stop appearing with nothing to show that it had.
+
+One bullet per claim, written **about the codebase, not about this pull
+request**, because that is the form it has to take in `refutations.md` and the
+person landing it should not have to translate. "Nothing in the tree calls
+`WalletImpl::scanTransactions`, so a race there needs the operator" travels;
+"this diff does not introduce a caller" does not.
+
 # The coverage stamp is not decoration
 
 The last line of the file, an HTML comment, invisible in the rendered issue and
@@ -519,12 +540,19 @@ So:
   it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
-- `## Needs human review`, `## Not covered`, `## Checked and clear` and
-  `## Coverage` sit below `## Refuted`, where `labels.py` has already stopped
-  reading. That is why they can be reordered and the three sections above them
-  cannot. It is also why `## Needs human review` is safe where it is and would
-  not be one line higher: its entries are observations nobody graded for severity, and above
-  `## Refuted` a bracketed severity in one would label the issue.
+- `## Nominated refutations`, `## Needs human review`, `## Not covered`,
+  `## Checked and clear` and `## Coverage` sit below `## Refuted`, where
+  `labels.py` has already stopped counting severities. That is why they can be
+  reordered and the three sections above them cannot. It is also why
+  `## Needs human review` is safe where it is and would not be one line higher:
+  its entries are observations nobody graded for severity, and above
+  `## Refuted` a bracketed severity in one would label the issue;
+- **`## Nominated refutations` keeps that exact spelling**, and its presence
+  with any content other than "none" is what puts `pipeline-update` on the
+  issue. The `## Refuted` cut does not apply to it: almost every nomination is
+  drawn from a refuted proposal, so cutting there would find none of them.
+  Omit the heading when you have nothing to nominate -- an empty one labels the
+  issue and sends somebody to a report that proposes nothing.
 
 Measured against `labels.py`, not assumed: a report written from this template
 with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity
