@@ -5,7 +5,7 @@
 Automated security review of `monero-project/monero` pull requests. Created by the MAGIC Monero Fund, please [donate](https://donate.magicgrants.org/monero) to help support this effort.
 
 A GitHub runner fetches a new PR's head commit once every 30 minutes, has Claude read the diff against a
-Monero-specific skill, and files what it finds as an issue here. Every finding
+Monero-specific skill, and files what it finds as an issue here. Notably, there is a 90 minute waiting period in case a developer is making rapid changes to their PR. Every finding
 is attacked by other agents for accuracy and reachability.
 
 ## Run a review
