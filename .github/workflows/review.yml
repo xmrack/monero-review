@@ -2105,6 +2105,65 @@ jobs:
           pattern: updates-*
           path: ${{ runner.temp }}/incoming
 
+      # BEFORE the dedup check, and deliberately. The ledger lives on the
+      # accumulating branch, so a check run against the default-branch
+      # checkout cannot see anything proposed on an OPEN pull request -- which
+      # is every entry the dedup exists to suppress. Measured: with one entry
+      # already recorded on the branch, the same correction arriving again
+      # scored `any=1` instead of `any=0`, so an hourly scan would have
+      # re-proposed it and grown the pull request a duplicate commit every
+      # hour. Check out the branch first and the ledger is the branch's.
+      - name: Prepare the accumulating branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Read BEFORE any checkout below moves us off it. `actions/checkout`
+          # leaves us on the default branch, so this is it -- and it does not
+          # depend on `github.event.repository.default_branch`, which is a
+          # payload field whose presence varies by event and this workflow
+          # runs on three of them.
+          DEFAULT=$(git rev-parse --abbrev-ref HEAD)
+          echo "default branch is $DEFAULT"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # An EXPLICIT refspec, not `git fetch origin "$BRANCH"`.
+          # `actions/checkout` makes a single-branch clone whose fetch refspec
+          # covers only the default branch, so the short form lands the commit
+          # in FETCH_HEAD and creates no `origin/<branch>` at all -- the
+          # rev-parse below then fails, every run takes the reset path, and
+          # `--force-with-lease` still has no lease to compare against.
+          # Measured: the branch existed with an open PR and this step
+          # reported "no open PR" until the refspec was made explicit.
+          # `|| true`: no branch on the remote yet is the ordinary first run.
+          git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
+          open=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ] && git rev-parse --verify -q "origin/$BRANCH" >/dev/null; then
+            echo "PR #$open is open on $BRANCH; adding to it"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+            # Bring the default branch in. Two reasons, and both bite without
+            # it: the pull request has to stay mergeable, and the writer must
+            # edit the CURRENT reference files rather than whatever they were
+            # when the branch was cut. A conflict here is a real one -- main
+            # and the branch changed the same reference -- so fail loudly
+            # rather than guess which side wins.
+            git merge --no-edit "origin/$DEFAULT"
+            echo "PR_NUMBER=$open" >> "$GITHUB_ENV"
+            echo "RESET=0" >> "$GITHUB_ENV"
+          else
+            # No open pull request: whatever is on the branch was merged or
+            # abandoned, so start again from the default branch. This is the
+            # only case that force-pushes, and the fetch above is what makes
+            # that safe -- `--force-with-lease` compares against the
+            # remote-tracking ref, and `actions/checkout` fetches only the
+            # default branch, so without the fetch the lease is missing and
+            # every push is rejected with "stale info". Measured: all four
+            # retries failed that way once a branch existed with no open PR.
+            echo "no open PR on $BRANCH; starting fresh from the default branch"
+            git checkout -B "$BRANCH"
+            echo "RESET=1" >> "$GITHUB_ENV"
+          fi
+
       - name: Anything new to propose?
         id: check
         run: |
@@ -2154,34 +2213,6 @@ jobs:
               fh.write("any=%d\n" % len(out))
           print("%d new correction(s) after dedup" % len(out))
           PY
-
-      # The accumulating branch. Reset to the default branch ONLY when no pull
-      # request is open on it; an open one is being added to, and must keep its
-      # history and its review comments.
-      - name: Prepare the accumulating branch
-        if: steps.check.outputs.any != '0'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          open=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$open" ]; then
-            echo "PR #$open is open on $BRANCH; adding to it"
-            git fetch origin "$BRANCH"
-            git checkout -B "$BRANCH" "origin/$BRANCH"
-            echo "PR_NUMBER=$open" >> "$GITHUB_ENV"
-            echo "RESET=0" >> "$GITHUB_ENV"
-          else
-            # No open PR: whatever is on the branch was merged or abandoned,
-            # so start again from the default branch. This is the only case
-            # that force-pushes, and it is why the check above is `--state
-            # open` rather than "does the branch exist".
-            echo "no open PR on $BRANCH; starting fresh from the default branch"
-            git checkout -B "$BRANCH"
-            echo "RESET=1" >> "$GITHUB_ENV"
-          fi
 
       - name: Write the corrections
         if: steps.check.outputs.any != '0'
@@ -2255,6 +2286,11 @@ jobs:
           # A correction it skipped for a good reason must not be re-proposed
           # every hour, and one it silently failed on should surface as a gap
           # rather than as an infinite retry.
+          # `mkdir -p` because git does not track empty directories: a branch
+          # cut from a default branch that happens to carry no `.github/`
+          # would abort this step on the redirect, losing the corrections
+          # with nothing committed. Costs nothing when the directory is there.
+          mkdir -p "$(dirname "$LEDGER")"
           cat "$RUNNER_TEMP/keys.txt" >> "$LEDGER"
           sort -u -o "$LEDGER" "$LEDGER"
 
@@ -2272,13 +2308,22 @@ jobs:
 
           Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
+          # The lease is NAMED, not bare. `--force-with-lease` with no argument
+          # takes its expectation from the branch's configured upstream, and
+          # the reset path creates the local branch with `git checkout -B`,
+          # which has none until `-u` sets it during this very push. Git then
+          # has nothing to compare and rejects with "stale info" -- measured,
+          # on every one of the four retries, so the whole job failed the
+          # first time a merged pull request was followed by a new correction.
+          # Naming the ref we fetched keeps the actual safety property: the
+          # push still refuses if somebody moved the branch since the fetch.
+          lease=()
+          if [ "${RESET:-0}" = "1" ] && git rev-parse --verify -q "origin/$BRANCH" >/dev/null; then
+            lease=(--force-with-lease="$BRANCH:$(git rev-parse "origin/$BRANCH")")
+          fi
           push() {
             for i in 1 2 3 4; do
-              if [ "${RESET:-0}" = "1" ]; then
-                git push --force-with-lease -u origin "$BRANCH" && return 0
-              else
-                git push -u origin "$BRANCH" && return 0
-              fi
+              git push "${lease[@]}" -u origin "$BRANCH" && return 0
               echo "push failed, retry $i"; sleep $((2 ** i))
             done
             return 1
