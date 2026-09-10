@@ -1359,6 +1359,35 @@ jobs:
       # dollar figure is the whole run, agents included.
       #
       # So the footer's cost is a total, not a floor. What it will not tell
+      # Lift the workflow-updates stamp out of the review and delete it from
+      # the body. Runs here, before telemetry appends a footer and long before
+      # `Publish findings` reads review.md, so the issue never carries it.
+      #
+      # THIS IS A TRUST BOUNDARY. The review that wrote the stamp has spent
+      # half an hour reading a stranger's pull request -- description, commit
+      # messages, code comments, all of it untrusted by assumption and
+      # `prompt-injection` is a finding category for exactly that reason. What
+      # comes out of here is handed to a job that can write to this repository,
+      # so the script takes four typed string fields and refuses any entry
+      # naming a file outside the two reference directories. It cannot propose
+      # a change to a workflow, an agent prompt or a skill.
+      - name: Collect proposed reference corrections
+        if: always()
+        run: |
+          set -euo pipefail
+          [ -s review.md ] || exit 0
+          python3 .harness/scripts/extract_updates.py review.md workflow-updates.json
+
+      # Only when there is something. `if-no-files-found: ignore` keeps a run
+      # that proposed nothing from failing, and the `propose` job below reads
+      # the absence as "nothing to do".
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: updates-${{ matrix.pr }}
+          path: workflow-updates.json
+          if-no-files-found: ignore
+
       # you is where the money went -- a Lead that spent nothing and a fleet
       # that spent everything look identical in the token columns.
       - name: Append run telemetry
@@ -1466,16 +1495,12 @@ jobs:
             echo "labels.py unavailable -- treating findings as unverified" >&2
             sevs=unknown
           fi
-          # labels.py emits two labels that are not severities. This step's one
-          # test on the list asks "did anything survive the panel", and either
-          # of them answering yes to that would describe a confirmed finding on
-          # a report that has none. `pre-existing` is a finding's provenance;
-          # `pipeline-update` is a property of the REPORT -- it says the run
-          # nominated a durable refutation, which is most likely on a report
-          # whose findings were all refuted, exactly where a false yes here
-          # would do the most damage. Strip both; the publish step below wants
-          # the whole list and takes it unfiltered.
-          sevs=$(printf '%s\n' $sevs | grep -Ev '^(pre-existing|pipeline-update)$' || true)
+          # labels.py also emits `pre-existing`, which is not a severity. This
+          # step's one test on the list asks "did anything survive the panel",
+          # and a provenance label answering yes to that would describe a
+          # confirmed finding on a report that has none. Strip it here; the
+          # publish step below wants the whole list and takes it unfiltered.
+          sevs=$(printf '%s\n' $sevs | grep -Ev '^pre-existing$' || true)
 
           # BOTH TIERS ARE THE FLEET, so there is one path through this step and no
           # branch for a shape that no longer runs in CI. Last stamp in the file wins,
@@ -1875,13 +1900,6 @@ jobs:
           # inherited rather than dug, without opening them. It is emitted when
           # ANY surviving finding is pre-existing, so on a mixed issue it means
           # "at least one", and the report's Result line carries the split.
-          #
-          # `pipeline-update` comes off it too and is not about the reviewed
-          # code in any sense: the run read this repository's own reference
-          # files against the tree they describe and found one of them wrong,
-          # or nominated a refutation durable enough to keep. It is
-          # deliberately on the same list rather than in a channel of its own,
-          # so that one `gh issue list --label` finds them.
           sevs=$(python3 .harness/scripts/labels.py review.md || true)
           for sev in $sevs; do
             case "$sev" in
@@ -1890,14 +1908,6 @@ jobs:
               medium)       colour=FBCA04; desc="Review found a medium severity issue" ;;
               low)          colour=0E8A16; desc="Review found a low severity issue" ;;
               pre-existing) colour=BFD4F2; desc="A finding here predates this pull request" ;;
-              # Not about the reviewed code at all: the run found something
-              # THIS repository should change -- a file under
-              # `.claude/references/monero/` that disagrees with the Monero
-              # tree, or a refutation durable enough for refutations.md -- so
-              # a maintainer of this repo can find the ones worth landing
-              # without opening every issue. Set by the presence of the
-              # report's `## Workflow Updates` heading.
-              pipeline-update) colour=006B75; desc="The report proposes a change to this repository's own reference files" ;;
               *)            continue ;;
             esac
             gh label create "$sev" --color "$colour" --force \
@@ -2036,3 +2046,259 @@ jobs:
             exec-pass1.json
             /home/runner/.claude/projects/*/*/subagents/workflows/*/journal.jsonl
           if-no-files-found: ignore
+
+
+  # Land what a review learned about THIS repository, as a pull request.
+  #
+  # A reviewer reading the Monero tree with our own `.claude/references/monero/`
+  # open is the only reader in the pipeline holding both the claim and the code.
+  # `README.md` there already says to fix a wrong reference in the change that
+  # found it -- and a CI review cannot: read-only allowlist, and the checkout is
+  # deleted minutes later. So the review emits typed proposals and this job
+  # turns them into a pull request somebody can merge.
+  #
+  # WHY IT IS A SEPARATE JOB, and the part not to undo. The review job reads a
+  # stranger's pull request -- description, commit messages, code comments, all
+  # untrusted by assumption, which is why `prompt-injection` is a finding
+  # category and why the review's own allowlist is read-only. This job is the
+  # only one in this file that can write to the repository, and it is built so
+  # that nothing the reviewed pull request said can reach it:
+  #
+  #   - it checks out THIS repo only; the Monero tree is never fetched, so
+  #     PR_CONTEXT.md, PR_DISCUSSION.md and the diff do not exist here;
+  #   - its whole input is four short string fields per entry, already filtered
+  #     by extract_updates.py to the two reference directories, so no entry can
+  #     name a workflow, an agent prompt or a skill;
+  #   - `Edit` is granted only under those same two directories, so the
+  #     allowlist refuses what the filter would have to have missed;
+  #   - it opens a pull request and never pushes to the default branch.
+  #
+  # A change to the files that tell the reviewer what to think is this
+  # pipeline's own supply chain. Every narrowing above is load-bearing.
+  propose:
+    needs: review
+    # `always()`, so a review that failed AFTER writing its proposals still
+    # lands them. Every step below is gated on there actually being some.
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      BRANCH: claude/reference-updates
+      LEDGER: .github/reference-updates.proposed
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # This job commits. Both of the review job's checkouts set
+          # persist-credentials: false and neither is reachable from here.
+          persist-credentials: true
+
+      # One artifact per reviewed PR in the matrix, and most runs produce none.
+      # Downloaded OUTSIDE the checkout: `git add -A` below would otherwise
+      # commit the raw proposals into the pull request. Measured in a local
+      # simulation of this job, which committed `incoming/` on the first try.
+      - uses: actions/download-artifact@v5
+        continue-on-error: true
+        with:
+          pattern: updates-*
+          path: ${{ runner.temp }}/incoming
+
+      - name: Anything new to propose?
+        id: check
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import glob, hashlib, json, os
+
+          # Corrections already proposed on this branch or merged from it.
+          # Without this, a pull request that sits open for a day collects the
+          # same correction from every scan that reads the same subsystem --
+          # and a correction skipped for a good reason comes back hourly.
+          ledger = os.environ["LEDGER"]
+          seen = set()
+          if os.path.exists(ledger):
+              seen = {line.strip() for line in open(ledger) if line.strip()}
+
+          tmp = os.environ["RUNNER_TEMP"]
+          out = []
+          for path in sorted(glob.glob(os.path.join(tmp, "incoming/*/workflow-updates.json"))):
+              try:
+                  entries = json.load(open(path))
+              except (ValueError, OSError):
+                  continue
+              if not isinstance(entries, list):
+                  continue
+              for e in entries:
+                  if not isinstance(e, dict):
+                      continue
+                  # Keyed on the file and the claim being corrected, not on the
+                  # correction: two readers describing the same stale sentence
+                  # differently are still one correction.
+                  key = hashlib.sha256(
+                      (e.get("file", "") + "\x00" + e.get("says", "")).encode()
+                  ).hexdigest()[:16]
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  out.append(dict(e, key=key))
+
+          # The keys go to RUNNER_TEMP, not into the checkout: the writer step
+          # below runs a model in this directory, and the ledger is the one
+          # thing that must survive whatever it does.
+          with open(os.path.join(tmp, "keys.txt"), "w") as fh:
+              fh.write("".join(e["key"] + "\n" for e in out))
+          json.dump(out, open("proposals.json", "w"), indent=2)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as fh:
+              fh.write("any=%d\n" % len(out))
+          print("%d new correction(s) after dedup" % len(out))
+          PY
+
+      # The accumulating branch. Reset to the default branch ONLY when no pull
+      # request is open on it; an open one is being added to, and must keep its
+      # history and its review comments.
+      - name: Prepare the accumulating branch
+        if: steps.check.outputs.any != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          open=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            echo "PR #$open is open on $BRANCH; adding to it"
+            git fetch origin "$BRANCH"
+            git checkout -B "$BRANCH" "origin/$BRANCH"
+            echo "PR_NUMBER=$open" >> "$GITHUB_ENV"
+            echo "RESET=0" >> "$GITHUB_ENV"
+          else
+            # No open PR: whatever is on the branch was merged or abandoned,
+            # so start again from the default branch. This is the only case
+            # that force-pushes, and it is why the check above is `--state
+            # open` rather than "does the branch exist".
+            echo "no open PR on $BRANCH; starting fresh from the default branch"
+            git checkout -B "$BRANCH"
+            echo "RESET=1" >> "$GITHUB_ENV"
+          fi
+
+      - name: Write the corrections
+        if: steps.check.outputs.any != '0'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            `proposals.json` in the repository root lists corrections a security
+            review found while reading the Monero tree with this repository's
+            reference files open. Apply each one.
+
+            Each entry has four fields: `file`, the reference to correct;
+            `says`, what it claims now, or `missing`; `correction`, what the
+            Monero tree actually shows; and `evidence`, the path, symbol or
+            command that settles it.
+
+            For each entry:
+
+            1. Open the named file and find the claim `says` describes. Where
+               `says` is `missing`, work out where the claim belongs.
+            2. Edit it to match `correction`, carrying `evidence` into the text
+               so the next reader can check it without trusting us. Keep the
+               file's voice and structure: other agents read these and the
+               format is load-bearing.
+            3. Where you cannot find what `says` describes, or the correction
+               contradicts something the file says elsewhere and you cannot tell
+               which is right, LEAVE THE FILE ALONE and record it in
+               `SKIPPED.md` with the reason. A wrong correction to a reference
+               every skill trusts is worse than a missing one, and skipping is
+               a normal outcome rather than a failure.
+
+            You may edit only files under `.claude/references/monero/` and
+            `.claude/skills/monero-security-review/references/`. The allowlist
+            enforces that; do not work around it, and do not edit
+            `proposals.json`.
+
+            You cannot verify `evidence` from here. The Monero tree is not in
+            this checkout, deliberately: the review that produced these entries
+            read a stranger's pull request, and nothing it read is allowed to
+            reach a change against this repository. So treat every entry as a
+            claim a human will check, and make that easy -- quote the evidence,
+            keep each edit small and local, and never rewrite a section you
+            were not asked to correct.
+
+            Finally write `SUMMARY.md`: one bullet per entry, what you changed
+            and where, or why you skipped it. It becomes the pull request body.
+          claude_args: |
+            --model claude-opus-5
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,Edit(.claude/references/monero/**),Edit(.claude/skills/monero-security-review/references/**),Write(SKIPPED.md),Write(SUMMARY.md)"
+
+      - name: Commit, and open or add to the pull request
+        if: steps.check.outputs.any != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # SUMMARY.md and SKIPPED.md are the pull request's body, not repository
+          # content. Move them out before staging, or every run leaves two more
+          # files behind in the tree.
+          body="$RUNNER_TEMP/body.md"
+          : > "$body"
+          [ -f SUMMARY.md ] && { cat SUMMARY.md >> "$body"; rm -f SUMMARY.md; }
+          [ -f SKIPPED.md ] && {
+            printf '\n### Skipped\n\n' >> "$body"; cat SKIPPED.md >> "$body"; rm -f SKIPPED.md
+          }
+          rm -f proposals.json
+
+          # The ledger is appended whether or not the writer produced an edit.
+          # A correction it skipped for a good reason must not be re-proposed
+          # every hour, and one it silently failed on should surface as a gap
+          # rather than as an infinite retry.
+          cat "$RUNNER_TEMP/keys.txt" >> "$LEDGER"
+          sort -u -o "$LEDGER" "$LEDGER"
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "nothing staged; the writer changed no reference file"
+            exit 0
+          fi
+          git commit -q -m "References: corrections found while reviewing upstream
+
+          Proposed by review runs in $RUN_URL. Each entry names what the
+          reference said, what the Monero tree shows, and the citation that
+          settles it. The job that wrote this has no Monero checkout, on
+          purpose, so it verified none of them -- the evidence is what to check.
+
+          Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+
+          push() {
+            for i in 1 2 3 4; do
+              if [ "${RESET:-0}" = "1" ]; then
+                git push --force-with-lease -u origin "$BRANCH" && return 0
+              else
+                git push -u origin "$BRANCH" && return 0
+              fi
+              echo "push failed, retry $i"; sleep $((2 ** i))
+            done
+            return 1
+          }
+          push
+
+          {
+            echo
+            echo "Opened by the review pipeline from $RUN_URL. The job that wrote"
+            echo "these corrections has no Monero checkout and verified none of"
+            echo "them against the tree; that is what a reviewer is for."
+            echo
+            echo "---"
+            echo "_Generated by [Claude Code](https://claude.ai/code)_"
+          } >> "$body"
+
+          if [ -z "${PR_NUMBER:-}" ]; then
+            gh pr create --head "$BRANCH" \
+              --title "References: corrections found while reviewing upstream" \
+              --body-file "$body"
+          else
+            gh pr comment "$PR_NUMBER" --body-file "$body"
+          fi

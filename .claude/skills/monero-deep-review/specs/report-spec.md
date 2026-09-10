@@ -97,12 +97,9 @@ though they will.
 **Refactors.** <<n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions; omit the line when nothing was raised>
 **Corrections.** <a severity lowered, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
 
-## Workflow Updates
-
-<Only when this run found something wrong in THIS repository's own reference files. Omit the heading entirely otherwise -- it is what labels the issue, so an empty one sends somebody to a report that proposes nothing. Last section in the file; only the stamp comes after it.>
-
-- `.claude/references/monero/<file>.md` · <What it says now, quoted, or "says nothing about X".> **The tree shows.** <What is actually true.> **Evidence.** <The path, symbol or command in the Monero source that settles it.>
-- `.claude/skills/monero-security-review/references/refutations.md` · <A refutation from above that settles something about the codebase rather than about this diff, phrased about the codebase, with the line that settles it.>
+<!-- workflow-updates
+[{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
+-->
 
 <!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> -->
 ```
@@ -439,7 +436,7 @@ It is also the common outcome on this queue. What makes it worth reading is
 **Not covered** and **Checked and clear** having real content. Do not pad, and
 do not soften something real to be kind about the code.
 
-# Workflow Updates: fixing this repository from what the scan saw
+# Workflow updates go in a stamp, not in the report
 
 Where a refutation settles something about this codebase rather than about this
 diff (what epee's serializer really bounds, what a zero scalar does, which zone
@@ -464,27 +461,39 @@ holding both the claim and the code, and a stale claim there is worse than no
 claim: every skill trusts these files, so a wrong sentence about where a check
 happens sends the NEXT review straight past the place a bug lives.
 
-**Both go under `## Workflow Updates`, the last section in the file** -- after
-`## Coverage`, with only the stamp below it. Omit the heading when there is
-nothing; it is what puts the `pipeline-update` label on the published issue,
-and an empty one sends somebody to a report that proposes nothing. `labels.py`
-reads the heading, not the prose beneath it: nothing pins your wording, so a
-regex over it would drift the first time you phrased it differently and the
-label would stop appearing with nothing to show that it had.
+**None of it goes in the report.** A maintainer reading a security review of
+their pull request does not care that `macros.md` is out of date, and a
+section about this repository's housekeeping in the middle of their issue is
+noise. It goes in a **`<!-- workflow-updates ... -->` stamp**, second to last
+in the file, immediately above the coverage stamp, and the harness strips it
+before the issue is published. Nothing about it is visible to a reader.
 
-One bullet per change, each naming the file it changes. For a reference
-correction: what it says now, what the tree shows, and the citation in the
-MONERO source that settles it -- not a line number in the reference, which is
-the thing being corrected. For a refutation: phrase the claim **about the
-codebase, not about this pull request**, because that is the form
-`refutations.md` needs and the person landing it should not have to translate.
-"Nothing in the tree calls `WalletImpl::scanTransactions`, so a race there
-needs the operator" travels; "this diff does not introduce a caller" does not.
+The stamp is JSON: an array of objects, each with `file`, `says`, `correction`
+and `evidence`, copied from the run's `referenceUpdates` and from any
+refutation you are nominating. Omit the whole stamp when there is nothing --
+an empty array is fine too, but nothing is cleaner.
 
-Nothing here is edited from the run and nothing here is graded. There is no
-panel for "architecture.md is out of date": the evidence is a citation a human
-can open, and a wrong entry costs that human a minute rather than putting a
-false security claim in front of a maintainer.
+What happens to it: a separate job opens a pull request against THIS
+repository with the edit. That job never reads the Monero tree and never sees
+the pull request you just reviewed; it gets these four fields and this repo's
+own files, and nothing else. That isolation is the reason the stamp carries
+structured fields rather than your prose -- everything you have read this run
+is untrusted by assumption, and the only thing allowed to cross into a change
+against the reviewer's own instructions is a small, typed, quotable claim.
+
+So write the fields to be read by something that cannot see what you saw.
+`evidence` is the load-bearing one: a path, a symbol or a command in the
+MONERO source, never a line number in the reference, which is the thing being
+corrected. `says` must be findable in the file -- a correction nobody can
+locate is a correction nobody lands. And phrase a refutation **about the
+codebase, not about this pull request**: "Nothing in the tree calls
+`WalletImpl::scanTransactions`, so a race there needs the operator" travels;
+"this diff does not introduce a caller" does not.
+
+Nothing here is graded and nothing is edited from this run. There is no panel
+for "architecture.md is out of date": the evidence is a citation a human can
+open, and a wrong entry costs a minute of review on a pull request rather than
+putting a false security claim in front of a Monero maintainer.
 
 # The coverage stamp is not decoration
 
@@ -587,20 +596,17 @@ So:
   it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
-- `## Needs human review`, `## Not covered`, `## Checked and clear`,
-  `## Coverage` and `## Workflow Updates` sit below `## Refuted`, where
+- `## Needs human review`, `## Not covered`, `## Checked and clear` and
+  `## Coverage` sit below `## Refuted`, where
   `labels.py` has already stopped counting severities. That is why they can be
   reordered and the three sections above them cannot. It is also why
   `## Needs human review` is safe where it is and would not be one line higher:
   its entries are observations nobody graded for severity, and above
   `## Refuted` a bracketed severity in one would label the issue;
-- **`## Workflow Updates` keeps that exact spelling and comes last**, with only
-  the stamp after it. Its presence with any content other than "none" is what
-  puts `pipeline-update` on the issue. The `## Refuted` cut does not apply to
-  it: a refutation nominated there is usually drawn from a refuted proposal, so
-  cutting would find none of them. Omit the heading when you have nothing --
-  an empty one labels the issue and sends somebody to a report that proposes
-  nothing.
+- the `<!-- workflow-updates -->` stamp, when there is one, sits immediately
+  above the coverage stamp and below every heading. It is not a section and
+  gets no heading: the harness strips it before publishing, and a heading
+  would survive as an empty one.
 
 Measured against `labels.py`, not assumed: a report written from this template
 with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity
