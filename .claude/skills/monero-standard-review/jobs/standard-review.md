@@ -178,8 +178,14 @@ Before you write a finding down, read its cited line and check it still says
 what the proposal quoted. Nothing upstream does that for you, and a wrong
 citation is the fastest way to lose the reader.
 
-Coverage is a table and eight labelled lines, never a paragraph, and never a
-field name from the returned object. It must carry:
+Coverage is a table, then one labelled line for each thing below that
+actually happened -- never a paragraph, and never a field name from the
+returned object. **A line whose answer is "none", "nothing" or arithmetic that
+comes out even is omitted entirely**, so on a clean review Coverage is the
+table alone. That is the point: a block of `none`s teaches a maintainer to
+scroll past the run where one of them is not `none`. Omitting a line is never
+omitting a fact, so where the value below is a gap in the review, its line is
+how the gap gets said, and it goes in:
 
 - the areas and the weakness classes read over each;
 - every excluded file with its reason;
@@ -190,12 +196,10 @@ field name from the returned object. It must carry:
   reader matters more here than at the deep tier: it is a whole area nobody
   read, with no second pass behind it. If this is not zero it goes in the
   summary too;
-- **the fixed `This tier.` sentence from the spec**, unaltered. It names the
-  four things this profile does not do. A reader who does not know them will
-  read a clean standard report as a clean deep one, and that sentence is the
-  whole basis on which somebody decides this change has earned the deep pass;
-- any proposal no panel decided: the `unverified` list names them,
-  `coverage.candidatesUnverified` counts them;
+- any proposal no panel decided, named under **Not covered** with its file and
+  line: the `unverified` list holds them and `coverage.candidatesUnverified`
+  counts them. There is no longer a counts line to hide one in, and a digit was
+  never enough for a reader to do anything with;
 - **the observations one reader handed to another.** `coverage.deferred` holds
   every one, each with a `ruling`. `filed` became a proposal and needs no
   separate mention; `did-not-hold` means somebody read the code and it did not
@@ -219,8 +223,10 @@ field name from the returned object. It must carry:
   than a hidden one.
 
 Give the file arithmetic so it can be checked: every area's file list either
-names every path or gives a count and names none, and **Accounted for** states
-the total against `coverage.unaccounted`.
+names every path or gives a count and names none. **Accounted for** carries the
+total against `coverage.unaccounted`, and is written only when that arithmetic
+does not come out even -- a file excluded, or a changed file the table does not
+cover. Every file read and none excluded, no line: the table is the account.
 
 A finding carrying `merged` is several confirmed proposals a merge agent read
 as **one defect**. Write it as one `### [SEVERITY]` entry: a locator line per
@@ -245,10 +251,13 @@ researcher raised went to a reader that did not propose it, and the ones
 nothing could tell apart were dropped before you saw them. Two things follow.
 Publish `distinguishingInput` in every bullet, because a maintainer decides
 whether to open the file on that clause alone and it is what separates this
-section from a list of hunches. And give the arithmetic on the Coverage
-**Refactors.** line: `coverage.driftProposed` raised, `coverage.driftPublished`
-published, the rest dropped by the check. Where an entry carries
-`lineCorrected` the checker moved the citation, which goes on **Corrections.**
+section from a list of hunches. Stamp `drift=coverage.driftProposed` and
+`driftPublished=coverage.driftPublished` always, and give the same arithmetic on
+the Coverage **Refactors.** line only when `coverage.driftProposed` is non-zero:
+raised, published, the rest dropped by the check. Nothing raised, no line -- the
+stamp already separates "nothing drifted" from "nobody looked". Where an entry
+carries `lineCorrected` the checker moved the citation, which goes on
+**Corrections.**
 
 `coverage.driftUnchecked` is the other half of the honesty. Those are entries
 whose checker returned nothing usable, so nobody read them. They are not in the
@@ -262,7 +271,9 @@ idea twice. Nothing merges that list upstream, so two proposals killed by the
 same line may share one bullet naming both sites, but only when the refutation
 is genuinely the same one, and never by dropping a site.
 
-End the file with the coverage stamp the REPORT SPEC describes. The harness
+End the file with the coverage stamp the REPORT SPEC describes, including
+`drift` and `driftPublished` from `coverage.driftProposed` and
+`coverage.driftPublished`. The harness
 reads it and refuses to publish a run whose research mostly failed, or whose
 panels mostly returned no verdict, because such a run and a genuinely clean one
 are otherwise indistinguishable from the outside. Write it even when everything

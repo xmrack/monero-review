@@ -194,21 +194,28 @@ name which site of the merged finding that was. Say it plainly, because this is 
 finding a majority of the panel rejected, and the reader is entitled to know
 that before the claim rather than after it.
 
-Coverage is a table and ten labelled lines, never a paragraph, and never a
-field name from the returned object in front of the reader. It must carry:
+Coverage is a table, then one labelled line for each thing below that
+actually happened -- never a paragraph, and never a field name from the
+returned object in front of the reader. **A line whose answer is "none",
+"nothing" or arithmetic that comes out even is omitted entirely**, so on a
+clean review Coverage is the table alone. That is the point: a block of `none`s
+teaches a maintainer to scroll past the run where one of them is not `none`.
+Omitting a line is never omitting a fact, so where a value below is a gap in
+the review, its line is how the gap gets said, and it goes in:
 
 - the areas and the weakness classes read over each;
 - every excluded file with its reason;
 - **every path in `coverage.unaccounted`**, named, as neither read nor
   excluded;
-- **what the pass across the areas did.** `coverage.seamPassApplicable` is
-  false on a single-area change, and that is the reason to give;
-  `coverage.seamFailed` true means it was applicable and nobody looked, which
-  is a limit on the review and must never be written up as a clean cross-area
-  result. Only when `coverage.seamRan` is true does `coverage.seamFresh` mean
-  anything, and then it is worth stating at zero;
-- what the second look over each area found (`coverage.gapFresh`), and how many
-  areas it failed to cover (`coverage.gapFailed`);
+- **what the pass across the areas did, when it did not do it.**
+  `coverage.seamPassApplicable` false on a single-area change, and
+  `coverage.seamFailed` true meaning it was applicable and nobody looked, are
+  both limits on the review and both get the line, with the reason. A pass that
+  ran and found nothing (`coverage.seamRan` true, `coverage.seamFresh` zero)
+  needs no line: the stamp records that it ran. Never write a pass that did not
+  run up as a clean cross-area result;
+- what the second look over each area found (`coverage.gapFresh`) when it found
+  something, and any area it failed to cover (`coverage.gapFailed`);
 - any id in `coverage.anchorDoubted`: a finding two verifiers could not find
   at its cited line. Re-anchor it from the code or drop the finding, and say
   which you did in **Corrections.**;
@@ -217,8 +224,10 @@ field name from the returned object in front of the reader. It must carry:
 - **any area whose reader failed.** `coverage.failedCells` is the count and the
   `failed: true` entries in `coverage.researchAccount` name them. If this is
   not zero it goes in the summary too;
-- any proposal no panel decided: the `unverified` list names them, and
-  `coverage.candidatesUnverified` counts them;
+- any proposal no panel decided, named under **Not covered** with its file and
+  line: the `unverified` list holds them and `coverage.candidatesUnverified`
+  counts them. There is no longer a counts line to hide one in, and a digit was
+  never enough for a reader to do anything with;
 - **the observations one reader handed to another, all of them.**
   `coverage.deferred` holds every one, each with its own adjudicator and a
   `ruling`. `filed` became a proposal and is already accounted for among the
@@ -249,10 +258,12 @@ those items. Do not point at an account and then print a different, more
 general list; that sentence is a promise a reader will try to cash.
 
 Give the file arithmetic so it can be checked: every area's file list either
-names every path or gives a count and names none, and **Accounted for** states
-the total against `coverage.unaccounted`. "4 x CMakeLists.txt" when there are
-five makes the table sum to 49 of 50, and a reader adding it up cannot tell a
-prose slip from a coverage hole.
+names every path or gives a count and names none. "4 x CMakeLists.txt" when
+there are five makes the table sum to 49 of 50, and a reader adding it up
+cannot tell a prose slip from a coverage hole. **Accounted for** carries the
+total against `coverage.unaccounted`, and is written only when that arithmetic
+does not come out even -- a file excluded, or a changed file the table does not
+cover. Every file read and none excluded, no line: the table is the account.
 
 A finding carrying `merged` is several confirmed proposals a merge agent read
 as **one defect**. Write it as one `### [SEVERITY]` entry: a locator line per
@@ -277,10 +288,13 @@ researcher raised went to a reader that did not propose it, and the ones
 nothing could tell apart were dropped before you saw them. Two things follow.
 Publish `distinguishingInput` in every bullet, because a maintainer decides
 whether to open the file on that clause alone and it is what separates this
-section from a list of hunches. And give the arithmetic on the Coverage
-**Refactors.** line: `coverage.driftProposed` raised, `coverage.driftPublished`
-published, the rest dropped by the check. Where an entry carries
-`lineCorrected` the checker moved the citation, which goes on **Corrections.**
+section from a list of hunches. Stamp `drift=coverage.driftProposed` and
+`driftPublished=coverage.driftPublished` always, and give the same arithmetic on
+the Coverage **Refactors.** line only when `coverage.driftProposed` is non-zero:
+raised, published, the rest dropped by the check. Nothing raised, no line -- the
+stamp already separates "nothing drifted" from "nobody looked". Where an entry
+carries `lineCorrected` the checker moved the citation, which goes on
+**Corrections.**
 
 `coverage.driftUnchecked` is the other half of the honesty. Those are entries
 whose checker returned nothing usable, so nobody read them. They are not in the
@@ -295,7 +309,8 @@ same line may share one bullet naming both sites, but only when the refutation
 is genuinely the same one, and never by dropping a site.
 
 End the file with the coverage stamp the REPORT SPEC describes: the HTML
-comment carrying `cells`, `failedCells` and the rest, straight from `coverage`.
+comment carrying `cells`, `failedCells`, `drift`, `driftPublished` and the
+rest, straight from `coverage`.
 The harness reads it and refuses to publish a run whose research mostly failed,
 or whose panels mostly returned no verdict, because such a run and a genuinely
 clean one are otherwise indistinguishable from the outside. Write it even when

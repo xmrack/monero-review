@@ -88,18 +88,16 @@ though they will.
 | --- | --- | --- |
 | <plain name> | <paths, or a count> | <weakness classes> |
 
-**Accounted for.** <N> of <N> changed files: <N> read, <N> excluded (<reason per exclusion, one clause each>).
-**Not accounted for.** <each path nobody placed, named, or "none">
-**Not read.** <any area a reader failed on, named, or "none">
-**This tier.** deep: one reader per area per weakness class, a pass across the areas, a second look at every area, three verifiers per finding.
-**Across areas.** <what the pass looking only at what crosses between areas found, including "nothing"; or that it did not run, and why>
-**Second look.** <what the second pass over each area found that the first missed, including "nothing">
-**Proposals.** <n> proposed, <n> stood up, <n> refuted, <n> undecided<, <n> folded into another entry>, <n> one vote short and re-looked, <n> restored by an advocate.
-**Handed on.** <each observation one reader passed to another, and how it was settled, or "none">
-**Refactors.** <what was read for a behaviour change inside a restructuring, and the arithmetic: <n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions -- or "nothing in this change presents itself as a refactor", or "no hunk restructures existing code">
-**Corrections.** <a severity lowered, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect, or omit the line>
+**Accounted for.** <<N> of <N> changed files: <N> read, <N> excluded (<reason per exclusion, one clause each>); omit the line when the table read every changed file and excluded none>
+**Not accounted for.** <each path nobody placed, named; omit the line when there are none>
+**Not read.** <each area a reader failed on, named; omit the line when none failed>
+**Across areas.** <what the pass looking only at what crosses between areas found, or that it did not run and why; omit the line when it ran and found nothing>
+**Second look.** <what the second pass over each area found that the first missed, or that it did not run and why; omit the line when it ran and found nothing>
+**Handed on.** <each observation one reader passed to another, and how it was settled; omit the line when none was>
+**Refactors.** <<n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions; omit the line when nothing was raised>
+**Corrections.** <a severity lowered, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
 
-<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> -->
+<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> -->
 ```
 
 # The header is three lines
@@ -347,9 +345,10 @@ Keep the bullet to what a maintainer needs in order to decide: the difference,
 the input that shows it, and the claim it contradicts. Five sentences is
 plenty, and most of these take three.
 
-Omit the heading when nothing survived the check. The Coverage **Refactors.**
-line carries the arithmetic either way, so an absent section reads as "nothing
-drifted" rather than "nobody looked".
+Omit the heading when nothing survived the check. The stamp carries `drift=`
+and `driftPublished=` either way, so an absent section is still distinguishable
+from nobody looking, and the Coverage **Refactors.** line spends a maintainer's
+attention only when something was actually raised.
 
 Why it gets its own section rather than a place among the findings: most of
 these have no untrusted input behind them, so the four-part candidate test
@@ -373,32 +372,52 @@ so that is yours to do.
 Emit the heading even when nothing was refuted (`- none`). `labels.py` stops
 reading there, and a report without it has no stopping point.
 
-# Coverage is a table and ten lines
+# Coverage is a table, and a line for each thing that happened
 
-It used to be an essay, and most of it was the same essay every time. The
-structure above is the whole of it: a table of areas, then those labelled
-lines, each one line long. Never a paragraph.
+It used to be an essay, and most of it was the same essay every time. Then it
+became ten labelled lines, and on a clean review most of them said `none`. A
+reader who scrolls past that block learns to scroll past it on the run where
+one of those lines is not `none`, which is the only run it exists for.
 
-- **Not accounted for** is always present, `none` included. It is the one fact
-  a thin review has an incentive to omit, so it gets its own line rather than a
-  clause inside another.
-- **Not read** names any area whose reader failed.
-- **This tier** is the fixed sentence in the template. Do not rewrite it per
-  report.
-- **Across areas** and **Second look** are worth stating even at zero. A zero
-  from the pass that read only what crosses between areas is evidence about the
-  change; that pass not running at all is a limit on the review. It does not
-  run on a single-area change, and that is the reason to give.
-- **Proposals** is counts only. Anything a reader said it could not finish
-  reading is reported as that reader's own account, not as established fact.
+So: **a labelled line appears only when it carries a fact.** Omit it when the
+answer is "none", when it is "nothing", and when the arithmetic comes out even.
+On a review where every file was read, nothing was handed on and no hunk
+drifted, Coverage is the table and nothing else. That is the honest shape of
+that review, and it makes a present line worth reading.
+
+Omitting a line is never omitting the fact. Each of these is a gap in the
+review, and its line is how the gap gets said:
+
+- **Not accounted for** names each path nobody placed -- neither read nor
+  excluded. It is the one fact a thin review has an incentive to omit, so when
+  there is one it gets its own line rather than a clause inside another.
+- **Not read** names each area whose reader failed.
+- **Accounted for** carries the file arithmetic, and is needed only when it
+  does not come out even: a file excluded, or a changed file the table does
+  not cover.
+- **Across areas** and **Second look** are the exception that proves the rule,
+  in one direction only. A pass that ran and found nothing needs no line: the
+  stamp says it ran. A pass that **did not run** is a limit on the review and
+  always gets its line, with the reason -- the pass across areas does not run
+  on a single-area change, and that is the reason to give.
 - **Handed on** covers every observation one reader passed to another rather
   than filing. One that did not hold is reported with the reason. One nobody
   could settle goes in **Not covered** with its file and line.
+- **Refactors** gives the arithmetic when anything was raised, so a published
+  entry is visibly the survivor of a check rather than one reader's hunch.
+  Nothing raised, no line.
 - **Corrections** is omitted when there is nothing to correct.
 
+Two lines this section used to carry are gone. Do not bring them back. The
+fixed `This tier.` sentence was identical on every report at this tier, and the
+tier is already in the footer and in the stamp. `Proposals.` gave counts the
+stamp carries as `candidates=`, `confirmed=`, `refuted=` and `unverified=`, and
+that `## Refuted` shows one by one; a proposal no panel decided is a gap, so it
+goes in **Not covered** by name rather than being reduced to a digit.
+
 Give the file arithmetic so it can be checked: every area's file list either
-names every path or gives a count and names none, and **Accounted for** states
-the total against the changed-file list.
+names every path or gives a count and names none. When **Accounted for** is
+present it states the total against the changed-file list.
 
 **No workflow field names in this section.** `seamPassApplicable`,
 `coverage.unaccounted`, `mergeApplicable`, `reLookApplicable`, "cells",
