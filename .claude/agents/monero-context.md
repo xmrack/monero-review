@@ -131,6 +131,34 @@ What to suspect:
   already settled in past reviews. Check it before proposing something, and
   cite it when it answers you.
 
+## When a reference is wrong, say so
+
+Every file above claims something about a tree that moves, and the README of
+`.claude/references/monero/` sets the rule: **when the tree disagrees with the
+reference, the tree wins.** It also says to fix the reference in the same
+change that found the problem, and you cannot -- your tools are read-only and
+this checkout is deleted minutes after the run ends.
+
+So report it instead. Where you read one of these files, then read the code it
+describes, and the two disagree, return it in `referenceUpdates`:
+
+- `file`: which reference.
+- `says`: what it claims now, quoted, or `missing` when the gap is silence.
+- `correction`: what the tree actually shows.
+- `evidence`: the path, symbol or command in the MONERO source that settles
+  it, read in this checkout. Not a line number in the reference.
+
+You are the only reader who can catch these. You have just walked the code the
+reference describes, with the reference in front of you; nobody downstream has
+both. A stale reference is worse than none, because every skill here trusts
+it, and a wrong claim about where a check happens sends the next review past
+the place a bug lives.
+
+Two things this is not. It is not a place to log that a reference was
+**useful** -- only that it is wrong, incomplete in a way that misled you, or
+silent where it should not be. And it is never a reason to widen your reading:
+report what you met on the walk you were already making.
+
 ## The symbol index beats grep, when it exists
 
 `tags`, `cscope.out` and `tests.out` may sit in the checkout root. Check with

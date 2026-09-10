@@ -65,12 +65,6 @@ you claim cannot weigh what you cite.
 
 - ~~<proposal>~~: <what took it apart, and the line that settled it.>
 
-## Nominated refutations
-
-<Only when a refutation above settles something about the codebase rather than about this diff. Omit the heading entirely otherwise -- it is what labels the issue, so an empty one sends a maintainer to a report that proposes nothing.>
-
-- <The durable claim, in one sentence, phrased about the codebase and not about this pull request, with the line that settles it.>
-
 ## Needs human review
 
 <Only when the run returned `refactorDrift`. Omit the heading entirely when it is empty.>
@@ -97,6 +91,13 @@ you claim cannot weigh what you cite.
 **Handed on.** <each observation one reader passed to another, and how it was settled; omit the line when none was>
 **Refactors.** <<n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions; omit the line when nothing was raised>
 **Corrections.** <a severity lowered, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
+
+## Workflow Updates
+
+<Only when this run found something wrong in THIS repository's own reference files. Omit the heading entirely otherwise -- it is what labels the issue, so an empty one sends somebody to a report that proposes nothing. Last section in the file; only the stamp comes after it.>
+
+- `.claude/references/monero/<file>.md` · <What it says now, quoted, or "says nothing about X".> **The tree shows.** <What is actually true.> **Evidence.** <The path, symbol or command in the Monero source that settles it.>
+- `.claude/skills/monero-security-review/references/refutations.md` · <A refutation from above that settles something about the codebase rather than about this diff, phrased about the codebase, with the line that settles it.>
 
 <!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> -->
 ```
@@ -425,7 +426,7 @@ It is also the common outcome on this queue. What makes it worth reading is
 **Not covered** and **Checked and clear** having real content. Do not pad, and
 do not soften something real to be kind about the code.
 
-# Nominate the durable refutations
+# Workflow Updates: fixing this repository from what the scan saw
 
 Where a refutation settles something about this codebase rather than about this
 diff (what epee's serializer really bounds, what a zero scalar does, which zone
@@ -434,20 +435,43 @@ a limit applies to), say so, and name it as worth adding to
 why the next review does not re-propose it. Do not edit it from here: propose,
 and let a human land it.
 
-**Put it under `## Nominated refutations`, and omit that heading when there is
-nothing to nominate.** The heading is what puts the `pipeline-update` label on
-the published issue, and the label is the whole point: this used to be a loose
-paragraph under the refuted bullets, findable only by reading every issue, so
-nominations sat unread and the next review bought a panel for the same idea
-again. `labels.py` reads the heading, not the prose beneath it -- a regex over
-your wording would drift the first time you phrased it differently and the
+That is one of two things this section carries, and the smaller one.
+
+**The other is `.claude/references/monero/`** -- the shared map of the Monero
+tree that every skill here reads. Its own README sets the rule: when the tree
+disagrees with the reference, the tree wins, and whoever found the problem
+fixes it in the same change. A CI review cannot fix it. The tools are
+read-only by construction and the checkout is deleted minutes after the run.
+So the readers report instead, in `referenceUpdates`, and those entries come
+to you.
+
+They are the ones worth having. A researcher that has just walked a subsystem
+with `subsystems-node.md` open is the only reader in the whole pipeline
+holding both the claim and the code, and a stale claim there is worse than no
+claim: every skill trusts these files, so a wrong sentence about where a check
+happens sends the NEXT review straight past the place a bug lives.
+
+**Both go under `## Workflow Updates`, the last section in the file** -- after
+`## Coverage`, with only the stamp below it. Omit the heading when there is
+nothing; it is what puts the `pipeline-update` label on the published issue,
+and an empty one sends somebody to a report that proposes nothing. `labels.py`
+reads the heading, not the prose beneath it: nothing pins your wording, so a
+regex over it would drift the first time you phrased it differently and the
 label would stop appearing with nothing to show that it had.
 
-One bullet per claim, written **about the codebase, not about this pull
-request**, because that is the form it has to take in `refutations.md` and the
-person landing it should not have to translate. "Nothing in the tree calls
-`WalletImpl::scanTransactions`, so a race there needs the operator" travels;
-"this diff does not introduce a caller" does not.
+One bullet per change, each naming the file it changes. For a reference
+correction: what it says now, what the tree shows, and the citation in the
+MONERO source that settles it -- not a line number in the reference, which is
+the thing being corrected. For a refutation: phrase the claim **about the
+codebase, not about this pull request**, because that is the form
+`refutations.md` needs and the person landing it should not have to translate.
+"Nothing in the tree calls `WalletImpl::scanTransactions`, so a race there
+needs the operator" travels; "this diff does not introduce a caller" does not.
+
+Nothing here is edited from the run and nothing here is graded. There is no
+panel for "architecture.md is out of date": the evidence is a citation a human
+can open, and a wrong entry costs that human a minute rather than putting a
+false security claim in front of a maintainer.
 
 # The coverage stamp is not decoration
 
@@ -540,19 +564,20 @@ So:
   it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
-- `## Nominated refutations`, `## Needs human review`, `## Not covered`,
-  `## Checked and clear` and `## Coverage` sit below `## Refuted`, where
+- `## Needs human review`, `## Not covered`, `## Checked and clear`,
+  `## Coverage` and `## Workflow Updates` sit below `## Refuted`, where
   `labels.py` has already stopped counting severities. That is why they can be
   reordered and the three sections above them cannot. It is also why
   `## Needs human review` is safe where it is and would not be one line higher:
   its entries are observations nobody graded for severity, and above
   `## Refuted` a bracketed severity in one would label the issue;
-- **`## Nominated refutations` keeps that exact spelling**, and its presence
-  with any content other than "none" is what puts `pipeline-update` on the
-  issue. The `## Refuted` cut does not apply to it: almost every nomination is
-  drawn from a refuted proposal, so cutting there would find none of them.
-  Omit the heading when you have nothing to nominate -- an empty one labels the
-  issue and sends somebody to a report that proposes nothing.
+- **`## Workflow Updates` keeps that exact spelling and comes last**, with only
+  the stamp after it. Its presence with any content other than "none" is what
+  puts `pipeline-update` on the issue. The `## Refuted` cut does not apply to
+  it: a refutation nominated there is usually drawn from a refuted proposal, so
+  cutting would find none of them. Omit the heading when you have nothing --
+  an empty one labels the issue and sends somebody to a report that proposes
+  nothing.
 
 Measured against `labels.py`, not assumed: a report written from this template
 with one MEDIUM and one LOW finding yields `medium, low`; a bracketed severity

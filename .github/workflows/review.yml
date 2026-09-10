@@ -1877,10 +1877,11 @@ jobs:
           # "at least one", and the report's Result line carries the split.
           #
           # `pipeline-update` comes off it too and is not about the reviewed
-          # code in any sense: the report nominated a refutation as durable and
-          # somebody should land it in refutations.md. It is deliberately on
-          # the same list rather than in a channel of its own, so that one
-          # `gh issue list --label` finds them.
+          # code in any sense: the run read this repository's own reference
+          # files against the tree they describe and found one of them wrong,
+          # or nominated a refutation durable enough to keep. It is
+          # deliberately on the same list rather than in a channel of its own,
+          # so that one `gh issue list --label` finds them.
           sevs=$(python3 .harness/scripts/labels.py review.md || true)
           for sev in $sevs; do
             case "$sev" in
@@ -1889,12 +1890,14 @@ jobs:
               medium)       colour=FBCA04; desc="Review found a medium severity issue" ;;
               low)          colour=0E8A16; desc="Review found a low severity issue" ;;
               pre-existing) colour=BFD4F2; desc="A finding here predates this pull request" ;;
-              # Not about the reviewed code at all: the report proposes an
-              # addition to this pipeline's own reference material, so a
-              # maintainer of THIS repo can find the ones worth landing
+              # Not about the reviewed code at all: the run found something
+              # THIS repository should change -- a file under
+              # `.claude/references/monero/` that disagrees with the Monero
+              # tree, or a refutation durable enough for refutations.md -- so
+              # a maintainer of this repo can find the ones worth landing
               # without opening every issue. Set by the presence of the
-              # report's `## Nominated refutations` heading.
-              pipeline-update) colour=006B75; desc="The report nominates a durable addition to this pipeline's reference material" ;;
+              # report's `## Workflow Updates` heading.
+              pipeline-update) colour=006B75; desc="The report proposes a change to this repository's own reference files" ;;
               *)            continue ;;
             esac
             gh label create "$sev" --color "$colour" --force \

@@ -232,6 +232,43 @@ const CANDIDATES_SCHEMA = {
         required: ['file', 'line', 'claim', 'before', 'after', 'distinguishingInput'],
       },
     },
+    // The OTHER thing a reader can find that is not a finding: a place where
+    // this repository's own map of the Monero tree is wrong.
+    //
+    // `.claude/references/monero/README.md` already says "when you find
+    // something here that is wrong, fix it in the same change that discovered
+    // it". A CI review cannot: the tool allowlist is read-only by
+    // construction, and the checkout is deleted minutes after the run. So the
+    // one reader most likely to catch a stale reference -- an agent that just
+    // walked the code the reference describes -- had nowhere to put it, and
+    // every such discovery has been thrown away.
+    //
+    // This is the channel. Nothing is edited from the run; the report names
+    // the file and the correction and a human lands it.
+    referenceUpdates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          // Which reference. `.claude/references/monero/<name>.md` for the
+          // shared map of the codebase, or the review references under
+          // `.claude/skills/monero-security-review/references/`.
+          file: { type: 'string' },
+          // What it says now, quoted, or the word `missing` when the gap is
+          // that it says nothing. A correction a human cannot locate in the
+          // file is a correction nobody lands.
+          says: { type: 'string' },
+          // What the tree actually shows. The README's rule is that the tree
+          // wins, so this is the half that decides.
+          correction: { type: 'string' },
+          // The path, symbol or command that settles it, read in THIS
+          // checkout. Not a line number in the reference -- a citation in the
+          // Monero source, which is the evidence the reference lacked.
+          evidence: { type: 'string' },
+        },
+        required: ['file', 'says', 'correction', 'evidence'],
+      },
+    },
   },
   required: ['candidates'],
 }
@@ -655,6 +692,12 @@ const proposed = []
 // once.
 const refactorDrift = []
 const driftSeen = new Set()
+// Corrections to this repository's own reference files. Not a finding, not
+// graded, and never edited from here -- the report names them and a human
+// lands them. Declared beside the drift channel because `harvest` fills both
+// the same way and a reader looking for one should find the other.
+const referenceUpdates = []
+const referenceSeen = new Set()
 
 // Observations a researcher declined to file because it judged them somebody
 // else's jurisdiction. MEASURED on the first real run: the seam pass wrote
@@ -723,6 +766,16 @@ function harvest(r, tag, extra, kind) {
     if (driftSeen.has(key)) continue
     driftSeen.add(key)
     refactorDrift.push({ ...d, from: tag })
+  }
+  // Same shape, and deduped on the file plus what it says: several readers
+  // walking the same subsystem meet the same stale sentence, and the report
+  // wants it once.
+  for (const u of (r.referenceUpdates || [])) {
+    if (!u || !u.file || !u.correction || !u.evidence) continue
+    const key = u.file + '#' + String(u.says || '').trim().slice(0, 120)
+    if (referenceSeen.has(key)) continue
+    referenceSeen.add(key)
+    referenceUpdates.push({ ...u, from: tag })
   }
   let fresh = 0
   for (const c of (r.candidates || [])) {
@@ -1142,6 +1195,7 @@ const provenanceTally = () => {
 if (!candidates.length) {
   return {
     findings: [], refuted: [], unverified: [], refactorDrift: driftPublished,
+    referenceUpdates,
     coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
                 reLookApplicable: !BOUNDED,
                 marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [],
@@ -1184,6 +1238,14 @@ if (!candidates.length) {
       'Name every entry in coverage.driftUnchecked under',
       '**Not covered** with its file and line -- nobody read those, and they must',
       'not be silently absent.',
+      'If `referenceUpdates` is non-empty, write the `## Workflow Updates` section',
+      'the REPORT SPEC describes, LAST in the file, after `## Coverage` and before',
+      'the stamp. Those are places where THIS repository\'s own reference files',
+      'disagree with the Monero tree, found by a reader who had just walked the',
+      'code they describe. One bullet each: the reference file, what it says now,',
+      'what the tree shows, and the citation. Omit the heading when the array is',
+      'empty -- the heading is what labels the issue, so an empty one sends',
+      'somebody to a report that proposes nothing.',
     ].join('\n'),
   }
 }
@@ -1636,6 +1698,11 @@ log(holds.length + ' stood up, ' + refuted.length + ' taken apart' +
 
 return {
   findings, refuted, unverified, refactorDrift: driftPublished,
+  // Unchecked by design: there is no panel for "architecture.md is out of
+  // date". The evidence is a citation in the tree a human can open, and a
+  // wrong one costs that human a minute rather than putting a false security
+  // claim in front of a maintainer.
+  referenceUpdates,
   coverage: {
     ...coverageBase,
     candidatesUnverified: unverified.length + dropped,
@@ -1748,6 +1815,15 @@ return {
     'Nothing raised, no line. Name every entry in',
     'coverage.driftUnchecked under **Not covered** with its file and line, because',
     'those are the ones nobody read.',
+    '',
+    '`referenceUpdates` is a THIRD channel and is not a finding either. Each entry',
+    'is a place where this repository\'s own reference files disagree with the',
+    'Monero tree, found by a reader that had just walked the code they describe.',
+    'Write them under `## Workflow Updates`, LAST in the file, after `## Coverage`',
+    'and before the stamp: one bullet each naming the reference file, what it says',
+    'now, what the tree shows, and the citation that settles it. No severity, no',
+    'vote, no fix to the Monero code -- the change being proposed is to THIS repo.',
+    'Omit the heading when the array is empty.',
     '',
     'A MERGED FINDING (one carrying `merged`) is several confirmed proposals that a',
     'merge agent read as ONE defect. Write ONE `### [SEVERITY]` entry: one locator',
