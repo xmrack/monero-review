@@ -2084,6 +2084,17 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # For `claude-code-action` in `Write the corrections`, NOT for anything
+      # this job does with git. A `permissions:` block REPLACES the default
+      # set rather than adding to it, so leaving this out left `id-token` at
+      # `none`, the runner injected no ACTIONS_ID_TOKEN_REQUEST_URL, and the
+      # action could not exchange an OIDC token for its app token. Measured on
+      # run 34600515094, the first run ever to reach this step: three attempts,
+      # then "Could not fetch an OIDC token. Did you remember to add
+      # `id-token: write` to your workflow permissions?" and exit 1. The
+      # `review` job has carried this line all along, which is why the same
+      # action works there.
+      id-token: write
     env:
       BRANCH: claude/reference-updates
       LEDGER: .github/reference-updates.proposed
