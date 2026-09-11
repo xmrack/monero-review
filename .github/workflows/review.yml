@@ -2229,9 +2229,21 @@ jobs:
                       continue
                   # Keyed on the file and the claim being corrected, not on the
                   # correction: two readers describing the same stale sentence
-                  # differently are still one correction.
+                  # differently are still one correction. But `says` is
+                  # deliberately the SAME literal sentinel, "missing", for
+                  # every addition to a file that lacks the claim entirely --
+                  # so file+says alone collapses two UNRELATED additions to
+                  # the same file into one key and silently drops the second.
+                  # Measured on run 34618008004: two distinct refutations.md
+                  # additions (a hardening-flags note and an unwiped-stack-
+                  # frame note), both says="missing", hashed identically; only
+                  # the first ever reached the writer. Slicing `correction` in
+                  # keeps the same-sentence-different-wording collapse for a
+                  # real quoted claim (correction still varies commonly) while
+                  # telling apart two additions that share only the sentinel.
                   key = hashlib.sha256(
-                      (e.get("file", "") + "\x00" + e.get("says", "")).encode()
+                      (e.get("file", "") + "\x00" + e.get("says", "") + "\x00" +
+                       e.get("correction", "")[:120]).encode()
                   ).hexdigest()[:16]
                   if key in seen:
                       continue
@@ -2266,18 +2278,33 @@ jobs:
 
             For each entry:
 
-            1. Open the named file and find the claim `says` describes. Where
-               `says` is `missing`, work out where the claim belongs.
+            1. Open the named file and find the claim `says` describes. `says`
+               is normalized to one line with single spaces between words, but
+               these files wrap prose across lines and sometimes pad with
+               extra spaces for alignment -- so the FILE'S actual text will
+               often NOT match `says` byte for byte. Do not paste `says`
+               straight into an Edit's `old_string` and give up when it
+               fails to apply. Search for a short, distinctive fragment of it
+               (a few consecutive words, or a backtick-quoted name from it)
+               with Grep or by reading the file, confirm by eye that you have
+               found the claim `says` describes, then build `old_string` from
+               what the file actually contains at that spot -- real line
+               breaks and spacing included. Where `says` is `missing`, work
+               out where the claim belongs.
             2. Edit it to match `correction`, carrying `evidence` into the text
                so the next reader can check it without trusting us. Keep the
                file's voice and structure: other agents read these and the
                format is load-bearing.
-            3. Where you cannot find what `says` describes, or the correction
-               contradicts something the file says elsewhere and you cannot tell
-               which is right, LEAVE THE FILE ALONE and record it in
-               `SKIPPED.md` with the reason. A wrong correction to a reference
-               every skill trusts is worse than a missing one, and skipping is
-               a normal outcome rather than a failure.
+            3. Where you cannot find what `says` describes ANYWHERE in the
+               file after searching by content rather than by literal string,
+               or the correction contradicts something the file says
+               elsewhere and you cannot tell which is right, LEAVE THE FILE
+               ALONE and record it in `SKIPPED.md` with the reason. A wrong
+               correction to a reference every skill trusts is worse than a
+               missing one, and skipping is a normal outcome rather than a
+               failure -- but skipping because a literal copy of `says`
+               didn't match is not that outcome, it's the search giving up
+               one step too early.
 
             You may edit only files under `.claude/references/monero/` and
             `.claude/skills/monero-security-review/references/`. The allowlist
