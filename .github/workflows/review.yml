@@ -2084,6 +2084,10 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # For the fallback below: this repository forbids Actions from opening
+      # pull requests, and an issue is how the corrections reach a human when
+      # `gh pr create` is refused.
+      issues: write
       # For `claude-code-action` in `Write the corrections`, NOT for anything
       # this job does with git. A `permissions:` block REPLACES the default
       # set rather than adding to it, so leaving this out left `id-token` at
@@ -2099,6 +2103,7 @@ jobs:
       BRANCH: claude/reference-updates
       LEDGER: .github/reference-updates.proposed
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      REPO_URL: ${{ github.server_url }}/${{ github.repository }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -2136,6 +2141,8 @@ jobs:
           # runs on three of them.
           DEFAULT=$(git rev-parse --abbrev-ref HEAD)
           echo "default branch is $DEFAULT"
+          # The commit step needs it too, for the compare link it falls back to.
+          echo "DEFAULT_BRANCH=$DEFAULT" >> "$GITHUB_ENV"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # An EXPLICIT refspec, not `git fetch origin "$BRANCH"`.
@@ -2148,9 +2155,38 @@ jobs:
           # reported "no open PR" until the refspec was made explicit.
           # `|| true`: no branch on the remote yet is the ordinary first run.
           git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
+          # The default branch tip, read before any checkout moves us.
+          BASE_SHA=$(git rev-parse HEAD)
           open=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
-          if [ -n "$open" ] && git rev-parse --verify -q "origin/$BRANCH" >/dev/null; then
-            echo "PR #$open is open on $BRANCH; adding to it"
+
+          # Does the branch carry work that has NOT landed in the default
+          # branch yet? This is the question "is there an open PR?" was
+          # standing in for, and it is the better question, because a pull
+          # request is not always creatable: when the repository forbids
+          # Actions from opening one, `gh pr create` fails and the branch is
+          # left with real corrections on it and no PR. The old test then read
+          # that as "merged or abandoned" and force-reset the branch on the
+          # NEXT run, throwing the corrections and the ledger away and
+          # re-proposing everything from scratch, hourly. Asking git instead
+          # gets the same answer in the ordinary case and the right one here.
+          # `--is-ancestor` is true once the branch has landed by fast-forward
+          # or merge commit. A SQUASH merge leaves it false, so the branch is
+          # carried instead of reset -- harmless, because the merge below
+          # brings the default branch in and the diff against it is then just
+          # the genuinely new work.
+          carry=0
+          if git rev-parse --verify -q "origin/$BRANCH" >/dev/null &&
+             ! git merge-base --is-ancestor "origin/$BRANCH" "$BASE_SHA"; then
+            carry=1
+          fi
+
+          if [ "$carry" = 1 ]; then
+            if [ -n "$open" ]; then
+              echo "PR #$open is open on $BRANCH; adding to it"
+              echo "PR_NUMBER=$open" >> "$GITHUB_ENV"
+            else
+              echo "$BRANCH carries unmerged work but has no open PR; adding to it"
+            fi
             git checkout -B "$BRANCH" "origin/$BRANCH"
             # Bring the default branch in. Two reasons, and both bite without
             # it: the pull request has to stay mergeable, and the writer must
@@ -2159,18 +2195,17 @@ jobs:
             # and the branch changed the same reference -- so fail loudly
             # rather than guess which side wins.
             git merge --no-edit "origin/$DEFAULT"
-            echo "PR_NUMBER=$open" >> "$GITHUB_ENV"
             echo "RESET=0" >> "$GITHUB_ENV"
           else
-            # No open pull request: whatever is on the branch was merged or
-            # abandoned, so start again from the default branch. This is the
-            # only case that force-pushes, and the fetch above is what makes
-            # that safe -- `--force-with-lease` compares against the
-            # remote-tracking ref, and `actions/checkout` fetches only the
-            # default branch, so without the fetch the lease is missing and
-            # every push is rejected with "stale info". Measured: all four
-            # retries failed that way once a branch existed with no open PR.
-            echo "no open PR on $BRANCH; starting fresh from the default branch"
+            # Nothing unmerged on the branch: it landed, or it never existed.
+            # Start again from the default branch. This is the only case that
+            # force-pushes, and the fetch above is what makes that safe --
+            # `--force-with-lease` compares against the remote-tracking ref,
+            # and `actions/checkout` fetches only the default branch, so
+            # without the fetch the lease is missing and every push is
+            # rejected with "stale info". Measured: all four retries failed
+            # that way once a branch existed with no open PR.
+            echo "nothing unmerged on $BRANCH; starting fresh from the default branch"
             git checkout -B "$BRANCH"
             echo "RESET=1" >> "$GITHUB_ENV"
           fi
@@ -2402,10 +2437,64 @@ jobs:
             echo "_Generated by [Claude Code](https://claude.ai/code)_"
           } >> "$body"
 
-          if [ -z "${PR_NUMBER:-}" ]; then
-            gh pr create --head "$BRANCH" \
-              --title "References: corrections found while reviewing upstream" \
-              --body-file "$body"
-          else
+          # Already have a pull request: just say what this run added.
+          if [ -n "${PR_NUMBER:-}" ]; then
             gh pr comment "$PR_NUMBER" --body-file "$body"
+            exit 0
+          fi
+
+          # Both streams into one file: the refusal below is matched by text,
+          # and which stream `gh` writes it on is not worth depending on.
+          # Capturing stdout too keeps the new pull request's URL in the log.
+          TITLE="References: corrections found while reviewing upstream"
+          if gh pr create --head "$BRANCH" --title "$TITLE" \
+               --body-file "$body" >"$RUNNER_TEMP/pr.out" 2>&1; then
+            cat "$RUNNER_TEMP/pr.out"
+            exit 0
+          fi
+          cat "$RUNNER_TEMP/pr.out" >&2
+
+          # A repository can forbid Actions from opening pull requests
+          # (Settings > Actions > General > "Allow GitHub Actions to create and
+          # approve pull requests"), and this one does. Measured on run
+          # 34618008004: the branch pushed cleanly and then `gh pr create` died
+          # with "GitHub Actions is not permitted to create or approve pull
+          # requests (createPullRequest)". The restriction is on the default
+          # GITHUB_TOKEN specifically; a PAT or App token is not subject to it.
+          #
+          # That is a policy rather than a fault, and by this point the
+          # corrections are already safe on the branch -- so failing the job
+          # here would leave real work pushed with nothing pointing at it,
+          # which is how the first four corrections nearly went missing. File
+          # an issue instead: this repository already speaks in issues, and the
+          # compare link below is a one-click "Create pull request" for whoever
+          # reads it. Turn the setting on and this step goes back to opening
+          # real pull requests with no further change.
+          if ! grep -q "not permitted to create or approve pull requests" "$RUNNER_TEMP/pr.out"; then
+            echo "::error::gh pr create failed for a reason other than the Actions pull-request policy"
+            exit 1
+          fi
+          echo "::warning::Actions may not open pull requests here; filing an issue instead"
+          {
+            echo
+            echo "The branch \`$BRANCH\` is pushed and ready. This pipeline cannot open"
+            echo "the pull request itself -- Settings > Actions > General >"
+            echo "\"Allow GitHub Actions to create and approve pull requests\" is off."
+            echo
+            echo "**Open it in one click:** $REPO_URL/compare/$DEFAULT_BRANCH...$BRANCH?expand=1"
+          } >> "$body"
+
+          # Sticky by title, so a branch that collects corrections over several
+          # runs collects comments on one issue rather than a new issue each
+          # time. Search indexing can lag a freshly filed issue by a few
+          # seconds, so a burst could still produce a second one; that is worth
+          # less than the machinery a perfectly-unique marker would need.
+          ISSUE_TITLE="References: corrections waiting on $BRANCH"
+          existing=$(gh issue list --state open --limit 1 \
+                       --search "in:title \"$ISSUE_TITLE\"" \
+                       --json number --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body-file "$body"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$body"
           fi
