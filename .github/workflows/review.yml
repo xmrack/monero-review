@@ -2370,10 +2370,59 @@ jobs:
 
             Finally write `SUMMARY.md`: one bullet per entry, what you changed
             and where, or why you skipped it. It becomes the pull request body.
+          # `Edit` and `Write` are UNQUALIFIED, and that is deliberate rather
+          # than careless. The per-path form --
+          #   Edit(.claude/references/monero/**),Write(SUMMARY.md), ...
+          # -- was in place for every run this channel has ever had, and in
+          # every one of them the writer edited nothing, wrote no SUMMARY.md
+          # and wrote no SKIPPED.md, while run 34618008004 recorded
+          # permission_denials_count: 8. One cause explains all of that: the
+          # patterns were refusing the calls they were supposed to permit. A
+          # guardrail that silently denies everything is not protecting the
+          # repository, it is only stopping the job from doing its work, and
+          # it looked like a working control the whole time.
+          #
+          # What replaced it is stricter in the way that counts: the commit
+          # step below refuses to stage anything outside the two reference
+          # directories and the ledger, so nothing else can reach a commit,
+          # a push or a pull request. The writer can now touch files in its
+          # own throwaway checkout; it cannot make any of that land. That is
+          # enforcement in git rather than in a pattern whose semantics I
+          # could not verify.
           claude_args: |
             --model claude-opus-5
             --max-turns 40
-            --allowedTools "Read,Grep,Glob,Edit(.claude/references/monero/**),Edit(.claude/skills/monero-security-review/references/**),Write(SKIPPED.md),Write(SUMMARY.md)"
+            --allowedTools "Read,Grep,Glob,Edit,Write"
+
+      # What the writer actually did, in the log, every time. The action hides
+      # its own transcript ("full output hidden for security"), and without
+      # this the only visible evidence was an empty diff -- which is why it
+      # took three runs and a wrong diagnosis to work out that the edits were
+      # being denied rather than declined. `always()` so a failed writer is
+      # just as legible as a successful one.
+      - name: What the writer touched
+        if: always() && steps.check.outputs.any != '0'
+        run: |
+          set -uo pipefail
+          echo "--- working tree after the writer ---"
+          git status --short || true
+          echo "--- the files it was asked to produce ---"
+          for f in SUMMARY.md SKIPPED.md; do
+            if [ -f "$f" ]; then
+              printf '%s: present, %s bytes\n' "$f" "$(wc -c <"$f")"
+            else
+              printf '%s: MISSING\n' "$f"
+            fi
+          done
+          # Neither file plus an empty diff is the signature of a tool denial,
+          # not of a writer that considered the entries and passed on them.
+
+      - uses: actions/upload-artifact@v5
+        if: always() && steps.check.outputs.any != '0'
+        with:
+          name: propose-exec-${{ github.run_id }}
+          path: ${{ runner.temp }}/claude-execution-output.json
+          if-no-files-found: ignore
 
       - name: Commit, and open or add to the pull request
         if: steps.check.outputs.any != '0'
@@ -2406,6 +2455,31 @@ jobs:
           sort -u -o "$LEDGER" "$LEDGER"
 
           git add -A
+
+          # THE BOUNDARY THAT ACTUALLY HOLDS. The writer's tool allowlist is
+          # advisory and there is evidence it does not do what it claims:
+          # run 34641686957 produced no reference edit, no SUMMARY.md and no
+          # SKIPPED.md at all, which is what a blanket tool denial looks like
+          # rather than a considered skip. So the rule deciding what LANDS
+          # lives here instead, in git, where it is deterministic and can be
+          # tested without a model in the loop. Anything staged outside the
+          # two reference directories and the ledger aborts the job with
+          # nothing committed and nothing pushed.
+          #
+          # This matters because the writer is handed claims extracted from a
+          # review of a stranger's pull request. extract_updates.py already
+          # confines `file` to those directories, so a proposal cannot name
+          # anything else; this is the second line, against the writer being
+          # talked into editing something the proposals never mentioned.
+          outside=$(git diff --cached --name-only | grep -vE \
+            '^(\.claude/references/monero/|\.claude/skills/monero-security-review/references/|\.github/reference-updates\.proposed$)' \
+            || true)
+          if [ -n "$outside" ]; then
+            echo "::error::staged changes outside the reference directories; refusing to commit or push"
+            echo "$outside" | sed 's/^/  /' >&2
+            exit 1
+          fi
+
           if git diff --cached --quiet; then
             echo "nothing staged; the writer changed no reference file"
             exit 0
