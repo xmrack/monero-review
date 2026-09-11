@@ -2181,13 +2181,37 @@ jobs:
               seen = {line.strip() for line in open(ledger) if line.strip()}
 
           tmp = os.environ["RUNNER_TEMP"]
+          # `**` with recursive=True, because the layout depends on HOW MANY
+          # artifacts matched and the old `incoming/*/` assumed one answer.
+          # `actions/download-artifact` extracts a SINGLE matched artifact
+          # straight into `path`, and only gives each one its own directory
+          # when two or more matched. BATCH is 1, so every real run so far
+          # produced exactly one artifact, landed it at
+          # `incoming/workflow-updates.json`, and matched the old glob zero
+          # times. Measured on runs 34531007865, 34542422624 and 34568658977:
+          # each uploaded a `updates-<pr>` artifact, each downloaded it
+          # successfully ("Starting download of artifact to:
+          # /home/runner/work/_temp/incoming" -- no subdirectory), and each
+          # then reported "0 new correction(s) after dedup". Three real
+          # corrections were found, extracted and thrown away.
+          # `**/` matches zero directories as well as one, so this covers both
+          # layouts and keeps working if BATCH ever rises above 1.
+          found = sorted(glob.glob(os.path.join(tmp, "incoming/**/workflow-updates.json"),
+                                   recursive=True))
+          # Printed even when it is zero. The old step said only "0 new
+          # correction(s) after dedup", which reads exactly the same whether
+          # nothing was proposed or everything proposed was lost on the way in
+          # -- and it was the latter for three runs without anyone noticing.
+          print("%d artifact file(s) with proposals" % len(found))
           out = []
-          for path in sorted(glob.glob(os.path.join(tmp, "incoming/*/workflow-updates.json"))):
+          for path in found:
               try:
                   entries = json.load(open(path))
               except (ValueError, OSError):
+                  print("could not read %s; skipping" % path)
                   continue
               if not isinstance(entries, list):
+                  print("%s is not a list; skipping" % path)
                   continue
               for e in entries:
                   if not isinstance(e, dict):
