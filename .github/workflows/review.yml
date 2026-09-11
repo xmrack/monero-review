@@ -2110,6 +2110,20 @@ jobs:
           # This job commits. Both of the review job's checkouts set
           # persist-credentials: false and neither is reachable from here.
           persist-credentials: true
+          # FULL history, not the default depth-1 shallow clone. This job
+          # merges the default branch into the accumulating branch, and a
+          # shallow clone records no common ancestor between the two tips --
+          # git then refuses the merge outright. Measured on run 34635454386:
+          # "fatal: refusing to merge unrelated histories", and the job died
+          # with the branch already checked out. It had never shown before
+          # because the merge sat behind "is a pull request open?", which was
+          # never true while PR creation was refused, so that path had never
+          # once run. Reproduced against a file:// remote: depth 1 refuses the
+          # merge, full history merges clean.
+          # `git merge-base --is-ancestor` below needs the same: on a shallow
+          # clone it answers from truncated history, so the carry-or-reset
+          # decision would be guesswork.
+          fetch-depth: 0
 
       # One artifact per reviewed PR in the matrix, and most runs produce none.
       # Downloaded OUTSIDE the checkout: `git add -A` below would otherwise
