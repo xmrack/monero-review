@@ -71,6 +71,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import re
 import shutil
 import subprocess
@@ -147,6 +148,11 @@ MAX_CRATES_FETCHED = 25
 
 # `source = "git+<url>[?rev=..|?branch=..|?tag=..]#<sha>"`
 GIT_SOURCE = re.compile(r'^\s*source\s*=\s*"git\+([^"]+)"\s*$', re.M)
+# The object id after the `#`. Hex only: it is passed to git as an argument,
+# and git reads a leading dash as an option. 40 for sha-1, 64 for sha-256,
+# and shorter accepted because a hand-edited lock abbreviating one is a
+# mistake worth reading rather than a reason to drop the dependency.
+REV = re.compile(r"^[0-9a-fA-F]{7,64}$")
 NAME = re.compile(r'^\s*name\s*=\s*"([^"]+)"\s*$', re.M)
 # `source = "registry+<index url>"`, plus the two keys that make a registry
 # package checkable: the exact version, and the sha256 cargo recorded for it.
@@ -198,6 +204,20 @@ def parse_sources_text(text):
         spec = src.group(1)
         base, _, sha = spec.partition("#")
         url = base.split("?", 1)[0].rstrip("/")
+        # A REV THAT IS NOT HEX NEVER REACHES GIT. This string comes from a
+        # lockfile in a stranger's pull request and is passed as an argv
+        # element to `git fetch`, `git diff` and `git log` -- and git parses a
+        # leading dash as an OPTION, not as a revision. MEASURED: a rev of
+        # `--upload-pack=...` was accepted by `git fetch` and made it fetch
+        # every branch instead of the pinned commit, defeating the "exactly
+        # what the lockfile pins and nothing else" invariant two functions
+        # below. `git log` and `git diff` additionally accept `--output=<file>`.
+        # Cargo always writes a full hex object id, so anything else is a
+        # hand-edited lock and refusing it costs nothing real.
+        if sha and not REV.match(sha):
+            print(f"warn: {url} pins a revision that is not a hex object id; "
+                  "refusing it", file=sys.stderr)
+            continue
         if not sha:
             # A branch or tag with no resolved commit. Cargo always writes the
             # commit, so this means a hand-edited lock; refuse to guess.
@@ -433,9 +453,49 @@ def fetch_crate(name, version, expected, dest):
 
 
 def allowed(url):
-    stripped = re.sub(r"^[a-z+]+://", "", url)
-    stripped = re.sub(r"^[^/@]+@", "", stripped)          # strip any userinfo
-    return any(stripped.startswith(o) for o in ALLOWED_OWNERS)
+    """True when the URL names a repository under an allowlisted owner.
+
+    PARSED, never prefix-matched on the raw string. The previous version
+    stripped the scheme and any userinfo and then asked `startswith`, which
+    let a lockfile walk out of the allowlisted owner with dot segments:
+
+        git+https://github.com/monero-oxide/../../attacker/payload#<sha>
+
+    That passed, and curl collapses the dot segments before it sends the
+    request. MEASURED -- `git ls-remote` on that shape sent
+    `GET /torvalds/linux/info/refs`, so the harness would have cloned an
+    arbitrary GitHub repository into rust-deps/ for the review to read as
+    pinned dependency source. The host never changed, which is why the
+    lookalike-host and userinfo cases the old code did handle were not enough.
+
+    So: split the URL, take the parsed hostname (which handles userinfo
+    correctly), and normalise the path the way curl will before comparing.
+    Percent-decoding first is deliberate and deliberately stricter than curl:
+    curl does not treat `%2e%2e` as a dot segment, so decoding can only refuse
+    things curl would have kept literal, and refusing is the safe direction.
+    """
+    u = re.sub(r"^git\+", "", url.strip())
+    try:
+        parts = urllib.parse.urlsplit(u)
+    except ValueError:
+        return False
+    if parts.scheme.lower() != "https":
+        return False
+    host = (parts.hostname or "").lower()
+    if not host:
+        return False
+    path = posixpath.normpath(urllib.parse.unquote(parts.path) or "/")
+    if not path.startswith("/"):
+        path = "/" + path
+    # An owner is not a repository. A bare `github.com/monero-oxide` cannot
+    # reach anywhere it should not, so this is tightening rather than a
+    # security boundary -- but it is never a valid cargo source either, and a
+    # rule the comment claims should be a rule the code has.
+    segments = [seg for seg in path.split("/") if seg]
+    if len(segments) < 2:
+        return False
+    candidate = host + path + "/"
+    return any(candidate.startswith(o) for o in ALLOWED_OWNERS)
 
 
 def git_in(dest, *args, timeout=None):
