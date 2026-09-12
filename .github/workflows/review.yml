@@ -2084,9 +2084,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      # For the fallback below: this repository forbids Actions from opening
-      # pull requests, and an issue is how the corrections reach a human when
-      # `gh pr create` is refused.
+      # For the fallback at the end: a repository can forbid Actions from
+      # opening pull requests, and an issue is how the corrections reach a
+      # human when `gh pr create` is refused.
       issues: write
       # For `claude-code-action` in `Write the corrections`, NOT for anything
       # this job does with git. A `permissions:` block REPLACES the default
@@ -2100,8 +2100,31 @@ jobs:
       # action works there.
       id-token: write
     env:
-      BRANCH: claude/reference-updates
-      LEDGER: .github/reference-updates.proposed
+      # ONE BRANCH AND ONE PULL REQUEST PER RUN, cut fresh from the default
+      # branch, carrying only the reference edits that run produced.
+      #
+      # This replaces a single long-lived `claude/reference-updates` that every
+      # run appended to. That design made the pull request a standing thing to
+      # be managed rather than a change to be read and merged: its diff was the
+      # union of everything proposed since the last merge, a reviewer could not
+      # accept one correction without taking the rest, and the branch had to be
+      # carried-or-reset on every run by working out whether its previous
+      # contents had landed. All of that machinery is gone. A branch here is
+      # created, pushed once, and never touched again.
+      BRANCH: claude/references/${{ github.run_id }}
+      # The dedup ledger, on a ref of its own, never merged and never part of
+      # a pull request.
+      #
+      # It USED to live on the shared branch, which meant it appeared in the
+      # diff -- and because the writer applies only some proposals and records
+      # every one, it was frequently the ONLY thing in the diff. Pull request
+      # #594 was exactly that: three commits, one changed file, six hashes,
+      # zero reference edits. Merging it would have written "we considered
+      # these and declined" for corrections the writer had never been able to
+      # look at, and suppressed them for good. Bookkeeping does not belong in
+      # a change proposal.
+      LEDGER_BRANCH: claude/reference-ledger
+      LEDGER_PATH: reference-updates.proposed
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       REPO_URL: ${{ github.server_url }}/${{ github.repository }}
     steps:
@@ -2110,19 +2133,15 @@ jobs:
           # This job commits. Both of the review job's checkouts set
           # persist-credentials: false and neither is reachable from here.
           persist-credentials: true
-          # FULL history, not the default depth-1 shallow clone. This job
-          # merges the default branch into the accumulating branch, and a
-          # shallow clone records no common ancestor between the two tips --
-          # git then refuses the merge outright. Measured on run 34635454386:
-          # "fatal: refusing to merge unrelated histories", and the job died
-          # with the branch already checked out. It had never shown before
-          # because the merge sat behind "is a pull request open?", which was
-          # never true while PR creation was refused, so that path had never
-          # once run. Reproduced against a file:// remote: depth 1 refuses the
-          # merge, full history merges clean.
-          # `git merge-base --is-ancestor` below needs the same: on a shallow
-          # clone it answers from truncated history, so the carry-or-reset
-          # decision would be guesswork.
+          # FULL history, not the default depth-1 shallow clone. The ledger
+          # commit below is built with `commit-tree -p <the ledger branch's
+          # tip>` and then pushed; git refuses to push from a shallow
+          # repository when the history it would send is truncated ("shallow
+          # update not allowed"). Depth 1 also made the old design's merge
+          # fail outright -- measured on run 34635454386, "fatal: refusing to
+          # merge unrelated histories" -- and while that merge is gone, the
+          # underlying rule has not changed: anything this job pushes needs
+          # real history behind it.
           fetch-depth: 0
 
       # One artifact per reviewed PR in the matrix, and most runs produce none.
@@ -2135,94 +2154,42 @@ jobs:
           pattern: updates-*
           path: ${{ runner.temp }}/incoming
 
-      # BEFORE the dedup check, and deliberately. The ledger lives on the
-      # accumulating branch, so a check run against the default-branch
-      # checkout cannot see anything proposed on an OPEN pull request -- which
-      # is every entry the dedup exists to suppress. Measured: with one entry
-      # already recorded on the branch, the same correction arriving again
-      # scored `any=1` instead of `any=0`, so an hourly scan would have
-      # re-proposed it and grown the pull request a duplicate commit every
-      # hour. Check out the branch first and the ledger is the branch's.
-      - name: Prepare the accumulating branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Load the ledger and cut this run's branch
         run: |
           set -euo pipefail
-          # Read BEFORE any checkout below moves us off it. `actions/checkout`
+          # Read BEFORE the checkout below moves us off it. `actions/checkout`
           # leaves us on the default branch, so this is it -- and it does not
           # depend on `github.event.repository.default_branch`, which is a
           # payload field whose presence varies by event and this workflow
           # runs on three of them.
           DEFAULT=$(git rev-parse --abbrev-ref HEAD)
           echo "default branch is $DEFAULT"
-          # The commit step needs it too, for the compare link it falls back to.
           echo "DEFAULT_BRANCH=$DEFAULT" >> "$GITHUB_ENV"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # An EXPLICIT refspec, not `git fetch origin "$BRANCH"`.
+
+          # An EXPLICIT refspec, not `git fetch origin "$LEDGER_BRANCH"`.
           # `actions/checkout` makes a single-branch clone whose fetch refspec
           # covers only the default branch, so the short form lands the commit
-          # in FETCH_HEAD and creates no `origin/<branch>` at all -- the
-          # rev-parse below then fails, every run takes the reset path, and
-          # `--force-with-lease` still has no lease to compare against.
-          # Measured: the branch existed with an open PR and this step
-          # reported "no open PR" until the refspec was made explicit.
-          # `|| true`: no branch on the remote yet is the ordinary first run.
-          git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
-          # The default branch tip, read before any checkout moves us.
-          BASE_SHA=$(git rev-parse HEAD)
-          open=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          # in FETCH_HEAD and creates no `origin/<branch>` at all. The old
+          # design hit exactly this and silently read an empty ledger on every
+          # run. `|| true`: no ledger branch yet is the ordinary first run.
+          git fetch origin "+refs/heads/$LEDGER_BRANCH:refs/remotes/origin/$LEDGER_BRANCH" || true
 
-          # Does the branch carry work that has NOT landed in the default
-          # branch yet? This is the question "is there an open PR?" was
-          # standing in for, and it is the better question, because a pull
-          # request is not always creatable: when the repository forbids
-          # Actions from opening one, `gh pr create` fails and the branch is
-          # left with real corrections on it and no PR. The old test then read
-          # that as "merged or abandoned" and force-reset the branch on the
-          # NEXT run, throwing the corrections and the ledger away and
-          # re-proposing everything from scratch, hourly. Asking git instead
-          # gets the same answer in the ordinary case and the right one here.
-          # `--is-ancestor` is true once the branch has landed by fast-forward
-          # or merge commit. A SQUASH merge leaves it false, so the branch is
-          # carried instead of reset -- harmless, because the merge below
-          # brings the default branch in and the diff against it is then just
-          # the genuinely new work.
-          carry=0
-          if git rev-parse --verify -q "origin/$BRANCH" >/dev/null &&
-             ! git merge-base --is-ancestor "origin/$BRANCH" "$BASE_SHA"; then
-            carry=1
+          # The ledger is copied to RUNNER_TEMP, OUTSIDE the checkout. The
+          # writer step runs a model in the working tree, and the ledger is
+          # the one piece of state that has to survive whatever it does there.
+          : > "$RUNNER_TEMP/ledger.txt"
+          if git rev-parse --verify -q "refs/remotes/origin/$LEDGER_BRANCH" >/dev/null; then
+            git show "refs/remotes/origin/$LEDGER_BRANCH:$LEDGER_PATH" \
+              > "$RUNNER_TEMP/ledger.txt" 2>/dev/null || : > "$RUNNER_TEMP/ledger.txt"
           fi
+          echo "ledger holds $(wc -l < "$RUNNER_TEMP/ledger.txt") key(s)"
 
-          if [ "$carry" = 1 ]; then
-            if [ -n "$open" ]; then
-              echo "PR #$open is open on $BRANCH; adding to it"
-              echo "PR_NUMBER=$open" >> "$GITHUB_ENV"
-            else
-              echo "$BRANCH carries unmerged work but has no open PR; adding to it"
-            fi
-            git checkout -B "$BRANCH" "origin/$BRANCH"
-            # Bring the default branch in. Two reasons, and both bite without
-            # it: the pull request has to stay mergeable, and the writer must
-            # edit the CURRENT reference files rather than whatever they were
-            # when the branch was cut. A conflict here is a real one -- main
-            # and the branch changed the same reference -- so fail loudly
-            # rather than guess which side wins.
-            git merge --no-edit "origin/$DEFAULT"
-            echo "RESET=0" >> "$GITHUB_ENV"
-          else
-            # Nothing unmerged on the branch: it landed, or it never existed.
-            # Start again from the default branch. This is the only case that
-            # force-pushes, and the fetch above is what makes that safe --
-            # `--force-with-lease` compares against the remote-tracking ref,
-            # and `actions/checkout` fetches only the default branch, so
-            # without the fetch the lease is missing and every push is
-            # rejected with "stale info". Measured: all four retries failed
-            # that way once a branch existed with no open PR.
-            echo "nothing unmerged on $BRANCH; starting fresh from the default branch"
-            git checkout -B "$BRANCH"
-            echo "RESET=1" >> "$GITHUB_ENV"
-          fi
+          # Fresh from the default branch, always. There is nothing to carry:
+          # this branch did not exist a moment ago and will not be written to
+          # again after this run pushes it.
+          git checkout -q -b "$BRANCH"
 
       - name: Anything new to propose?
         id: check
@@ -2231,16 +2198,16 @@ jobs:
           python3 - <<'PY'
           import glob, hashlib, json, os
 
-          # Corrections already proposed on this branch or merged from it.
-          # Without this, a pull request that sits open for a day collects the
-          # same correction from every scan that reads the same subsystem --
-          # and a correction skipped for a good reason comes back hourly.
-          ledger = os.environ["LEDGER"]
+          # Corrections already proposed by an earlier run. Without this, a
+          # correction the writer skipped for a good reason comes back every
+          # hour, and one that is sitting unmerged in an open pull request is
+          # proposed again in a second pull request beside it.
+          tmp = os.environ["RUNNER_TEMP"]
+          ledger = os.path.join(tmp, "ledger.txt")
           seen = set()
           if os.path.exists(ledger):
               seen = {line.strip() for line in open(ledger) if line.strip()}
 
-          tmp = os.environ["RUNNER_TEMP"]
           # `**` with recursive=True, because the layout depends on HOW MANY
           # artifacts matched and the old `incoming/*/` assumed one answer.
           # `actions/download-artifact` extracts a SINGLE matched artifact
@@ -2299,9 +2266,8 @@ jobs:
                   seen.add(key)
                   out.append(dict(e, key=key))
 
-          # The keys go to RUNNER_TEMP, not into the checkout: the writer step
-          # below runs a model in this directory, and the ledger is the one
-          # thing that must survive whatever it does.
+          # The keys go to RUNNER_TEMP, not into the checkout, for the same
+          # reason the ledger was read from there.
           with open(os.path.join(tmp, "keys.txt"), "w") as fh:
               fh.write("".join(e["key"] + "\n" for e in out))
           json.dump(out, open("proposals.json", "w"), indent=2)
@@ -2356,8 +2322,9 @@ jobs:
                one step too early.
 
             You may edit only files under `.claude/references/monero/` and
-            `.claude/skills/monero-security-review/references/`. The allowlist
-            enforces that; do not work around it, and do not edit
+            `.claude/skills/monero-security-review/references/`. The commit
+            step enforces that and will abort the whole job rather than let
+            anything else through; do not work around it, and do not edit
             `proposals.json`.
 
             You cannot verify `evidence` from here. The Monero tree is not in
@@ -2370,25 +2337,29 @@ jobs:
 
             Finally write `SUMMARY.md`: one bullet per entry, what you changed
             and where, or why you skipped it. It becomes the pull request body.
+            If you edited nothing at all, say so plainly in the first line --
+            no pull request is opened in that case, and `SUMMARY.md` and
+            `SKIPPED.md` become the run's log instead.
           # `Edit` and `Write` are UNQUALIFIED, and that is deliberate rather
           # than careless. The per-path form --
           #   Edit(.claude/references/monero/**),Write(SUMMARY.md), ...
-          # -- was in place for every run this channel has ever had, and in
-          # every one of them the writer edited nothing, wrote no SUMMARY.md
-          # and wrote no SKIPPED.md, while run 34618008004 recorded
-          # permission_denials_count: 8. One cause explains all of that: the
-          # patterns were refusing the calls they were supposed to permit. A
-          # guardrail that silently denies everything is not protecting the
-          # repository, it is only stopping the job from doing its work, and
-          # it looked like a working control the whole time.
+          # -- was in place for every run this channel had for the whole of its
+          # first life, and in every one of them the writer edited nothing,
+          # wrote no SUMMARY.md and wrote no SKIPPED.md, while run 34618008004
+          # recorded permission_denials_count: 8. One cause explains all of
+          # that: the patterns were refusing the calls they were supposed to
+          # permit. A guardrail that silently denies everything is not
+          # protecting the repository, it is only stopping the job from doing
+          # its work, and it looked like a working control the whole time.
+          # Run 34684636249, the first after this changed, recorded
+          # permission_denials: [] and produced both files.
           #
           # What replaced it is stricter in the way that counts: the commit
           # step below refuses to stage anything outside the two reference
-          # directories and the ledger, so nothing else can reach a commit,
-          # a push or a pull request. The writer can now touch files in its
-          # own throwaway checkout; it cannot make any of that land. That is
-          # enforcement in git rather than in a pattern whose semantics I
-          # could not verify.
+          # directories, so nothing else can reach a commit, a push or a pull
+          # request. The writer can now touch files in its own throwaway
+          # checkout; it cannot make any of that land. That is enforcement in
+          # git rather than in a pattern whose semantics I could not verify.
           claude_args: |
             --model claude-opus-5
             --max-turns 40
@@ -2424,7 +2395,8 @@ jobs:
           path: ${{ runner.temp }}/claude-execution-output.json
           if-no-files-found: ignore
 
-      - name: Commit, and open or add to the pull request
+      - name: Commit the edits and open a pull request
+        id: pr
         if: steps.check.outputs.any != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -2442,18 +2414,6 @@ jobs:
           }
           rm -f proposals.json
 
-          # The ledger is appended whether or not the writer produced an edit.
-          # A correction it skipped for a good reason must not be re-proposed
-          # every hour, and one it silently failed on should surface as a gap
-          # rather than as an infinite retry.
-          # `mkdir -p` because git does not track empty directories: a branch
-          # cut from a default branch that happens to carry no `.github/`
-          # would abort this step on the redirect, losing the corrections
-          # with nothing committed. Costs nothing when the directory is there.
-          mkdir -p "$(dirname "$LEDGER")"
-          cat "$RUNNER_TEMP/keys.txt" >> "$LEDGER"
-          sort -u -o "$LEDGER" "$LEDGER"
-
           git add -A
 
           # THE BOUNDARY THAT ACTUALLY HOLDS. The writer's tool allowlist is
@@ -2463,16 +2423,19 @@ jobs:
           # rather than a considered skip. So the rule deciding what LANDS
           # lives here instead, in git, where it is deterministic and can be
           # tested without a model in the loop. Anything staged outside the
-          # two reference directories and the ledger aborts the job with
-          # nothing committed and nothing pushed.
+          # two reference directories aborts the job with nothing committed
+          # and nothing pushed.
           #
           # This matters because the writer is handed claims extracted from a
           # review of a stranger's pull request. extract_updates.py already
           # confines `file` to those directories, so a proposal cannot name
           # anything else; this is the second line, against the writer being
           # talked into editing something the proposals never mentioned.
+          #
+          # The ledger is no longer in this list, because it is no longer in
+          # this branch. Nothing but a reference edit may be committed here.
           outside=$(git diff --cached --name-only | grep -vE \
-            '^(\.claude/references/monero/|\.claude/skills/monero-security-review/references/|\.github/reference-updates\.proposed$)' \
+            '^(\.claude/references/monero/|\.claude/skills/monero-security-review/references/)' \
             || true)
           if [ -n "$outside" ]; then
             echo "::error::staged changes outside the reference directories; refusing to commit or push"
@@ -2480,40 +2443,43 @@ jobs:
             exit 1
           fi
 
+          # NO EDIT, NO PULL REQUEST. This is the whole point of the redesign:
+          # a pull request exists only when there is something to merge. A run
+          # whose proposals were all skipped records that in the ledger (the
+          # step after this one, which runs either way) and says so in the log.
           if git diff --cached --quiet; then
-            echo "nothing staged; the writer changed no reference file"
+            echo "the writer changed no reference file; no branch pushed and no pull request opened"
+            echo "--- what it said ---"
+            cat "$body" || true
+            echo "opened=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          git commit -q -m "References: corrections found while reviewing upstream
 
-          Proposed by review runs in $RUN_URL. Each entry names what the
+          # A title that names the files, so a list of these pull requests is
+          # readable without opening any of them.
+          files=$(git diff --cached --name-only | sed 's|.*/||' | sort -u | paste -sd', ' -)
+          TITLE="References: update $files"
+          if [ "${#TITLE}" -gt 70 ]; then
+            TITLE="References: update $(git diff --cached --name-only | wc -l) file(s)"
+          fi
+
+          git commit -q -m "$TITLE
+
+          Proposed by the review run at $RUN_URL. Each entry names what the
           reference said, what the Monero tree shows, and the citation that
           settles it. The job that wrote this has no Monero checkout, on
           purpose, so it verified none of them -- the evidence is what to check.
 
           Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
-          # The lease is NAMED, not bare. `--force-with-lease` with no argument
-          # takes its expectation from the branch's configured upstream, and
-          # the reset path creates the local branch with `git checkout -B`,
-          # which has none until `-u` sets it during this very push. Git then
-          # has nothing to compare and rejects with "stale info" -- measured,
-          # on every one of the four retries, so the whole job failed the
-          # first time a merged pull request was followed by a new correction.
-          # Naming the ref we fetched keeps the actual safety property: the
-          # push still refuses if somebody moved the branch since the fetch.
-          lease=()
-          if [ "${RESET:-0}" = "1" ] && git rev-parse --verify -q "origin/$BRANCH" >/dev/null; then
-            lease=(--force-with-lease="$BRANCH:$(git rev-parse "origin/$BRANCH")")
-          fi
-          push() {
-            for i in 1 2 3 4; do
-              git push "${lease[@]}" -u origin "$BRANCH" && return 0
-              echo "push failed, retry $i"; sleep $((2 ** i))
-            done
-            return 1
-          }
-          push
+          # No lease and no force: this branch is new every run, so there is
+          # nothing on the remote to overwrite and nothing to be raced for.
+          # The retry is for network failures only.
+          for i in 1 2 3 4; do
+            git push -u origin "$BRANCH" && break
+            [ "$i" = 4 ] && exit 1
+            echo "push failed, retry $i"; sleep $((2 ** i))
+          done
 
           {
             echo
@@ -2525,39 +2491,33 @@ jobs:
             echo "_Generated by [Claude Code](https://claude.ai/code)_"
           } >> "$body"
 
-          # Already have a pull request: just say what this run added.
-          if [ -n "${PR_NUMBER:-}" ]; then
-            gh pr comment "$PR_NUMBER" --body-file "$body"
-            exit 0
-          fi
-
           # Both streams into one file: the refusal below is matched by text,
           # and which stream `gh` writes it on is not worth depending on.
           # Capturing stdout too keeps the new pull request's URL in the log.
-          TITLE="References: corrections found while reviewing upstream"
           if gh pr create --head "$BRANCH" --title "$TITLE" \
                --body-file "$body" >"$RUNNER_TEMP/pr.out" 2>&1; then
             cat "$RUNNER_TEMP/pr.out"
+            echo "opened=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           cat "$RUNNER_TEMP/pr.out" >&2
 
           # A repository can forbid Actions from opening pull requests
           # (Settings > Actions > General > "Allow GitHub Actions to create and
-          # approve pull requests"), and this one does. Measured on run
-          # 34618008004: the branch pushed cleanly and then `gh pr create` died
-          # with "GitHub Actions is not permitted to create or approve pull
-          # requests (createPullRequest)". The restriction is on the default
-          # GITHUB_TOKEN specifically; a PAT or App token is not subject to it.
+          # approve pull requests"), and this one did until 2026-09-11.
+          # Measured on run 34618008004, while it was off: the branch pushed
+          # cleanly and then `gh pr create` died with "GitHub Actions is not
+          # permitted to create or approve pull requests (createPullRequest)".
+          # The restriction is on the default GITHUB_TOKEN specifically; a PAT
+          # or App token is not subject to it.
           #
           # That is a policy rather than a fault, and by this point the
           # corrections are already safe on the branch -- so failing the job
           # here would leave real work pushed with nothing pointing at it,
           # which is how the first four corrections nearly went missing. File
-          # an issue instead: this repository already speaks in issues, and the
-          # compare link below is a one-click "Create pull request" for whoever
-          # reads it. Turn the setting on and this step goes back to opening
-          # real pull requests with no further change.
+          # an issue instead, with a one-click compare link. Kept even though
+          # the setting is now on, because it costs nothing and the failure it
+          # covers is silent and total.
           if ! grep -q "not permitted to create or approve pull requests" "$RUNNER_TEMP/pr.out"; then
             echo "::error::gh pr create failed for a reason other than the Actions pull-request policy"
             exit 1
@@ -2571,18 +2531,71 @@ jobs:
             echo
             echo "**Open it in one click:** $REPO_URL/compare/$DEFAULT_BRANCH...$BRANCH?expand=1"
           } >> "$body"
+          # One issue per run, matching one branch per run. There is no
+          # stickiness to arrange any more: nothing accumulates.
+          gh issue create --title "$TITLE" --body-file "$body"
+          echo "opened=1" >> "$GITHUB_OUTPUT"
 
-          # Sticky by title, so a branch that collects corrections over several
-          # runs collects comments on one issue rather than a new issue each
-          # time. Search indexing can lag a freshly filed issue by a few
-          # seconds, so a burst could still produce a second one; that is worth
-          # less than the machinery a perfectly-unique marker would need.
-          ISSUE_TITLE="References: corrections waiting on $BRANCH"
-          existing=$(gh issue list --state open --limit 1 \
-                       --search "in:title \"$ISSUE_TITLE\"" \
-                       --json number --jq '.[0].number // empty' 2>/dev/null || true)
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body-file "$body"
-          else
-            gh issue create --title "$ISSUE_TITLE" --body-file "$body"
-          fi
+      # Runs whether or not a pull request was opened, and deliberately: a
+      # correction the writer considered and skipped must not be re-proposed
+      # on the next tick, or the same skip is re-litigated every hour for as
+      # long as the reference stays as it is.
+      #
+      # It does NOT run if the step above failed, which is the case that
+      # matters: the path gate firing, or a push that never landed. Those
+      # leave the corrections unrecorded on purpose, so the next run proposes
+      # them again rather than losing them to a ledger entry claiming they
+      # were handled.
+      - name: Record what was proposed
+        if: steps.check.outputs.any != '0'
+        run: |
+          set -euo pipefail
+
+          # Built with plumbing rather than a checkout, deliberately. This job
+          # has just run a model over the working tree, and `git add` in that
+          # tree is exactly how something the writer left behind would ride
+          # along. `hash-object` / `mktree` / `commit-tree` build the commit
+          # from one file in RUNNER_TEMP and never touch the working tree at
+          # all, so the ledger branch cannot contain anything but the ledger:
+          # `mktree` is handed a single entry and there is nothing else it
+          # could pick up.
+          msg="Ledger: $(wc -l < "$RUNNER_TEMP/keys.txt") correction(s) proposed by $RUN_URL"
+
+          # Re-read, union, rebuild, push -- retried, because two runs that
+          # overlap would otherwise have the second one rejected as a
+          # non-fast-forward and lose its keys. Re-fetching inside the loop is
+          # what makes the retry meaningful rather than a repeat of the same
+          # doomed push.
+          for i in 1 2 3 4; do
+            git fetch origin "+refs/heads/$LEDGER_BRANCH:refs/remotes/origin/$LEDGER_BRANCH" || true
+            parent=$(git rev-parse --verify -q "refs/remotes/origin/$LEDGER_BRANCH" || true)
+            : > "$RUNNER_TEMP/ledger.new"
+            if [ -n "$parent" ]; then
+              git show "$parent:$LEDGER_PATH" >> "$RUNNER_TEMP/ledger.new" 2>/dev/null || true
+            fi
+            cat "$RUNNER_TEMP/keys.txt" >> "$RUNNER_TEMP/ledger.new"
+            sort -u -o "$RUNNER_TEMP/ledger.new" "$RUNNER_TEMP/ledger.new"
+
+            blob=$(git hash-object -w "$RUNNER_TEMP/ledger.new")
+            tree=$(printf '100644 blob %s\t%s\n' "$blob" "$LEDGER_PATH" | git mktree)
+            if [ -n "$parent" ]; then
+              # Nothing new to record: the keys were already there. Happens
+              # when a run is retried by hand over the same artifacts.
+              if [ "$(git rev-parse "$parent^{tree}")" = "$tree" ]; then
+                echo "ledger already holds these keys; nothing to push"
+                exit 0
+              fi
+              commit=$(git commit-tree "$tree" -p "$parent" -m "$msg")
+            else
+              echo "creating $LEDGER_BRANCH"
+              commit=$(git commit-tree "$tree" -m "$msg")
+            fi
+
+            if git push origin "$commit:refs/heads/$LEDGER_BRANCH"; then
+              echo "ledger now holds $(wc -l < "$RUNNER_TEMP/ledger.new") key(s)"
+              exit 0
+            fi
+            echo "ledger push failed, retry $i"; sleep $((2 ** i))
+          done
+          echo "::error::could not update $LEDGER_BRANCH; these corrections will be proposed again"
+          exit 1
