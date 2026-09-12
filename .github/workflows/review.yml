@@ -2111,7 +2111,13 @@ jobs:
       # carried-or-reset on every run by working out whether its previous
       # contents had landed. All of that machinery is gone. A branch here is
       # created, pushed once, and never touched again.
-      BRANCH: claude/references/${{ github.run_id }}
+      # `run_attempt` as well as `run_id`: re-running a workflow keeps the
+      # SAME run_id and only increments the attempt. A re-run of a propose
+      # job that had already pushed would then cut a fresh branch from main,
+      # build a different commit, and push non-fast-forward into the branch
+      # its first attempt left behind -- four retries and then failure, in
+      # exactly the situation you re-run for.
+      BRANCH: claude/references/${{ github.run_id }}-${{ github.run_attempt }}
       # The dedup ledger, on a ref of its own, never merged and never part of
       # a pull request.
       #
@@ -2276,7 +2282,58 @@ jobs:
           print("%d new correction(s) after dedup" % len(out))
           PY
 
+      # THE INDEX GATE HAS A BLIND SPOT, AND THIS IS IT.
+      #
+      # The gate in the commit step reads `git diff --cached`, so it sees
+      # exactly what is in the index -- and `.git/` is never in the index. A
+      # writer that wrote `.git/hooks/pre-commit` would have it executed by the
+      # `git commit` two steps later, with this job's token and its
+      # contents/pull-requests/issues/id-token permissions, and the push would
+      # still succeed and the run would still look clean. Demonstrated against
+      # a real repository before this step existed: the hook ran, the branch
+      # pushed, the step exited 0.
+      #
+      # `.git/config` is the same class and worse, because several of its keys
+      # NAME A COMMAND that git will run -- core.fsmonitor, core.pager,
+      # diff.external, filter.*.clean -- and `git status` in the very next step
+      # would be enough to fire them. `.git/info/attributes` can point at those
+      # filters.
+      #
+      # Two measures, in order:
+      #
+      # 1. core.hooksPath is pointed at an empty directory, so no hook in this
+      #    repository runs at all, whoever wrote it.
+      # 2. A manifest of everything under .git that can cause execution is
+      #    taken here and re-checked immediately after the writer, before any
+      #    other git command. Any difference aborts the job.
+      #
+      # This is detection at the boundary rather than prevention inside the
+      # writer step: the model has no Bash tool, but the action around it is
+      # not something this workflow controls, and moving `.git` aside for the
+      # duration risks breaking the action for a narrower gain. What it does
+      # close, completely, is the path from anything the writer wrote to any
+      # git command THIS job runs -- which is the demonstrated exploit.
+      - name: Disable hooks and fingerprint .git
+        if: steps.check.outputs.any != '0'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/nohooks"
+          # Written into .git/config BEFORE the fingerprint, so the fingerprint
+          # covers it and removing it is itself a detected change.
+          git config core.hooksPath "$RUNNER_TEMP/nohooks"
+          # Plain coreutils, no git: a fingerprint computed with a tool that
+          # honours the file being fingerprinted is worth nothing. Filenames
+          # are part of sha256sum's output, so an ADDED hook changes the
+          # manifest just as a modified one does.
+          {
+            sha256sum .git/config 2>/dev/null || echo "ABSENT .git/config"
+            find .git/hooks .git/info -type f -print0 2>/dev/null \
+              | sort -z | xargs -0 -r sha256sum
+          } > "$RUNNER_TEMP/gitdir.manifest"
+          echo "fingerprinted $(wc -l < "$RUNNER_TEMP/gitdir.manifest") file(s) under .git"
+
       - name: Write the corrections
+        id: writer
         if: steps.check.outputs.any != '0'
         uses: anthropics/claude-code-action@v1
         with:
@@ -2371,6 +2428,29 @@ jobs:
       # took three runs and a wrong diagnosis to work out that the edits were
       # being denied rather than declined. `always()` so a failed writer is
       # just as legible as a successful one.
+      # FIRST after the writer, and before `What the writer touched` runs
+      # `git status` -- an injected core.pager or core.fsmonitor would execute
+      # on that command, so the check has to come first or it checks nothing.
+      # `always()`: a writer that errored may still have written the file
+      # before it died, and the job is failing anyway, so the cost of looking
+      # is nil and the cost of not looking is the whole point of the step.
+      - name: Was .git touched?
+        if: always() && steps.check.outputs.any != '0'
+        run: |
+          set -euo pipefail
+          {
+            sha256sum .git/config 2>/dev/null || echo "ABSENT .git/config"
+            find .git/hooks .git/info -type f -print0 2>/dev/null \
+              | sort -z | xargs -0 -r sha256sum
+          } > "$RUNNER_TEMP/gitdir.now"
+          if ! diff -u "$RUNNER_TEMP/gitdir.manifest" "$RUNNER_TEMP/gitdir.now" \
+               > "$RUNNER_TEMP/gitdir.diff"; then
+            echo "::error::the writer modified .git; refusing to run any further git command"
+            sed 's/^/  /' "$RUNNER_TEMP/gitdir.diff" >&2
+            exit 1
+          fi
+          echo ".git is unchanged"
+
       - name: What the writer touched
         if: always() && steps.check.outputs.any != '0'
         run: |
@@ -2548,8 +2628,58 @@ jobs:
       # were handled.
       - name: Record what was proposed
         if: steps.check.outputs.any != '0'
+        env:
+          EXEC_FILE: ${{ steps.writer.outputs.execution_file }}
         run: |
           set -euo pipefail
+
+          # A WRITER THAT STOPPED EARLY MUST NOT HAVE ITS UNTOUCHED ENTRIES
+          # RECORDED. `keys.txt` is written by the dedup step BEFORE the writer
+          # runs, so it lists every correction that was new this run -- not
+          # every one the writer actually reached. Recording all of them after
+          # a run that hit `--max-turns 40`, or died part-way through a list,
+          # buries the remainder permanently: they are marked proposed, never
+          # come back, and nothing in the repository shows they went missing.
+          # That is the same silent loss that produced pull request #594, only
+          # quieter, because there is no ledger-only diff left over to notice.
+          #
+          # Run 34684636249's log carries `is_error: false` and
+          # `subtype: "success"` on its result entry, so that pair is what a
+          # clean finish looks like here -- read off a real log rather than
+          # guessed from the set of failure strings the action might use.
+          #
+          # A log that cannot be read is NOT treated as a failure. Doing so
+          # would turn one unreadable artifact into a duplicate pull request
+          # every hour, which is a worse outcome than the gap it guards
+          # against.
+          verdict=$(python3 - "${EXEC_FILE:-$RUNNER_TEMP/claude-execution-output.json}" <<'PY'
+          import json, sys
+
+          path = sys.argv[1] if len(sys.argv) > 1 else ""
+          try:
+              entries = json.load(open(path))
+          except (ValueError, OSError) as exc:
+              print("unreadable: %s" % exc); raise SystemExit(0)
+          if not isinstance(entries, list):
+              print("unreadable: the log is not a list"); raise SystemExit(0)
+          results = [e for e in entries if isinstance(e, dict) and e.get("type") == "result"]
+          if not results:
+              print("unreadable: no result entry"); raise SystemExit(0)
+          r = results[-1]
+          if r.get("is_error") is False and r.get("subtype") == "success":
+              print("clean: %s turns" % r.get("num_turns"))
+          else:
+              print("stopped: is_error=%r subtype=%r stop_reason=%r"
+                    % (r.get("is_error"), r.get("subtype"), r.get("stop_reason")))
+          PY
+          )
+          echo "the writer's log says: $verdict"
+          case "$verdict" in
+            stopped*)
+              echo "::warning::the writer did not finish; recording nothing, so these $(wc -l < "$RUNNER_TEMP/keys.txt") correction(s) are proposed again next run"
+              exit 0
+              ;;
+          esac
 
           # Built with plumbing rather than a checkout, deliberately. This job
           # has just run a model over the working tree, and `git add` in that
