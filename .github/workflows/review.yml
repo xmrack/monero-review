@@ -77,18 +77,28 @@ on:
 
   # Twice an hour, off the top of the hour.
   #
-  # THIS IS NOW THE ONLY DRIVER OF THE QUEUE. It was written off as dead --
-  # for a long stretch GitHub dropped every tick this repo asked for, across
-  # every minute-of-hour tried (:00/:30, :17, :07/:27/:47, and all five
-  # residues mod 5 via `*/5`), which is why the README still describes it as
-  # unreliable and why scripts/dispatch.sh and scripts/drip.sh exist. It
-  # started firing on its own on 2026-08-29 and has been reliable since,
-  # landing about 5-6 minutes after the nominal minute. The external cron that
-  # used to drive this was retired the same night.
+  # DO NOT TRUST THIS TO DRIVE THE QUEUE ON ITS OWN. For a long stretch GitHub
+  # dropped every tick this repo asked for, across every minute-of-hour tried
+  # (:00/:30, :17, :07/:27/:47, and all five residues mod 5 via `*/5`), which
+  # is why the README describes it as unreliable and why scripts/dispatch.sh
+  # and scripts/drip.sh exist. It started firing again on 2026-08-29 and this
+  # comment then claimed it had "been reliable since, landing about 5-6
+  # minutes after the nominal minute".
   #
-  # So: if reviews stop appearing, suspect this first. Nothing else is
-  # dispatching. `gh run list --repo <this repo>` shows whether ticks are
-  # arriving at all; if they stopped again, restart the drip externally with
+  # That was measured wrong. Counted over the 26 hours to 2026-09-12T03:49Z,
+  # against the 48 ticks a day this schedule asks for, GitHub delivered 8:
+  #
+  #   01:12  06:07  11:33  15:16  18:39  21:21  23:24  01:37
+  #
+  # Roughly one tick in six, with gaps of 2 to 5.4 hours, and a further gap
+  # from 01:37Z to 06:33Z the same morning. The workflow is `state: active`
+  # and nothing is disabled -- the ticks are simply not delivered. Two real
+  # upstream pull requests (11307 and 11309) were caught by an external hourly
+  # dispatch during a stretch when no scheduled tick arrived at all.
+  #
+  # So: if reviews stop appearing, suspect this first, and do not read a quiet
+  # hour as a fault elsewhere. `gh run list --repo <this repo>` shows whether
+  # ticks are arriving; when they thin out, drive it externally with
   # scripts/dispatch.sh from a machine that keeps time.
   #
   # Two ticks an hour, not `*/5`: a five-minute cron allocates 288 run records

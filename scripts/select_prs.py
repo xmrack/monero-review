@@ -146,6 +146,21 @@ BASE_BRANCH = os.environ.get("BASE_BRANCH", "master")
 # would hide the backlog behind the most-recently-updated 100.
 MAX_PR_PAGES = 5
 
+# Pages of THIS repo's issues to read, 100 each, when reconstructing what has
+# already been reviewed. This was 10, which is 1000 items -- and the endpoint
+# counts pull requests as issues too, so the repository was at 600 with nothing
+# anywhere saying a ceiling existed. Crossing it would not have failed loudly:
+# the OLDEST reviews would simply have stopped being visible, their pull
+# requests would have looked unreviewed, and the queue would have re-reviewed
+# them at $1 to $18 each -- publishing another issue every time, pushing more
+# of the record out of the window. The failure feeds itself and its only
+# symptom is the bill.
+#
+# 100 pages is a bound against a runaway, not a budget: pagination stops at the
+# first short page, so today's 600 items still cost six requests. Reaching it
+# is treated as a FAILED read rather than a complete one (see review_state).
+MAX_ISSUE_PAGES = 100
+
 
 def get(path, params=None):
     url = f"{API}{path}"
@@ -173,18 +188,27 @@ def review_state(repo):
     second kind waits for the head to settle. A PR whose only issues are
     `Review FAILED:` is deliberately NOT in it: that PR has never actually
     been reviewed, so its retry is a first look and must not be delayed.
+
+    Returns None when the record could not be read IN FULL -- a failed request
+    or a listing longer than MAX_ISSUE_PAGES. It used to return whatever it had
+    managed to read, announcing "assuming nothing reviewed", and that default
+    is backwards for this caller: an empty `done` makes every pull request look
+    unreviewed, so the queue answers a transient 502 by spending $1 to $18
+    re-reading something it already read. Nothing is lost by selecting nothing
+    for one tick -- the sweep runs twice an hour -- and a partial record cannot
+    be told from a complete one by anyone downstream.
     """
     done, failed, seen = set(), collections.Counter(), set()
-    for page in range(1, 11):
+    for page in range(1, MAX_ISSUE_PAGES + 1):
         try:
             issues = get(f"/repos/{repo}/issues",
                          {"state": "all", "per_page": 100, "page": page})
-        except urllib.error.HTTPError as exc:
-            print(f"warn: issue listing failed ({exc.code}); "
-                  "assuming nothing reviewed", file=sys.stderr)
-            return done, failed, seen
-        if not issues:
-            break
+        # OSError covers HTTPError and URLError both, so a 502, a rate limit,
+        # a timeout and a DNS failure all land here rather than only the first.
+        except (OSError, ValueError) as exc:
+            print(f"warn: issue listing failed on page {page} ({exc})",
+                  file=sys.stderr)
+            return None
         for issue in issues:
             title = issue.get("title", "")
             shas = re.findall(r"\b[0-9a-f]{12}\b", title)
@@ -195,9 +219,14 @@ def review_state(repo):
                 number = re.search(r"#(\d+)\b", title)
                 if number:
                     seen.add(int(number.group(1)))
+        # A short page is the end of the listing, and an empty one is the end
+        # when the count divides exactly by 100.
         if len(issues) < 100:
-            break
-    return done, failed, seen
+            return done, failed, seen
+    print(f"warn: this repository holds more than {MAX_ISSUE_PAGES * 100} "
+          "issues and pull requests; the review record cannot be read in full",
+          file=sys.stderr)
+    return None
 
 
 def local_reviewed(dirpath):
@@ -295,7 +324,32 @@ def main():
         prs.extend(batch_of_prs)
         if len(batch_of_prs) < 100:
             break
-    done, failed, reviewed_before = review_state(repo)
+    else:
+        # Ran the whole range without a short page: upstream has more open
+        # pull requests than this fetches, and the oldest-updated are invisible
+        # this tick. Not fatal -- they are the least likely to matter and the
+        # count below still reports what WAS seen -- but it must not be silent,
+        # because "N open" reading lower than reality looks like upstream got
+        # quieter rather than like a cap being hit.
+        print(f"warn: stopped at {MAX_PR_PAGES} pages of open pull requests "
+              f"({len(prs)}); older ones are not in this tick's queue",
+              file=sys.stderr)
+    state = review_state(repo)
+    if state is None:
+        # Select NOTHING. The record of what has been reviewed is the only
+        # thing standing between this queue and re-reading work it has already
+        # paid for, and a partial record is indistinguishable from a complete
+        # one once it leaves this function. Skipping a tick costs nothing: the
+        # sweep runs twice an hour and the backlog is not going anywhere.
+        print("refusing to select: the record of what has already been "
+              "reviewed could not be read in full", file=sys.stderr)
+        print("prs=[]")
+        for name in ("queue", "ready", "docs", "settling", "unprobed",
+                     "offbranch"):
+            print(f"{name}=0")
+        print(f"open={len(prs)}")
+        return
+    done, failed, reviewed_before = state
 
     # Local runs record themselves as filenames; count those as done too, so a
     # locally driven drip and the CI workflow don't duplicate each other's work.
