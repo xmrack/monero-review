@@ -150,7 +150,15 @@ be visible through `chaingen_tests_list.h`.
 test step.
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
-adds **only** `tests/fuzz` — nothing else is even configured.
+narrows **only its `add_subdirectory` list** to `tests/fuzz` — the
+`if`/`else` on `CMAKE_BUILD_TYPE STREQUAL "fuzz" OR OSSFUZZ` spans lines
+50–65 and nothing else. Everything below it is still configured:
+`libwallet_api_tests` (lines 67–69, under `BUILD_GUI_DEPS`) and `trezor`
+(lines 71–73, under `TREZOR_DEBUG`) are still added, and
+`hash-target-tests` (`monero_add_minimal_executable`, line 80) and
+`monero-wallet-crypto-bench` (line 123) are still built and still register
+their CTest entries `hash-target` (`add_test`, lines 90–92) and
+`wallet-crypto-bench` (line 126).
 
 ## The fuzz target list is a map
 
