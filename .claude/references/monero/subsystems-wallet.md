@@ -134,9 +134,17 @@ requested key image is missing, leaving the output partially populated.
 handlers. `main()` is at the bottom of `wallet_rpc_server.cpp`.
 
 **Threading.** `http_server_impl_base::run(1, true)` — **exactly one network
-thread**, under an explicit comment. The only members touched from another
-thread are five `std::atomic`s, and the only cross-thread caller is
-`stop_refresh()`.
+thread**, under an explicit comment. The only cross-thread caller is
+`stop_refresh()` — but it touches more than the five `std::atomic`s: it also
+reads and **dereferences the plain `wallet2 *m_wallet` member**.
+`wallet_rpc_server.cpp:302-309` is `++m_stop_refresh_active; if (!m_teardown &&
+!m_wallet_swap_active && m_wallet) m_wallet->shutdown();
+--m_stop_refresh_active;`, and `set_wallet` (lines 205-215) `delete`s that
+pointer under the same two flags. **The `m_wallet_swap_active` /
+`m_stop_refresh_active` handshake is the whole reason the dereference is
+safe** — wherever it is bypassed, the pointer is not. On POSIX `stop_refresh()`
+runs in signal context on an arbitrary thread
+(`tools::signal_handler::install`, `src/common/util.h:171-183`).
 
 **Body size.** `m_max_content_length = MAX_RPC_CONTENT_LENGTH * 100` — the
 wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
@@ -213,9 +221,23 @@ changes the trust posture of every GUI user.
 two unrelated `Wallet::init` functions (a static logging bootstrap and an
 instance daemon binding). `tr(x)` is defined as `(x)` here — unlike
 simplewallet, nothing is translated. `m_password` is a plain `std::string`
-member, exposed verbatim by `getPassword()`, never wiped. `loadUnsignedTx`
-returns a heap pointer the API gives no disposal method for. `use_ssl` is
-forwarded and then never read.
+member, exposed verbatim by `getPassword()`, never wiped — **true on master
+only**: a change in flight deletes both, leaving `WalletImpl` with no
+`m_password` and no `getPassword()`, and callers passing a password per call as
+`std::string_view` that each method converts to an `epee::wipeable_string`
+(`WalletImpl::setPassword(const std::string_view &old_password, const
+std::string_view &new_password)`, `src/wallet/api/wallet.cpp:1010`; the private
+section of `src/wallet/api/wallet.h` is the check, against `git show
+origin/base:src/wallet/api/wallet.h`). On a branch carrying that change, do not
+report the plain-`std::string` password. `loadUnsignedTx` returns a heap
+pointer the API gives no disposal method for, and it is no longer alone: the
+same change adds `loadUnsignedTxFromStr`, `parseTxFromStr` and
+`parseMultisigTxFromStr` in that shape, beside the existing
+`restoreMultisigTransaction` — `parseTxFromStr` in `wallet.cpp` ends
+`return ptx.release();`. It also adds `std::unique_ptr` returns
+(`getEnoteDetails`, `deserializePtxFromBlobStr`, `createKeysDecryptGuard`), so
+**`wallet2_api.h` now mixes both ownership conventions**; read the declaration
+rather than assuming either. `use_ssl` is forwarded and then never read.
 
 **`checkBackgroundSync()`** guards 33 call sites — every operation that needs
 spend keys or would corrupt the background cache. A new spend-adjacent method

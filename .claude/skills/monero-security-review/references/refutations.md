@@ -133,10 +133,19 @@ success after broadcasting nothing. The new `m_status = Status_Ok` at
 `src/wallet/api/pending_transaction.cpp:162` genuinely does overwrite a prior
 `Status_Error` on an empty `m_pending_tx`. It died on all three questions at
 once: nothing is broadcast so no state moves, `src/wallet/api/wallet2_api.h:858`
-documents the `status()` check that catches it, and the only in-tree caller,
-`WalletImpl::submitTransaction` at `src/wallet/api/wallet.cpp:1289`, builds its
-own pending transaction through `load_tx` and never holds an errored empty
-object.
+documents the `status()` check that catches it, and its caller
+`WalletImpl::submitTransaction` (`src/wallet/api/wallet.cpp:1289`, now 1331)
+builds its own pending transaction through `load_tx` and never holds an errored
+empty object.
+
+**Do not carry "the only in-tree caller" forward.** `commit()` now has five,
+four of them in `wallet_rpc_server.cpp` and three of those on objects built
+from RPC-supplied blobs: `:1412` (`fill_response`), `:1776`
+(`on_submit_transfer`, ptx from `parseTxFromStr(req.tx_data_hex)`), `:1980`
+(`on_relay_tx`, ptx from `deserializePtxFromBlobStr(req.hex)`), `:4441`
+(`on_submit_multisig`, ptx from `restoreMultisigTransaction(req.tx_data_hex)`).
+The refutation above stands on the first two questions for the shape it
+measured; the third has to be re-asked against those callers, not assumed.
 
 Where it dies here it is usually still worth telling a maintainer, because the
 author did not mean to write it. That is what `## Needs human review` is for:
