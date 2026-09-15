@@ -368,8 +368,18 @@ and an atomic counter.
   Nested inside an existing batch, a `LockedTXN` is a no-op — so "the DB batch
   is rolled back" only holds when that `LockedTXN` opened it.
 - **`txpool_tx_meta_t` is written raw** and pinned by
-  `static_assert(sizeof(...) == 192)` plus an `offsetof` assert. Adding a field
-  is a DB migration.
+  `static_assert(sizeof(...) == 192)` plus an `offsetof` assert
+  (`src/blockchain_db/blockchain_db.h:197-198`, asserting the 192-byte size
+  and `offsetof(txpool_tx_meta_t, valid_input_verification_id) == 160`).
+  Those two asserts are the invariant, **not the field count**. The struct
+  carries a reserved tail for exactly this — `:173-178` reads
+  `uint8_t prunable_hash_valid: 1; uint8_t bf_padding: 2; crypto::hash
+  prunable_hash; uint8_t padding[12];` — so a field carved out of that
+  reserve needs **no** migration: records written by older daemons read back
+  as all-zero there, which every consumer must treat as "absent". Adding a
+  field is a DB migration only when it changes the size or moves an existing
+  offset. The writers that zero the reserve are
+  `src/cryptonote_core/tx_pool.cpp:279-280` and `:356-357`.
 - The table schema is **duplicated** in
   `src/blockchain_utilities/blockchain_prune.cpp`; `open()`'s comment says to
   change both.
