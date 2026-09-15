@@ -239,7 +239,19 @@ nothing itself.
 `src/mnemonics/` is the electrum-style seed: one header per language (each
 ~1700 lines of word list), plus `electrum-words.cpp` for the checksum and
 language detection. The word lists dominate the directory's line count and are
-data, not logic.
+data, not logic — but they are no longer all of it.
+
+**`src/mnemonics/polyseed/` is a second, independent seed scheme with its own
+key derivation**, and it is logic: a C++ wrapper over libpolyseed
+(`polyseed.cpp`, `data::generate_secret_key` and `data::keygen`), a
+PBKDF2-HMAC-SHA256 implementation injected as the polyseed KDF (`pbkdf2.c`,
+`crypto_pbkdf2_sha256`), and utf8proc normalisation of user phrases and
+passphrases. `src/mnemonics/CMakeLists.txt` adds the `polyseed` subdirectory.
+`electrum-words.cpp` also gained `words_to_bytes_ex`
+(`src/mnemonics/electrum-words.cpp:399`), which decides polyseed versus legacy
+from an arbitrary phrase, and `normalize_mnemonic`. A reviewer who reads this
+directory as word lists and a checksum will walk straight past a live
+key-derivation path.
 
 ---
 
