@@ -139,10 +139,13 @@ The one-namespace-one-directory cases are `src/net` (`net`), `src/lmdb`
 (`lmdb`), `src/wallet/api` (`Monero`) and `src/ringct` (`rct`).
 
 **Include paths.** `src`, `contrib/epee/include`, `external`,
-`external/easylogging++` and `external/rapidjson/include` are all on the
-global include path (`CMakeLists.txt`). So **a bare quoted include is usually
-an epee header**: `#include "span.h"`, `#include "string_tools.h"`,
-`#include "misc_log_ex.h"`. Five basenames collide between `src/` and
+`external/easylogging++`, `external/rapidjson/include`,
+`external/supercop/include` and — appended by the polyseed work —
+`external/polyseed/include` and `external/utf8proc` are all on the global
+include path (one `include_directories` call, `CMakeLists.txt:473`). So **a
+bare quoted include is usually an epee header**: `#include "span.h"`,
+`#include "string_tools.h"`, `#include "misc_log_ex.h"`.
+Five basenames collide between `src/` and
 `contrib/epee/include`: `base.h`, `enums.h`, `error.h`, `fwd.h`, `wire.h`.
 
 **Forward-declaration headers** are `fwd.h` per subsystem, except
