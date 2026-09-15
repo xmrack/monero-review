@@ -215,6 +215,38 @@ Three limits:
   A state you can drive into one of those throws is a finding about the detach
   itself, not something the detach refutes.
 
+## The wipeable_string constructor already wiped the temporary
+
+A secret returned as a `std::string` and then assigned to an
+`epee::wipeable_string` is not an unwiped copy left behind in the heap. The
+rvalue constructor
+`wipeable_string::wipeable_string(std::string &&other)`
+(`contrib/epee/src/wipeable_string.cpp:70-80`) memwipes and clears the source
+it took from — `memwipe(&other[0], other.size())` at `:77`. The temporary is
+gone by the time the assignment returns.
+
+So before reporting key material lingering in a `std::string` on its way into a
+`wipeable_string`, check which constructor the call selects. If the source is an
+rvalue, this refutes it. If the source is an lvalue that outlives the
+construction — a named local, a member, a `const std::string&` parameter — the
+copy is real and the refutation does not apply; say which one you found.
+
+## The pending_tx hex blob is the existing tx_metadata format
+
+A hex blob carrying a whole `tools::wallet2::pending_tx` — `tx_key`,
+`additional_tx_keys`, `dests`, `construction_data` — out over wallet RPC is the
+long-standing `tx_metadata` format, not a new egress channel. It is produced by
+`static std::string ptx_to_string(const tools::wallet2::pending_tx &ptx)` at
+`src/wallet/wallet_rpc_server.cpp:1135`, and every `transfer`-family response
+that sets `do_not_relay` has returned it for years.
+
+So a proposal that some change newly exposes tx keys or destinations in such a
+blob has to read `ptx_to_string` first and say what the change adds on top of
+it. "This response contains the tx key" is not the finding when the same
+serializer already put it in the neighbouring response. What would be a finding
+is a blob reaching a client that could not previously obtain it — a restricted
+handler, or a field `ptx_to_string` does not already serialize.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
