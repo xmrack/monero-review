@@ -163,9 +163,18 @@ is no central table**. A new handler is unrestricted unless it says otherwise.
 - **A missing request field is not an error.** `KV_SERIALIZE` discards the
   serializer's return, so an absent JSON key leaves the value-initialised
   default. Every field needs a validity check in the handler.
-- **A JSON string of digits is accepted where a `uint64_t` is declared**, and
-  an ISO-8601 string is converted to a unix time, by
-  `convert_to_integral<std::string, uint64_t, false>`.
+- **A JSON string is no longer accepted where a `uint64_t` is declared.** The
+  `convert_to_integral<std::string, uint64_t, false>` specialization that used
+  to coerce a string of digits — and an ISO-8601 string to a unix time — is
+  gone from `contrib/epee/include/storages/portable_storage_val_converters.h`,
+  so string-to-integer coercion is out of epee entirely. Such a field now hits
+  the generic `convert_to_integral<from, to, false>` at line 130 of that
+  header, which calls `ASSERT_AND_THROW_WRONG_CONVERSION()`; the throw is
+  caught by the plain `try`/`catch` in `BEGIN_KV_SERIALIZE_MAP`'s `load()`
+  (`contrib/epee/include/serialization/keyvalue_serialization.h:58`, reached
+  via `PREPARE_OBJECTS_FROM_JSON` in
+  `contrib/epee/include/net/http_server_handlers_map2.h`) and the request is
+  rejected.
 - A handler that returns false without setting `er.code` produces
   `{"error":{"code":0,…}}`; an escaping exception produces
   `{"error":{"code":0,"message":""}}`.
