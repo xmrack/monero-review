@@ -80,7 +80,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - Change must go to an address the wallet owns — `sanity_check` throws
   otherwise.
 - Multisig nonces are wiped after a single use (`memwipe` on `m_multisig_k`,
-  with the comment "CRITICAL: a nonce may only be used once!").
+  with the comment "CRITICAL: a nonce may only be used once!"). The live
+  `m_multisig_k` is a **`wallet2` member**, a vector parallel to `m_transfers`
+  (`std::vector<std::vector<rct::key>> m_multisig_k` at
+  `src/wallet/wallet2.h:1788`, indexed by `wallet2::get_multisig_k` at
+  `src/wallet/wallet2.cpp:14520`). The identically named field on
+  `transfer_details` is dead storage — `src/wallet/wallet2_basic/wallet2_types.h:154`
+  marks it "DEPRECATED. DO NOT USE." and no code reads it.
 - Daemon error text is not surfaced verbatim when the daemon is untrusted —
   every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
 
@@ -106,9 +112,14 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   helper you cannot find is probably in there.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
   header** — there is no target; the headers reach the build another way.
-- Two independent version numbers govern the cache: `VERSION_FIELD(2)` in the
-  native serializer and `BOOST_CLASS_VERSION(tools::wallet2, 31)`, plus
-  per-struct Boost versions.
+- Two independent version numbers govern the cache: `VERSION_FIELD(3)` in the
+  native serializer (`src/wallet/wallet2.h:1087`, in the
+  `BEGIN_SERIALIZE_OBJECT` block of `tools::wallet2`) and
+  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1791`,
+  unchanged), plus per-struct Boost versions. The two are **not in step**: a v3
+  cache carries one extra trailing field the Boost serializer never writes, the
+  wallet-level `m_multisig_k` (`FIELD(m_multisig_k)` at
+  `src/wallet/wallet2.h:1137`).
 - `tx_construction_data`'s `use_rct` field is a **bitfield carrying
   construction flags** (`_use_rct = 1<<0`, `_use_view_tags = 1<<1`) under a
   boolean-sounding name.
