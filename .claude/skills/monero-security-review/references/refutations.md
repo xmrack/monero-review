@@ -129,14 +129,16 @@ it, and all three have to go your way:
    reaches by mistyping an address, because there is no attacker in it.
 
 MEASURED, on 11185: `PendingTransactionImpl::commit` was proposed as reporting
-success after broadcasting nothing. The new `m_status = Status_Ok` at
-`src/wallet/api/pending_transaction.cpp:162` genuinely does overwrite a prior
-`Status_Error` on an empty `m_pending_tx`. It died on all three questions at
-once: nothing is broadcast so no state moves, `src/wallet/api/wallet2_api.h:858`
-documents the `status()` check that catches it, and the only in-tree caller,
-`WalletImpl::submitTransaction` at `src/wallet/api/wallet.cpp:1289`, builds its
-own pending transaction through `load_tx` and never holds an errored empty
-object.
+success after broadcasting nothing. The new `m_status = Status_Ok` in the
+broadcast branch at `src/wallet/api/pending_transaction.cpp:181` (the branch
+sits in lines 148-182; line 162 is inside the cold-sign loop over
+`m_pending_tx`) genuinely does overwrite a prior `Status_Error` on an empty
+`m_pending_tx`. It died on all three questions at once: nothing is broadcast so
+no state moves, `src/wallet/api/wallet2_api.h:858` documents the `status()`
+check that catches it, and the only in-tree caller,
+`WalletImpl::submitTransaction` at `src/wallet/api/wallet.cpp:1280` (`bool
+WalletImpl::submitTransaction(const string &fileName) {`), builds its own
+pending transaction through `load_tx` and never holds an errored empty object.
 
 Where it dies here it is usually still worth telling a maintainer, because the
 author did not mean to write it. That is what `## Needs human review` is for:
