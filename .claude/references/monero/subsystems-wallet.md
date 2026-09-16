@@ -80,7 +80,16 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - Change must go to an address the wallet owns — `sanity_check` throws
   otherwise.
 - Multisig nonces are wiped after a single use (`memwipe` on `m_multisig_k`,
-  with the comment "CRITICAL: a nonce may only be used once!").
+  with the comment "CRITICAL: a nonce may only be used once!"). The member
+  wiped is now `wallet2::m_multisig_k`, a wallet-level
+  `std::vector<std::vector<rct::key>>` indexed by transfer index — declared at
+  `src/wallet/wallet2.h:1788` and iterated as `m_multisig_k[idx]` by
+  `get_multisig_k` at `src/wallet/wallet2.cpp:14520`.
+  `transfer_details::m_multisig_k` is retained only for cache compatibility and
+  is marked deprecated (`src/wallet/wallet2_basic/wallet2_types.h:154` reads
+  `std::vector<rct::key> m_multisig_k; // DEPRECATED. DO NOT USE.`); nothing
+  writes nonces into it — the only assignment to `td.m_multisig_k` in
+  `wallet2.cpp` is `td.m_multisig_k = {}; // DEPRECATED` at line 14786.
 - Daemon error text is not surfaced verbatim when the daemon is untrusted —
   every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
 
@@ -106,9 +115,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   helper you cannot find is probably in there.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
   header** — there is no target; the headers reach the build another way.
-- Two independent version numbers govern the cache: `VERSION_FIELD(2)` in the
-  native serializer and `BOOST_CLASS_VERSION(tools::wallet2, 31)`, plus
-  per-struct Boost versions.
+- Two independent version numbers govern the cache: `VERSION_FIELD(3)` in the
+  native serializer (`src/wallet/wallet2.h:1087`) and
+  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1791`), plus
+  per-struct Boost versions. The two moved apart: the Boost path does not carry
+  the wallet-level `m_multisig_k` at all — grepping `m_multisig_k` in
+  `src/wallet/wallet2_basic/wallet2_boost_serialization.h` returns only the
+  `transfer_details` member, at lines 102 and 200.
 - `tx_construction_data`'s `use_rct` field is a **bitfield carrying
   construction flags** (`_use_rct = 1<<0`, `_use_view_tags = 1<<1`) under a
   boolean-sounding name.
