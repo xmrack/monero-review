@@ -23,6 +23,14 @@ This is the most common way a genuine memory-safety *primitive* turns out to
 have no reachable path. The primitive being real is not the finding; reaching
 it is.
 
+A worked example on the wallet side: a `tx_source_entry` read back from a
+serialized `signed_tx_set` cannot carry an out-of-range `real_output`. The
+bound is inside the serializer, so it runs on the read path —
+`src/cryptonote_core/cryptonote_tx_utils.h:69` has
+`if (real_output >= outputs.size()) return false;` inside the
+`BEGIN_SERIALIZE_OBJECT` for `tx_source_entry`. Any index into `outputs`
+taken from a deserialized source entry is therefore already checked.
+
 ## Proof-dimension bugs in RingCT and Bulletproofs+
 
 Indexing and buffer-sizing bugs in `src/ringct/` verification are frequently
@@ -87,6 +95,13 @@ operation is serialized, an attacker-influenced write to it is *deterministic*
 rather than racy, which is a different (often stronger, sometimes weaker) claim
 than the one the first pass made. Name the lock, or name the two call sites that
 run concurrently.
+
+Establish as well that the path you accuse performs the write at all. Pool
+processing in `wallet2` never appends to `m_transfers`: the
+`m_transfers.push_back` in `process_new_transaction` is gated on `!pool`
+(`src/wallet/wallet2.cpp:2578`), so a pool-only refresh cannot grow the
+transfers vector, and cannot invalidate an index or iterator another thread
+holds into it.
 
 ## The divergent path does not ship
 
