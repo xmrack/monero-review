@@ -84,12 +84,20 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   wiped is now `wallet2::m_multisig_k`, a wallet-level
   `std::vector<std::vector<rct::key>>` indexed by transfer index — declared at
   `src/wallet/wallet2.h:1788` and iterated as `m_multisig_k[idx]` by
-  `get_multisig_k` at `src/wallet/wallet2.cpp:14520`.
+  `get_multisig_k`, which begins at `src/wallet/wallet2.cpp:14523` with the
+  `for (auto &k: m_multisig_k[idx])` loop at 14528.
   `transfer_details::m_multisig_k` is retained only for cache compatibility and
   is marked deprecated (`src/wallet/wallet2_basic/wallet2_types.h:154` reads
   `std::vector<rct::key> m_multisig_k; // DEPRECATED. DO NOT USE.`); nothing
   writes nonces into it — the only assignment to `td.m_multisig_k` in
-  `wallet2.cpp` is `td.m_multisig_k = {}; // DEPRECATED` at line 14786.
+  `wallet2.cpp` is `td.m_multisig_k = {}; // DEPRECATED` at line 14799.
+  **The index correspondence is not maintained across a reorg.**
+  `detach_blockchain` erases the tail of `m_transfers`
+  (`m_transfers.erase(it, m_transfers.end());`) and never resizes
+  `m_multisig_k`, so after a detach `m_multisig_k[i]` can hold nonces generated
+  for a different output, or for an output that no longer exists. Only
+  `export_multisig` restores the invariant, via its wipe-then-resize
+  (`m_multisig_k.resize(m_transfers.size())`) at `wallet2.cpp:14720-14722`.
 - Daemon error text is not surfaced verbatim when the daemon is untrusted —
   every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
 
