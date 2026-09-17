@@ -114,17 +114,22 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   otherwise.
 - Multisig nonces are wiped after a single use — `memwipe` under the comment
   "CRITICAL: a nonce may only be used once!" at
-  `src/wallet/wallet2.cpp:14533`. **There is no wallet-level nonce member.**
-  The only `m_multisig_k` in the tree is `transfer_details::m_multisig_k`, a
-  plain `std::vector<rct::key>` declared at
-  `src/wallet/wallet2_basic/wallet2_types.h:154`, carrying no deprecation
-  marker, and it is live state: `wallet2::get_multisig_k`
-  (`src/wallet/wallet2.cpp:14518`) walks `m_transfers[idx].m_multisig_k`,
-  matches a nonce by its `L = k*G`, hands it out and wipes it in place.
+  `src/wallet/wallet2.cpp:14545`. **The nonces live on a wallet-level member,
+  not on the transfer.** `tools::wallet2::m_multisig_k` is a
+  `std::vector<std::vector<rct::key>>` declared at `src/wallet/wallet2.h:1788`,
+  and it is the live state: `wallet2::get_multisig_k`
+  (`src/wallet/wallet2.cpp:14523`) walks `m_multisig_k[idx]` — `:14534` reads
+  `for (auto &k: m_multisig_k[idx])` — matches a nonce by its `L = k*G`, hands
+  it out and wipes it in place. `transfer_details::m_multisig_k`
+  (`src/wallet/wallet2_basic/wallet2_types.h:154`) still exists but now carries
+  the marker `// DEPRECATED. DO NOT USE.` and is always empty at runtime:
+  `src/wallet/wallet2.cpp:6548` unconditionally wipes and clears every
+  `m_transfers[i].m_multisig_k` on load. A diff reaching for the per-transfer
+  field is handling dead state; the one that matters is the wallet-level one.
   Two consequences a diff can break. The wipe **leaves a zero entry in the
   vector rather than erasing it**, so the loop's `if (k == rct::zero())
   continue` is what stops a spent nonce being reused — a rewrite that drops
-  that test reuses nonces. And `clear_multisig_k_and_store` (`:14540`) wipes
+  that test reuses nonces. And `clear_multisig_k_and_store` (`:14552`) wipes
   the whole set and calls `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
@@ -153,9 +158,10 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   helper you cannot find is probably in there.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
   header** — there is no target; the headers reach the build another way.
-- Two independent version numbers govern the cache: `VERSION_FIELD(2)` in the
-  native serializer (`src/wallet/wallet2.h:1087`) and
-  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1777`), plus
+- Two independent version numbers govern the cache: `VERSION_FIELD(3)` in the
+  native serializer (`src/wallet/wallet2.h:1087`, with a `version < 3` upgrade
+  branch at `:1126` that wipes the deprecated per-transfer nonces) and
+  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1791`), plus
   per-struct Boost versions on the nested types. They are bumped independently
   and a field added to one path is not automatically carried by the other, so
   ask which serializer a new cache field is reachable through: the Boost path
@@ -163,6 +169,10 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   native one in the `VERSION_FIELD` block of `wallet2.h`. A field present in
   one and absent from the other reads back default-constructed after a
   round-trip through the other, which is how a wallet silently loses state.
+  The wallet-level `m_multisig_k` is exactly that shape: `FIELD(m_multisig_k)`
+  at `src/wallet/wallet2.h:1137` sits in the native block only — grep
+  `m_multisig_k` in `src/wallet/wallet2_basic/wallet2_boost_serialization.h`
+  and the only hit is the `transfer_details` field at `:200`.
 - `tx_construction_data`'s `use_rct` field is a **bitfield carrying
   construction flags** (`_use_rct = 1<<0`, `_use_view_tags = 1<<1`) under a
   boolean-sounding name.
