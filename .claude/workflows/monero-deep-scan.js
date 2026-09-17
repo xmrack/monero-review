@@ -42,11 +42,23 @@ export const meta = {
 
 // Kept in step with specs/finding-spec.md, which the agents read. Changing one
 // without the other makes the agents fail schema validation.
+//
+// Five of these were added after a review of what the fleet was NOT finding.
+// The original fourteen were shaped like a generic C++ security review --
+// memory safety, integers, concurrency -- and Monero's expensive defects are
+// mostly not those. They are rule-gating and state-machine defects: a
+// behaviour change that is not fenced by hard-fork version, a cache that
+// survives a reorg it should not, a DB batch that is discarded by an early
+// return, a serialized field one path writes and another does not read, a
+// co-signer message that makes a wallet reuse a nonce. A researcher sent with
+// `memory-safety` at a hardfork gating change looks for the wrong thing and
+// reports nothing, which is indistinguishable in the output from a clean file.
 const CATEGORIES = [
-  'consensus-divergence', 'wire-deserialization', 'p2p-levin', 'rpc-surface',
-  'crypto-correctness', 'key-handling', 'privacy', 'memory-safety',
-  'integer-overflow', 'concurrency', 'resource-exhaustion', 'wallet-boundary',
-  'supply-chain', 'prompt-injection',
+  'consensus-divergence', 'fork-gating', 'chain-state', 'db-transaction',
+  'wire-deserialization', 'serialization-compat', 'p2p-levin', 'rpc-surface',
+  'crypto-correctness', 'key-handling', 'counterparty-protocol', 'privacy',
+  'memory-safety', 'integer-overflow', 'concurrency', 'resource-exhaustion',
+  'wallet-boundary', 'supply-chain', 'prompt-injection',
 ]
 const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']   // worst first
 const CONFIDENCES = ['high', 'medium', 'low']              // most confident first
@@ -643,6 +655,14 @@ const researched = await parallel(cells.map((cell) => () => agent(
    '',
    'Propose only what you can cite: the untrusted input, what it reaches, and the',
    'absence of anything in between. Those three are the whole test.',
+   'TWO SHAPES PASS TEST 1 WITHOUT AN ATTACKER, and they are the ones this fleet',
+   'has been losing. For a consensus divergence the untrusted input is THE CHAIN',
+   'ITSELF -- an ordinary block from an ordinary peer at the height that triggers',
+   'it -- and the question is whether the divergent code ships, not who sends it.',
+   'For a privacy regression the untrusted party is an OBSERVER who sends nothing:',
+   'the node you connect to, a peer, somebody reading a log. Name who sees what,',
+   'and say what an ordinary network watcher already had. Neither is exempt from',
+   'tests 2 and 3.',
    '',
    'WHETHER THIS DIFF CAUSED IT IS NOT PART OF THAT TEST. A weakness identical on',
    'origin/base is still a weakness, and you are the one who found it: propose it.',

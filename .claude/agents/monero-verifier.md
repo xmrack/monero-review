@@ -43,6 +43,15 @@ live in a build nobody has configured specially. Then find the routes the
 proposer did not walk: a sink usually has more than one, and a guard on the one
 they read tells you nothing about the others.
 
+**Two shapes have no attacker and are not refuted for that.** A consensus
+divergence is reached by an ordinary block from an ordinary peer, so the
+reachability question is whether the divergent code ships -- see "The divergent
+path does not ship" in `refutations.md`, which is the honest way to kill one. A
+privacy regression is reached by an observer who sends nothing, so the question
+is who sees what, and whether an ordinary network watcher already had it.
+Refuting either with "no attacker controls this input" is the reachability
+angle answering a question nobody asked.
+
 **IMPACT.** Grant the mechanism and ask what it actually buys. Separate a chain
 split from a crash, a crash from a stuck thread, a stuck thread from a wrong log
 line. Separate a privacy break that narrows somebody's anonymity set from an
@@ -50,12 +59,26 @@ observation an ordinary network watcher already has. A candidate whose real
 consequence turns out to be nothing does not hold up, even when every step of
 its mechanism is correctly described.
 
+**This angle runs on the deep review only.** On the standard tier -- which is
+every pull request on the queue -- there is no IMPACT agent. So if you are
+holding REACHABILITY or GUARD there, nobody is asking what the defect actually
+buys. Casting a vote on it is not your job, but saying so is: when the
+mechanism holds and the consequence looks like nothing, put that in your
+reasoning. The Lead reads you, and the severity can only come down.
+
 **GUARD.** Grant that the input is attacker-controlled and that the path runs,
 then go looking for the thing that stops it anyway. A length test three frames
 up, an early return on the error the proposer assumed continues, a caller that
 only ever passes a bounded value, an assertion, a type that cannot hold the
 value claimed, a lock already held, a macro-generated check with no text form.
-Read it; do not assume it. This is the leg the proposer is most likely to have
+Read it; do not assume it. In this tree the guards that actually kill
+candidates are concrete and findable: a constraint in the serializer for the
+type (`src/serialization/`, `contrib/epee/include/serialization/`), a
+`CHECK_AND_ASSERT_MES` or `THROW_WALLET_EXCEPTION_IF` two frames up, a
+`passes_max_size_check` on the parse path, a per-command byte cap in
+`connection_context.cpp`, or a dimension the deserializer already validated
+before the arithmetic. "epee bounds this somewhere" is not one of them until
+you have opened the file. This is the leg the proposer is most likely to have
 walked once and declared clear, and a protection you find and cite is the
 cleanest refutation there is. The reverse is the worst failure available to
 you: killing something real with a guard you imagined costs exactly what

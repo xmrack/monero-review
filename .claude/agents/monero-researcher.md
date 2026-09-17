@@ -100,6 +100,36 @@ hardest.
 Do not stretch to fill it. If your class does not apply to your unit -- and
 often it will not -- returning nothing is the right answer and a frequent one.
 
+Five classes are aimed at defects a general C++ security reviewer does not look
+for, and they are where this codebase's expensive bugs live. Where to read:
+
+- **`fork-gating`**: `src/hardforks/hardforks.cpp`, the `HF_VERSION_*`
+  constants, and the call sites of `get_current_hard_fork_version` and
+  `get_ideal_hard_fork_version` (both on `Blockchain`, forwarding to
+  `m_hardfork`). The question is not "is this correct" but "would a node that
+  applies this and a node that does not agree on the same block". Watch for
+  gating that reads the version from the wrong object, a comparison that
+  should be `>=` and is `>`, the difference between the CURRENT and the IDEAL
+  version, and constants that are bare `#define`s -- `RX_BLOCK_VERSION` in
+  `src/crypto/hash-def.h` does not answer to an `HF_VERSION_` grep.
+- **`chain-state`**: on the daemon side `Blockchain::pop_blocks`,
+  `pop_block_from_blockchain` and `rollback_blockchain_switching`; on the
+  wallet side `handle_reorg` and `detach_blockchain`; and anything cached
+  across a height. Ask what clears this on a reorg, and what happens if the
+  clear throws partway -- `detach_blockchain` throws on a key image or public
+  key it cannot find, so "the resync erases it" is not unconditional.
+- **`db-transaction`**: `LockedTXN`, `batch_start`/`batch_stop`, and every
+  early return between a write and its commit. `LockedTXN`'s destructor calls
+  `abort()`, and it only owns a batch it opened, so a nested one is a no-op.
+- **`serialization-compat`**: both wallet cache serializers, the `VERSION_FIELD`
+  and `BOOST_CLASS_VERSION` numbers, raw-struct DB records and their
+  `static_assert`s. A field one path writes and the other does not read comes
+  back default-constructed, which is silent.
+- **`counterparty-protocol`**: `src/multisig/`, the multisig paths in
+  `wallet2.cpp`, the unsigned/signed transfer blobs, and `src/device*/`. The
+  untrusted input is the co-signer or the device, and that is not optional:
+  an M-of-N setup assumes a threshold is honest and nothing about the rest.
+
 # Two dispatches that are not one unit and one class
 
 Most of the time your assignment is a single square. Two are different, and the

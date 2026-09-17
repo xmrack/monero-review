@@ -53,6 +53,15 @@ Choose lenses deliberately and sparingly. A ring signature change does not need
 apt lenses per unit produce better work than the whole list, because each one
 you add spends a researcher.
 
+Sparing is not the same as timid, and the classic failure here is reaching for
+the generic ones. A hard-fork gating change, a reorg path, a DB write, a cache
+format bump and a multisig round are the shapes this codebase gets wrong, and
+each has a lens of its own -- `fork-gating`, `chain-state`, `db-transaction`,
+`serialization-compat`, `counterparty-protocol`. Sending `memory-safety` at any
+of them aims a researcher at the wrong question, and a researcher that finds
+nothing because it was looking in the wrong place is indistinguishable, in the
+report, from a file that was clean.
+
 # Exclusions
 
 Some changed files should not be reviewed, and saying so is part of the job.
