@@ -49,7 +49,6 @@ FIELDS = ("file", "says", "correction", "evidence")
 # one thing it must not be able to choose is which file gets rewritten.
 ALLOWED_PREFIXES = (
     ".claude/references/monero/",
-    ".claude/skills/monero-security-review/references/",
 )
 
 

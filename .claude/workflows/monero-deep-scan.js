@@ -313,7 +313,7 @@ const CANDIDATES_SCHEMA = {
         properties: {
           // Which reference. `.claude/references/monero/<name>.md` for the
           // shared map of the codebase, or the review references under
-          // `.claude/skills/monero-security-review/references/`.
+          // `.claude/references/monero/`.
           file: { type: 'string' },
           // What it says now, quoted, or the word `missing` when the gap is
           // that it says nothing. A correction a human cannot locate in the
@@ -539,9 +539,9 @@ const CONTEXT = [
   '                none does (fast_check, the verification-id cache).',
   '    architecture.md, subsystems-node/wallet/crypto.md, navigation.md,',
   '    errors-and-concurrency.md, coding-style.md, build-and-tests.md',
-  '  .claude/skills/monero-security-review/references/trust-boundaries.md',
-  '  .claude/skills/monero-security-review/references/codebase-notes.md',
-  '  .claude/skills/monero-security-review/references/refutations.md',
+  '  .claude/references/monero/trust-boundaries.md',
+  '  .claude/references/monero/codebase-notes.md',
+  '  .claude/references/monero/refutations.md',
   'The candidate standard: .claude/skills/monero-deep-review/specs/finding-spec.md',
   '',
   'Symbol index, when this run built one (check with Glob; some runs have none):',

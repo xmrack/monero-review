@@ -48,9 +48,9 @@ What the deep path does differently, and why each matters here:
   interactive session, and every Actions run is non-TTY -- so without this a
   limit reached three hours in throws the whole run away. The wait counts
   against the job timeout, so it can still lose;
-- it turns the `/monero-review-refute` pass **off**, because this pipeline
-  already puts every candidate to a counted three-angle panel. Left on, that
-  pass would rewrite `review.md` in place and throw away `## Coverage`;
+- it runs no separate refutation pass, because this pipeline already puts
+  every candidate to a counted three-angle panel. Such a pass would rewrite
+  `review.md` in place and throw away `## Coverage`;
 - it raises the job timeout to 350 minutes. The runtime caps concurrent agents
   at `min(16, max(2, vCPUs - 2))`, which is 2 on any runner reachable from
   this repo, so a wide diff is hours of wall clock, not minutes;
@@ -112,13 +112,14 @@ There is one job. Read its recipe and follow it as written:
   - `.claude/references/monero/` -- how the codebase works: `README.md` is the
     index, `macros.md` and `flows.md` are the two every agent should have read
     before it forms a theory.
-  - `.claude/skills/monero-security-review/references/trust-boundaries.md`
-  - `.claude/skills/monero-security-review/references/codebase-notes.md`
-  - `.claude/skills/monero-security-review/references/refutations.md`
+  - `.claude/references/monero/trust-boundaries.md`
+  - `.claude/references/monero/codebase-notes.md`
+  - `.claude/references/monero/refutations.md`
 
 Those are the single source of Monero knowledge in this repository: the
-`references/monero/` directory for what the code IS, the three files under
-`monero-security-review/references/` for what to SUSPECT. When something in
+`references/monero/` directory -- most of it for what the code IS, and
+`trust-boundaries.md`, `codebase-notes.md` and `refutations.md` in it for
+what to SUSPECT. When something in
 either is wrong, fix it there -- every skill improves at once, and a second
 copy would drift.
 

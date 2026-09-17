@@ -120,8 +120,8 @@ nobody read.
 
 # Shell shapes
 
-The same sandbox as the single-reviewer fallback, whose skill
-(`.claude/skills/monero-security-review/SKILL.md`) holds the full account. The
+The same sandbox as every agent in the fleet, whose full account is under
+"Shell shapes that cost a turn" in `.claude/agents/monero-context.md`. The
 ones that cost a turn: no redirect to a file, no `for`/`while`/`if` block, no
 `$(...)`, nothing outside the tree, no `git -C` (`cd` instead), and `g++ -E` as
 the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command

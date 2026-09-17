@@ -28,7 +28,6 @@ Run locally, leaves the result in `reviews/`:
 | `-f mode=deep` | the escalation. Requires a PR number; `pr=sweep` is refused |
 | `-f model=<id>` | pins the model. Default `auto`, the same model on both tiers |
 | `DEEP=1 ./review-local.sh` | deep, locally |
-| `TIER=single ./review-local.sh` | the single-reviewer fallback |
 
 Deep issues carry a `deep-review` label. Standard reviews are unlabelled,
 because unlabelled is what ordinary looks like.
@@ -72,17 +71,17 @@ than argued in prose, and the count lowers severity. What survives is checked fo
 - `.claude/references/monero/` — how the Monero codebase works: architecture,
   six end-to-end flows, per-subsystem notes, the macro families that make grep
   lie, errors and concurrency, build and tests. `README.md` there is the index.
-- `.claude/skills/monero-security-review/references/` — the other half: what to
-  *suspect*, where the tree says what the code *is*.
+  Its last three files are the other half: what to *suspect*, where the rest
+  says what the code *is*.
 
 **Skills:**
 
 - `monero-standard-review/` — **the automatic review.** Every PR on the queue gets it.
 - `monero-deep-review/` — A more indepth review which must be manually requested.
-- `monero-security-review/` — (LEGACY) the single-reviewer fallback, for a session that
-  cannot be granted the agent tools. Not a tier, and nothing in CI routes to
-  it. `monero-review-refute/` is its adversarial second pass and runs only
-  behind it. 
+
+There is no third skill. A single-reviewer fallback and its adversarial second
+pass used to sit below these; both tiers are the agent fleet now, so a session
+that cannot dispatch agents stops and says so rather than reviewing worse.
 
 **Agents and orchestration** — `.claude/agents/` and `.claude/workflows/`. One
 workflow script serves both tiers, keyed on `profile`: what they share is the
