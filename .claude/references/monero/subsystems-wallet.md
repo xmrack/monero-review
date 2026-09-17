@@ -84,12 +84,26 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   wiped is now `wallet2::m_multisig_k`, a wallet-level
   `std::vector<std::vector<rct::key>>` indexed by transfer index — declared at
   `src/wallet/wallet2.h:1788` and iterated as `m_multisig_k[idx]` by
-  `get_multisig_k` at `src/wallet/wallet2.cpp:14520`.
+  `get_multisig_k`, which begins at `src/wallet/wallet2.cpp:14523`
+  (`void wallet2::get_multisig_k(size_t idx, const std::unordered_set<rct::key>
+  &used_L, rct::key &nonce)`) and whose `for (auto &k: m_multisig_k[idx])` loop
+  is at line 14534. Line 14520 is not part of it: it reads
+  `return get_multisig_signing_public_key(get_account().get_multisig_keys()[idx]);`,
+  inside `get_multisig_signing_public_key`.
   `transfer_details::m_multisig_k` is retained only for cache compatibility and
   is marked deprecated (`src/wallet/wallet2_basic/wallet2_types.h:154` reads
   `std::vector<rct::key> m_multisig_k; // DEPRECATED. DO NOT USE.`); nothing
-  writes nonces into it — the only assignment to `td.m_multisig_k` in
-  `wallet2.cpp` is `td.m_multisig_k = {}; // DEPRECATED` at line 14786.
+  writes nonces into it, but it is still touched in three places, so do not
+  read "deprecated" as "untouched". `td.m_multisig_k = {}; // DEPRECATED` sits
+  at `src/wallet/wallet2.cpp:14805`, inside
+  `wallet2::update_multisig_rescan_info` — not at 14786, which is the closing
+  brace of `wallet2::export_multisig`. `wallet2::load` memwipes and clears
+  `m_transfers[i].m_multisig_k` at `src/wallet/wallet2.cpp:6550-6551`, and the
+  cache serialiser does the same at `src/wallet/wallet2.h:1132-1133` for caches
+  older than version 3. All three are clears rather than nonce writes.
+  (`rg -n m_multisig_k src/wallet/wallet2.cpp` lists 6548, 6550, 6551 and
+  14805; the holders are `tools::wallet2::load` and the
+  `BEGIN_SERIALIZE_OBJECT` block in `src/wallet/wallet2.h`.)
 - Daemon error text is not surfaced verbatim when the daemon is untrusted —
   every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
 
