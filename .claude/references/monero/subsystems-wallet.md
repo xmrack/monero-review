@@ -40,7 +40,7 @@ Consequences worth carrying:
 
 ## `src/wallet/wallet2.{h,cpp}` — the engine
 
-15450 lines in one translation unit. It owns the account keys, a hashchain of
+15613 lines in one translation unit. It owns the account keys, a hashchain of
 block ids, the `m_transfers` output set, the payment and transfer maps, the
 subaddress table; it drives refresh, builds and signs transactions, and
 persists two files.
@@ -51,6 +51,39 @@ chacha20 key; the cache file is monero binary serialization under
 the same key. Both are written to `<name>.new` and then `tools::replace_file`,
 so persistence is atomic. **Neither is authenticated**: chacha20 with a random
 IV and no MAC. Tampering is detected only by the deserializer failing.
+
+**Background sync makes it four files and two key hierarchies.** Three modes
+live at `src/wallet/wallet2.h:198-207` -- `BackgroundSyncOff`,
+`BackgroundSyncReusePassword`, `BackgroundSyncCustomPassword` -- parsed from
+`"off"`, `"reuse-wallet-password"` and `"custom-background-password"` by
+`background_sync_type_from_str`, which throws `std::logic_error` on anything
+else. In the custom-password mode the wallet keeps `<name>.background` and
+`<name>.background.keys` alongside the main pair
+(`make_background_wallet_file_name` at `src/wallet/wallet2.cpp:6307`,
+`make_background_keys_file_name` at `:6312`), encrypted under
+`m_custom_background_key` -- a **different** key from the main cache, so the
+password that opens the background cache is deliberately not the wallet
+password.
+
+Four things follow, and a diff can break each of them:
+
+- **The background instance must not hold a spend key.** A separate `wallet2`
+  is built in `process_background_cache_on_open` with `m_is_background_wallet
+  = true` and `account.forget_spend_key()` (`:6783`, and the same call at
+  `:4635` and `:14030`). That call is the entire security property of the
+  feature; anything that lets a background instance keep or re-derive the
+  spend key defeats it outright.
+- **The background cache is untrusted input on the main wallet's open path.**
+  `process_background_cache_on_open` (`:6731`) loads and merges it when a
+  normal wallet is opened, so "the user opened their wallet" reaches a
+  deserializer over a second, separately-encrypted file. Everything true of
+  the main cache as an attack surface is true of this one.
+- **Settings cannot be changed from a background wallet.**
+  `THROW_WALLET_EXCEPTION_IF(m_background_syncing || m_is_background_wallet,
+  ... "cannot change wallet settings from background wallet")` at `:6251`.
+- **A missing background file is recreated, not treated as an error**
+  (`:6760-6771`). A path that recreates on absence is a path an attacker can
+  force by deleting.
 
 **Refresh** is traced step by step in `flows.md` §3. The load-bearing summary:
 the wallet recomputes every block id from the blob and chains `prev_id`, but
@@ -79,17 +112,22 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   leaves the wallet; the real pick order lives only in local state.
 - Change must go to an address the wallet owns — `sanity_check` throws
   otherwise.
-- Multisig nonces are wiped after a single use (`memwipe` on `m_multisig_k`,
-  with the comment "CRITICAL: a nonce may only be used once!"). The member
-  wiped is now `wallet2::m_multisig_k`, a wallet-level
-  `std::vector<std::vector<rct::key>>` indexed by transfer index — declared at
-  `src/wallet/wallet2.h:1788` and iterated as `m_multisig_k[idx]` by
-  `get_multisig_k` at `src/wallet/wallet2.cpp:14520`.
-  `transfer_details::m_multisig_k` is retained only for cache compatibility and
-  is marked deprecated (`src/wallet/wallet2_basic/wallet2_types.h:154` reads
-  `std::vector<rct::key> m_multisig_k; // DEPRECATED. DO NOT USE.`); nothing
-  writes nonces into it — the only assignment to `td.m_multisig_k` in
-  `wallet2.cpp` is `td.m_multisig_k = {}; // DEPRECATED` at line 14786.
+- Multisig nonces are wiped after a single use — `memwipe` under the comment
+  "CRITICAL: a nonce may only be used once!" at
+  `src/wallet/wallet2.cpp:14533`. **There is no wallet-level nonce member.**
+  The only `m_multisig_k` in the tree is `transfer_details::m_multisig_k`, a
+  plain `std::vector<rct::key>` declared at
+  `src/wallet/wallet2_basic/wallet2_types.h:154`, carrying no deprecation
+  marker, and it is live state: `wallet2::get_multisig_k`
+  (`src/wallet/wallet2.cpp:14518`) walks `m_transfers[idx].m_multisig_k`,
+  matches a nonce by its `L = k*G`, hands it out and wipes it in place.
+  Two consequences a diff can break. The wipe **leaves a zero entry in the
+  vector rather than erasing it**, so the loop's `if (k == rct::zero())
+  continue` is what stops a spent nonce being reused — a rewrite that drops
+  that test reuses nonces. And `clear_multisig_k_and_store` (`:14540`) wipes
+  the whole set and calls `store()` under the comment "Must succeed before any
+  txset produced with these nonces is exposed", so a change that lets the
+  txset out before the store lands is a real finding.
 - Daemon error text is not surfaced verbatim when the daemon is untrusted —
   every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
 
@@ -109,19 +147,22 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   from the block header; the contents come from a separate blob.
 - **`should_skip_block` gates scanning on the daemon-supplied block
   timestamp.**
-- **`exit(1)` at `src/wallet/wallet2.cpp:2916`** on the received-amount
+- **`exit(1)` at `src/wallet/wallet2.cpp:2917`** on the received-amount
   consistency check — a library function that terminates the host process.
 - Lines 245–1038 of `wallet2.cpp` are a **single anonymous namespace**; a
   helper you cannot find is probably in there.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
   header** — there is no target; the headers reach the build another way.
-- Two independent version numbers govern the cache: `VERSION_FIELD(3)` in the
+- Two independent version numbers govern the cache: `VERSION_FIELD(2)` in the
   native serializer (`src/wallet/wallet2.h:1087`) and
-  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1791`), plus
-  per-struct Boost versions. The two moved apart: the Boost path does not carry
-  the wallet-level `m_multisig_k` at all — grepping `m_multisig_k` in
-  `src/wallet/wallet2_basic/wallet2_boost_serialization.h` returns only the
-  `transfer_details` member, at lines 102 and 200.
+  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1777`), plus
+  per-struct Boost versions on the nested types. They are bumped independently
+  and a field added to one path is not automatically carried by the other, so
+  ask which serializer a new cache field is reachable through: the Boost path
+  lives in `src/wallet/wallet2_basic/wallet2_boost_serialization.h` and the
+  native one in the `VERSION_FIELD` block of `wallet2.h`. A field present in
+  one and absent from the other reads back default-constructed after a
+  round-trip through the other, which is how a wallet silently loses state.
 - `tx_construction_data`'s `use_rct` field is a **bitfield carrying
   construction flags** (`_use_rct = 1<<0`, `_use_view_tags = 1<<1`) under a
   boolean-sounding name.
@@ -155,8 +196,10 @@ thread are five `std::atomic`s, and the only cross-thread caller is
 wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
 
 **Authorisation** is HTTP digest auth in epee plus a coarse `--restricted-rpc`
-allowlist of 32 methods, expressed **only as per-handler early returns — there
-is no central table**. A new handler is unrestricted unless it says otherwise.
+allowlist, expressed **only as per-handler early returns — there is no central
+table**. There are 38 `if (m_restricted)` returns in
+`src/wallet/wallet_rpc_server.cpp` and two inverted ones (`if (!m_restricted)`,
+at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new handler is unrestricted unless it says otherwise.
 
 **Traps.**
 
@@ -238,7 +281,7 @@ needs it.
 
 ## `src/simplewallet/` and `src/mnemonics/`
 
-`simplewallet.cpp` is 11450 lines: the command table, argument parsing, and the
+`simplewallet.cpp` is 11453 lines: the command table, argument parsing, and the
 confirmation prompts. The prompts are the point — this is the only consumer
 where "the user would notice" is a real control, and it is only a control if
 the prompt is actually shown. A flow that batches or automates past a prompt

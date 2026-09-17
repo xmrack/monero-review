@@ -265,7 +265,7 @@ control. The daemon is untrusted and the keys are in the process.
 - `process_parsed_blocks` calls `hwdev.generate_key_derivation` from several
   pool threads **without** holding the `hw::device` lock, unlike
   `scan_output`, which does.
-- **`exit(1)`** at `src/wallet/wallet2.cpp:2916` on the received-amount
+- **`exit(1)`** at `src/wallet/wallet2.cpp:2917` on the received-amount
   consistency check — the process dies mid-scan rather than throwing. A defect
   reachable there is a denial of service.
 - The view tag is an optimisation whose failure mode is a **false negative**

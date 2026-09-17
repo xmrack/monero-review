@@ -142,6 +142,16 @@ Two things go in the summary whatever else does: a changed file nobody
 accounted for, and an area nobody read. Both matter more than a LOW, because
 they are the part a "No findings" would otherwise overstate.
 
+A third goes in only when it is there: say in a clause that
+`## Needs human review` or `## Comment discrepancy` is not empty, and what it
+is about. Those two sections sit below `## Refuted` for a reason that has
+nothing to do with how much they matter -- `scripts/labels.py` stops counting
+severities at `## Refuted`, so anything carrying a bracketed severity has to
+stay above it and anything that does not has to stay below. The cost is that
+the entry a maintainer would act on today sits under a list of dead ends. One
+clause up here is what repays that, and it is the only place in the file that
+can.
+
 On a no-findings review this section does the most work in the file. "Adds a
 bounds check to the RPC handler and its test. Nothing in the diff reaches a
 trust boundary and no guard was removed." tells a maintainer they can stop
@@ -361,7 +371,7 @@ from nobody looking, and the Coverage **Refactors.** line spends a maintainer's
 attention only when something was actually raised.
 
 Why it gets its own section rather than a place among the findings: most of
-these have no untrusted input behind them, so the four-part candidate test
+these have no untrusted input behind them, so the three-part candidate test
 throws them out and is right to. That test is asking whether an attacker can do
 something. This section is asking a different question, which is whether the
 change does what it says. A maintainer wants the answer to both, and only one
@@ -461,8 +471,10 @@ review, and its line is how the gap gets said:
 
 Two lines this section used to carry are gone. Do not bring them back. The
 fixed `This tier.` sentence was identical on every report at this tier, and the
-tier is already in the footer and in the stamp. `Proposals.` gave counts the
-stamp carries as `candidates=`, `confirmed=`, `refuted=` and `unverified=`, and
+tier is already carried twice: `profile=deep angles=3` in the stamp, and
+`<n>/3 angles agreed` on every finding's locator line. There is no footer.
+`Proposals.` gave counts the stamp carries as `candidates=`, `confirmed=`,
+`refuted=` and `unverified=`, and
 that `## Refuted` shows one by one; a proposal no panel decided is a gap, so it
 goes in **Not covered** by name rather than being reduced to a digit.
 

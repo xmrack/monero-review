@@ -53,15 +53,25 @@ supercop assembly on x86_64 UNIX — see `subsystems-crypto.md`.
 All in the top-level `CMakeLists.txt`, and all are supply-chain-relevant —
 removing one is a real finding even though it is not a memory-safety bug:
 
-- `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=1` (:768-769)
+- `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2` (:780-781) — note the level is
+  **2**, and note the guard around it: `if(CMAKE_BUILD_TYPE STREQUAL "Release"
+  AND NOT OPENBSD)`, so it is not set in a debug build at all. A diff that
+  changes that condition removes the flag from real builds without touching
+  the flag.
 - `-fstack-protector` and `-fstack-protector-strong`, via
-  `add_c_flag_if_supported` (:780-783)
-- `-pie` / `-Wl,-pie` (:804-811), with documented exclusions: PIE crashes
+  `add_c_flag_if_supported` (:795-798), likewise inside an `if` that excludes
+  OpenBSD and Windows/GCC < 9.1
+- `-pie` / `-Wl,-pie` (:823-826), with documented exclusions: PIE crashes
   under ASAN, and Windows binaries die with PIE under GCC < 9 or when
   dynamically linked
-- `-Wl,-z,relro` (:814)
+- `-Wl,-z,relro` (:829)
 
-Also set tree-wide: **`-fno-strict-aliasing`** and `-ftemplate-depth=900`.
+Every one of those uses `add_*_flag_if_supported`, which **silently does
+nothing when the compiler rejects the flag**. "The flag is in CMakeLists" is
+not the same claim as "the flag is in the build".
+
+Also set tree-wide: **`-fno-strict-aliasing`** (:775-776, and again at
+:871-872 for the other branch) and `-ftemplate-depth=900` (:894).
 
 ## `contrib/depends` — the cross-build dependency tree
 
@@ -166,8 +176,9 @@ their CTest entries `hash-target` (`add_test`, lines 90–92) and
 attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`, `cold-outputs`,
 `cold-transaction`, `http-client`, `levin`, `load_from_binary`,
-`load_from_json`, `parse_url`, `signature`, `transaction`, `tx-extra`, `utf8`,
-plus the `fuzz_rpc/` group.
+`load_from_json`, `network_address`, `parse_url`, `signature`, `transaction`,
+`tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
+this list: it is the kind of thing a pull request adds to.
 
 Two readings: a PR touching a surface with an existing target is touching
 something known to be reachable, and a PR that **weakens** a harness deserves

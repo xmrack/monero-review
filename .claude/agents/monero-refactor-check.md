@@ -48,6 +48,35 @@ That last one is where the honest answers are hardest and where you are worth
 what you cost. Two independent statements swapped is nothing. Two statements
 swapped where the first could throw is a different program.
 
+# Where behaviour hides in this tree
+
+The generic list above is not enough here, because several of Monero's
+observables are invisible in a diff:
+
+- **Serialization field order is the wire format.** Reordering two `FIELD` or
+  `KV_SERIALIZE` lines changes the blob, and for a transaction or block the
+  blob is the hash and the hash is consensus. A "tidy-up" of a serializer is
+  never behaviour-neutral until you have checked the order.
+- **The macros are not equivalent to each other.** `KV_SERIALIZE` versus
+  `KV_SERIALIZE_OPT` differs on a missing field; `CHECK_AND_ASSERT_MES`
+  returns where `CHECK_AND_ASSERT_THROW_MES` throws; `THROW_WALLET_EXCEPTION_IF`
+  is a bare `if` with no `do { } while(0)`, so an `else` moved next to it binds
+  to the macro's hidden `if`. Swapping one for another is a behaviour change
+  dressed as a style change. Expand them (`g++ -E -I contrib/epee/include -I
+  src`) rather than reading them.
+- **Validation order is observable to a peer.** Two checks swapped give a
+  different error for the same bad input, which is a fingerprinting difference
+  and sometimes a consensus one, because the checks do not all cost the same.
+- **Hash caching.** `invalidate_hashes` and `set_blob_size` decide whether a
+  later `get_transaction_hash` recomputes or returns a stale value. Moving
+  either is a behaviour change.
+- **Lock scope and `LockedTXN`.** A brace moved changes how long a lock is
+  held. `LockedTXN`'s destructor calls `abort()`, not commit, so an early
+  return introduced between the writes and the commit silently discards them.
+- **Height arithmetic.** `hashchain::size()` is a height, not a container
+  size, and `operator[]` subtracts the offset. A loop rewritten over the
+  "same" range is a common way to move by one block.
+
 # The second question
 
 **Does the quoted claim actually cover this hunk?**
@@ -71,7 +100,7 @@ counts.
 Not severity. Not whether an attacker can reach it. Not whether it matters. A
 behaviour change nobody can reach is still a behaviour change, and the
 maintainer is the one who knows which behaviour was intended. Applying the
-four-part candidate test here would throw away most of what this channel exists
+three-part candidate test here would throw away most of what this channel exists
 to carry, and would be the one way to get this job badly wrong.
 
 Not a fix, either. Which version is correct is not yours to say.

@@ -184,11 +184,15 @@ CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
 FFI API header 'fcmp++.h' has broken compatibility with C" if the generated
 header stops being C-compatible.
 
-**The only live consumer** is `src/ringct/rctSigs.cpp`, which includes
-`fcmp_pp/fcmp_pp_crypto.h` and calls
-`fcmp_pp::get_valid_torsion_cleared_point_vartime` from
-`rct::verPointsForTorsion`. That function has **no production caller** — it
-appears only in `rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp`.
+**The live consumers are two**, both reaching
+`fcmp_pp::get_valid_torsion_cleared_point_vartime`:
+`src/ringct/rctSigs.cpp` (includes `fcmp_pp/fcmp_pp_crypto.h`, calls it at
+`:1606` from `rct::verPointsForTorsion`) and `src/fcmp_pp/curve_trees.cpp`
+(`:87`, `:89`, plus two `assert`-only uses at `:107-108` that compile out in
+release). `rct::verPointsForTorsion` itself has **no production caller** — it
+appears only in `rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp`
+(`:466`, `:543`). The curve-trees path is the one that actually runs, so a
+change to the torsion check is not test-only however it looks.
 `RCTType` still stops at `RCTTypeBulletproofPlus = 6`.
 
 `fcmp_pp_crypto.h` exports `mul8_is_identity_vartime`,

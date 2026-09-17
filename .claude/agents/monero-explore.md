@@ -38,6 +38,29 @@ gets built on.
 Treat a comment as a claim, not a fact. "Caller validates this" is something to
 check, and often something to disprove.
 
+# Where grep lies in this tree specifically
+
+"No matches" is a finding about your search, not about the code, and in this
+codebase there are five reliable ways to get one wrongly:
+
+- **Macro-generated symbols have no text form.** The `operator==`, `std::hash`
+  and `boost::hash_value` for the key types come out of
+  `CRYPTO_MAKE_COMPARABLE` and friends in `src/crypto/generic-ops.h`; grepping
+  for them finds nothing. The same is true of every field name inside a
+  `BEGIN_KV_SERIALIZE_MAP` block. Expand with `g++ -E -I contrib/epee/include
+  -I src <the header that USES the macro>` and grep the output.
+- **Four serialization systems, four spellings.** A field may be handled by
+  the monero binary serializer, epee's KV layer, `wire/`, or Boost. Searching
+  one spelling answers for one of them.
+- **`.inl` files are whole implementations, instantiated elsewhere.** The P2P
+  node and the protocol handler are emitted from `src/rpc/instantiations.cpp`;
+  a caller search that stops at the `.inl` misses who instantiates it.
+- **Bare `#define`s do not match a family grep.** `RX_BLOCK_VERSION` lives in
+  `src/crypto/hash-def.h` and does not answer to `HF_VERSION_`.
+- **`cscope.out` covers `src` and `contrib` only**, as above, and `external/`
+  is invisible to `git grep` -- so "nothing calls this" is only ever a claim
+  about the places you actually searched. Say which those were.
+
 # Answering
 
 Prose is fine -- another agent reads it. Be dense: the citations, what they

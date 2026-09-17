@@ -170,7 +170,14 @@ directory's `.cpp` lines; mining is not verification), `print_money`,
 `connection_context.cpp` (the per-command P2P byte caps).
 
 **Key functions.** `parse_and_validate_tx_from_blob` is the main untrusted
-entry: size check → `serialize` → `n_key_offsets_exceeds_max` → hash.
+entry, and the chain is `passes_max_size_check` → `serialization::serialize`
+→ `expand_transaction_1` → `invalidate_hashes` + `set_blob_size` →
+`get_transaction_hash` (`src/cryptonote_basic/cryptonote_format_utils.cpp:237-249`).
+Two things follow. `expand_transaction_1` is where the pruned/prunable split
+is reconstructed, so a field it fails to rebuild is absent rather than wrong,
+and the `//TODO: validate tx` two lines later is literal — **this function
+does not validate anything beyond parsing**. There is no key-offset cap in
+the parse path; a cap on that lives in consensus checks, not here.
 `calculate_transaction_hash` is v1 = hash of the whole blob, v2 =
 `cn_fast_hash` over three sub-hashes (prefix, base-rct slice, prunable hash).
 `get_block_hashing_blob` is the **PoW preimage** and is distinct from what
@@ -268,7 +275,7 @@ are RAM indexes over that table, rebuilt by `tx_memory_pool::init`.
 
 ## `src/cryptonote_core/blockchain.cpp` — validation and reorganisation
 
-5595 lines, and the only place that decides whether a block extends the main
+5622 lines, and the only place that decides whether a block extends the main
 chain, becomes an alternative, or triggers a reorg.
 
 **Entry points.** `add_new_block` (takes txpool then blockchain lock),
@@ -367,19 +374,25 @@ and an atomic counter.
   already active**, and both `commit()` and `abort()` are gated on `m_batch`.
   Nested inside an existing batch, a `LockedTXN` is a no-op — so "the DB batch
   is rolled back" only holds when that `LockedTXN` opened it.
-- **`txpool_tx_meta_t` is written raw** and pinned by
-  `static_assert(sizeof(...) == 192)` plus an `offsetof` assert
-  (`src/blockchain_db/blockchain_db.h:197-198`, asserting the 192-byte size
-  and `offsetof(txpool_tx_meta_t, valid_input_verification_id) == 160`).
-  Those two asserts are the invariant, **not the field count**. The struct
-  carries a reserved tail for exactly this — `:173-178` reads
-  `uint8_t prunable_hash_valid: 1; uint8_t bf_padding: 2; crypto::hash
-  prunable_hash; uint8_t padding[12];` — so a field carved out of that
-  reserve needs **no** migration: records written by older daemons read back
-  as all-zero there, which every consumer must treat as "absent". Adding a
-  field is a DB migration only when it changes the size or moves an existing
-  offset. The writers that zero the reserve are
-  `src/cryptonote_core/tx_pool.cpp:279-280` and `:356-357`.
+- **`txpool_tx_meta_t` is written raw** and pinned by two asserts at
+  `src/blockchain_db/blockchain_db.h:194-195`:
+  `static_assert(sizeof(txpool_tx_meta_t) == 192)` and
+  `static_assert(offsetof(txpool_tx_meta_t, valid_input_verification_id) == 160)`.
+  Those two are the invariant, **not the field count**. The struct carries
+  reserve in two places, and they behave differently. `:168-173` is a
+  bitfield byte — `double_spend_seen:1, pruned:1, is_local:1,
+  dandelionpp_stem:1, is_forwarding:1, bf_padding:3` — with only **three
+  spare bits left**, so a fourth flag has to come out of `padding` instead.
+  `:175` is `uint8_t padding[44]; // til 160 bytes`, ahead of
+  `crypto::hash valid_input_verification_id` at `:178`. A field carved out of
+  either reserve needs **no** migration: records written by older daemons read
+  back as all-zero there, which every consumer must treat as "absent". Adding
+  a field is a DB migration only when it changes the size or moves an existing
+  offset — and moving `valid_input_verification_id` trips the `offsetof`
+  assert at compile time, which is the point of it. The writers that zero the
+  reserve are `src/cryptonote_core/tx_pool.cpp:247-248` and `:323-324`
+  (`meta.bf_padding = 0; memset(meta.padding, 0, sizeof(meta.padding));`); a
+  new write path that forgets that pair persists stack garbage into the DB.
 - The table schema is **duplicated** in
   `src/blockchain_utilities/blockchain_prune.cpp`; `open()`'s comment says to
   change both.

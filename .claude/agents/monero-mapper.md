@@ -30,8 +30,16 @@ Each unit you emit carries:
 - `boundary`: the trust boundary it sits behind, named as
   `.claude/skills/monero-security-review/references/trust-boundaries.md` names them: the P2P/Levin surface, the
   restricted or unrestricted RPC surface, block and transaction validation,
-  the daemon-to-wallet direction, the build and packaging path. Write `none`
-  when nothing untrusted reaches it.
+  the daemon-to-wallet direction, a co-signer's messages (multisig and cold
+  signing), a hardware device's responses, the wallet cache and key files,
+  the build and packaging path. Write `none` when nothing untrusted reaches it.
+
+  Two of those are easy to miss because the counterparty sounds friendly. A
+  co-signer is a stranger holding another key share, and a hardware device is
+  what the user trusts INSTEAD of the host — so `src/multisig/`,
+  `src/device/`, `src/device_trezor/` and the cold-signing blob paths are
+  never `boundary: none`. Writing `none` there is what makes the researcher
+  drop the finding for want of an untrusted input to cite.
 - `lenses`: the weakness classes worth spending a researcher on, from the
   fixed set your dispatch lists.
 
@@ -44,6 +52,15 @@ Choose lenses deliberately and sparingly. A ring signature change does not need
 `supply-chain`; a CMake change does not need `crypto-correctness`. Two or three
 apt lenses per unit produce better work than the whole list, because each one
 you add spends a researcher.
+
+Sparing is not the same as timid, and the classic failure here is reaching for
+the generic ones. A hard-fork gating change, a reorg path, a DB write, a cache
+format bump and a multisig round are the shapes this codebase gets wrong, and
+each has a lens of its own -- `fork-gating`, `chain-state`, `db-transaction`,
+`serialization-compat`, `counterparty-protocol`. Sending `memory-safety` at any
+of them aims a researcher at the wrong question, and a researcher that finds
+nothing because it was looking in the wrong place is indistinguishable, in the
+report, from a file that was clean.
 
 # Exclusions
 

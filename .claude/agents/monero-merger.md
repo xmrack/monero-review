@@ -53,6 +53,23 @@ Some shapes that fail it, and are two findings however similar they look:
 - the same *class* of mistake made twice by the same author in two subsystems.
   A pattern is worth naming in prose; it is not one defect.
 
+Three shapes recur in this tree and each one is TWO findings, however alike
+the two entries read:
+
+- **A daemon-side and a wallet-side entry on the same RPC field.** Different
+  trust boundary, different severity row, different fix, and often different
+  maintainers.
+- **A consensus divergence and a crash arising from the same unchecked
+  value.** One is a chain split and one is a denial of service. Merging them
+  buries the worse one under the other's severity.
+- **The same index bug in two reorg paths**, say `detach_blockchain` and
+  `handle_reorg`. Fixing one leaves the other, which is the test.
+
+The mirror case is one shape that IS a single defect and looks like two: a
+missing check reported once against the serializer that should have bounded
+the field and once against the consumer that used it unbounded. The shared
+cause is the field, and the fix is at the field.
+
 When you cannot tell, they are separate. A report with two entries for one
 defect wastes a reader's minute. A report with one entry for two defects hides
 a bug, and this pipeline files an issue that retires the pull request forever.

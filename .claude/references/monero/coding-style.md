@@ -102,7 +102,7 @@ Four conventions hold with no meaningful exceptions:
 ## The shape of a translation unit
 
 **A `.inl` here is the entire implementation of a class template**, not a
-small inline helper. There are 8 in the first-party tree:
+small inline helper. There are 7 in the first-party tree:
 
 ```
 3188  src/p2p/net_node.inl
