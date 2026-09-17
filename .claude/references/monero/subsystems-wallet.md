@@ -250,7 +250,14 @@ refresh thread; `doRefresh` takes `m_refreshMutex2`, and the `LOCK_REFRESH()`
 macro brackets caller-driven work. But:
 
 - `pauseRefresh()` **does not wait** for an in-flight refresh — it clears an
-  atomic flag, and the source says `// TODO synchronize access`.
+  atomic flag, and the source says `// TODO synchronize access`. *No longer
+  true on every head.* Where `pauseRefresh` opens with
+  `boost::lock_guard<boost::mutex> guarg(m_refreshMutex2);`
+  (`src/wallet/api/wallet.cpp:2921`) it **does** block until an in-flight
+  refresh finishes, because `doRefresh` holds that same mutex for its whole
+  body (`:2822`). The `// TODO synchronize access` comment survives below the
+  new lock and is stale there. Check which version the head you are reviewing
+  has before resting a finding on either.
 - `createTransactionMultDest` brackets its work with
   `pauseRefresh()`/`startRefresh()`; its sibling
   `createSweepUnmixableTransaction` does **neither**.
@@ -268,8 +275,16 @@ changes the trust posture of every GUI user.
 *defined* in `wallet.cpp` and only forward-declared in `wallet.h`. There are
 two unrelated `Wallet::init` functions (a static logging bootstrap and an
 instance daemon binding). `tr(x)` is defined as `(x)` here — unlike
-simplewallet, nothing is translated. `m_password` is a plain `std::string`
-member, exposed verbatim by `getPassword()`, never wiped. `loadUnsignedTx`
+simplewallet, nothing is translated. `m_password` was a plain `std::string`
+member, exposed verbatim by `getPassword()`, never wiped — but **check whether
+the head you are reviewing still has it**: a head that removes
+`std::string m_password;` and its TODO block, and
+`const std::string& getPassword() const override;`, from
+`src/wallet/api/wallet.h` has neither, and passes the password as a
+`std::string_view` parameter at every call site instead
+(`WalletImpl::setPassword`, `src/wallet/api/wallet.cpp:981`, takes the old and
+new passwords as arguments). Do not go looking for a member that is gone.
+`loadUnsignedTx`
 returns a heap pointer the API gives no disposal method for. `use_ssl` is
 forwarded and then never read.
 
