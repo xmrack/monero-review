@@ -18,6 +18,8 @@ import urllib.request
 API = os.environ.get("API", "https://api.github.com")
 REPO = os.environ.get("REVIEW_REPO", "xmrack/monero-review")
 UPSTREAM = os.environ.get("UPSTREAM", "monero-project/monero")
+# Mirrors select_prs.BASE_BRANCH: the branch the sweep actually reviews.
+BASE_BRANCH = os.environ.get("BASE_BRANCH", "master")
 LOG = os.environ.get("LOG", "/tmp/monero-review.log")
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 
@@ -63,7 +65,13 @@ def main():
 
     # ---- what has been reviewed, and did anything turn up ----
     issues = []
-    for page in range(1, 11):
+    # 100 pages, matching select_prs.MAX_ISSUE_PAGES. Ten pages is a
+    # 1000-item ceiling, and issues and pull requests share one numbering
+    # space in this repository -- it is past #640 already, so the oldest
+    # reviews were about to start dropping out of `done` silently. Every
+    # number below is derived from that set, so the dashboard would have
+    # reported a backlog spike that was really a paging limit.
+    for page in range(1, 101):
         try:
             batch = get(f"/repos/{REPO}/issues",
                         {"state": "all", "per_page": 100, "page": page})
@@ -125,8 +133,15 @@ def main():
         for i in issues:
             if not i["title"].startswith("Review FAILED"):
                 done.update(re.findall(r"\b[0-9a-f]{12}\b", i["title"]))
+        # Same base-branch filter the selector applies, so a backport the
+        # sweep deliberately never queues is not counted here as an
+        # unreviewed pull request. The caption below warns only about the
+        # doc-only split, so without this the two disagreed permanently.
         left = [p for p in open_prs
-                if not p["draft"] and p["head"]["sha"][:12] not in done]
+                if not p["draft"]
+                and (not BASE_BRANCH
+                     or ((p.get("base") or {}).get("ref") == BASE_BRANCH))
+                and p["head"]["sha"][:12] not in done]
         # Says "before the doc-only filter" because it is: this runs with no
         # token by default, and separating the two would cost one file listing
         # per PR against a 60/hour anonymous budget. The selector does make

@@ -26,8 +26,20 @@ import sys
 
 # Non-greedy to the first `-->`, so prose containing the closing marker
 # truncates its own entry rather than swallowing the coverage stamp below it.
-STAMP = re.compile(r"^[ \t]*<!--[ \t]*workflow-updates\b(.*?)-->[ \t]*\r?\n?",
-                   re.DOTALL | re.MULTILINE | re.IGNORECASE)
+STAMP = re.compile(r"<!--[ \t]*workflow-updates\b(.*?)-->",
+                   re.DOTALL | re.IGNORECASE)
+# The same thing anchored to its own line, which is where the REPORT SPEC puts
+# it and how it is normally written. Stripping with this one first takes the
+# trailing newline too, so removing a stamp that stood alone does not leave a
+# blank line behind.
+#
+# Matching was ANCHORED before, and that was the bug: a stamp with any text
+# before it on the line matched nothing, so the corrections were never
+# extracted AND the raw JSON was never stripped -- it published verbatim into
+# a Monero maintainer's issue, which is the one outcome this script exists to
+# prevent. Exit status is 0 either way, so nothing downstream noticed.
+STAMP_LINE = re.compile(r"^[ \t]*<!--[ \t]*workflow-updates\b.*?-->[ \t]*\r?\n?",
+                        re.DOTALL | re.MULTILINE | re.IGNORECASE)
 
 FIELDS = ("file", "says", "correction", "evidence")
 
@@ -98,7 +110,10 @@ def main():
 
     # Strip whether or not anything parsed. A stamp that failed to parse is
     # still not something to publish into a maintainer's issue.
-    stripped = STAMP.sub("", text)
+    # Whole-line form first so a stamp on its own line takes its newline with
+    # it; then the unanchored form for one sitting mid-line, where only the
+    # stamp goes and the prose around it stays.
+    stripped = STAMP.sub("", STAMP_LINE.sub("", text))
     if stripped != text:
         with open(review, "w", encoding="utf-8") as fh:
             fh.write(stripped)

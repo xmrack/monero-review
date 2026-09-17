@@ -44,9 +44,20 @@ def severities(text):
 
     found = set()
     for match in HEADING.finditer(text):
-        # The bracket may hold "SEVERITY / CONFIDENCE"; the tail is the title.
-        tail = (match.group(2) or "") + (match.group(3) or "")
-        if re.search(r"refuted", tail, re.IGNORECASE):
+        # Only the BRACKET is searched for a status word, never the title.
+        # The bracket may hold "SEVERITY / CONFIDENCE" or a status the writer
+        # added; the title is prose about Monero, and this pipeline reviews
+        # code whose findings are routinely titled things like "bounds check
+        # refuted by the caller". Scanning the title dropped that finding's
+        # severity entirely: a CRITICAL published with no critical label, and
+        # where it was the only finding the publish step went on to say the
+        # panel "confirmed none" over a body that carried one.
+        #
+        # Everything under `## Refuted` is already gone -- the text was cut at
+        # that heading above -- so this test is only about an entry marked
+        # refuted in place, above the section.
+        bracket = match.group(2) or ""
+        if re.search(r"refuted", bracket, re.IGNORECASE):
             continue
         found.add(match.group(1).upper())
     return [s for s in SEVERITIES if s in found]

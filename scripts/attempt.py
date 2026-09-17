@@ -35,6 +35,11 @@ import sys
 # A run that consumed at least this many turns engaged with the diff; below it,
 # the model may have died before doing any work worth charging for.
 MIN_REAL_TURNS = 3
+# Only used on the stream fallback, where a log has no result record and the
+# turn count may be small while the work was not. Roughly one large source
+# file read: below this the run had not got going, above it somebody paid for
+# a review and this pull request is what they paid it on.
+MIN_REAL_TOKENS = 20000
 
 # Subtypes that mean the model spent its whole budget on this diff. That is the
 # PR being too large or too hard, and a retry produces the same outcome.
@@ -66,7 +71,14 @@ LIMIT_PHRASES = (
     "quota",
 )
 
-METRIC_KEYS = ("total_cost_usd", "duration_ms", "usage", "num_turns", "subtype")
+# `subtype` is NOT in here, and removing it was a bug fix rather than a tidy.
+# Every stream log opens with {"type":"system","subtype":"init",...}, which
+# carries that key and no metrics, so `find_result` matched the first event of
+# every log and stopped. A run killed mid-stream then measured as zero turns
+# and zero tokens and was spared as infrastructure, however long it had really
+# worked. The genuine result record carries the four metric keys below as well,
+# so it is still found; BUDGET_EXHAUSTED is matched on `subtype` separately.
+METRIC_KEYS = ("total_cost_usd", "duration_ms", "usage", "num_turns")
 
 
 def load(path):
@@ -126,7 +138,13 @@ def hit_account_limit(result):
     """
     status = result.get("api_error_status")
     try:
-        if status is not None and int(status) in API_LIMIT_STATUS:
+        # Any 5xx counts, not only the two named codes. A 500, 502 or 503 from
+        # the API is the server's failure and no edit to this pull request
+        # would avoid it, yet the old test charged one to the PR whenever the
+        # run had already done a few turns -- and two charges retire the PR at
+        # that head commit, so a pair of upstream blips could silently bury a
+        # change nobody ever reviewed.
+        if status is not None and (int(status) in API_LIMIT_STATUS or int(status) >= 500):
             return True
     except (TypeError, ValueError):
         pass
@@ -147,6 +165,44 @@ def tokens(result):
     if not isinstance(usage, dict):
         return 0
     return sum(v for v in usage.values() if isinstance(v, (int, float)))
+
+
+def stream_totals(data):
+    """What the stream itself shows, for a log that never got a result record.
+
+    A run killed part way through -- a cancelled job, an OOM, a runner lost,
+    the CLI crashing -- writes no terminal `result`, and every number the
+    verdict reads normally comes out of that one record. Such a log used to
+    measure as no work at all, which spared the pull request, left it the
+    newest unreviewed item, and burned the same budget on it every tick.
+
+    The assistant events carry their own `usage`, so the work is on the record
+    even when the summary never arrived. Returns (turns, tokens).
+    """
+    events = data if isinstance(data, list) else [data]
+    turns = 0
+    total = 0
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        message = event.get("message")
+        if not isinstance(message, dict):
+            continue
+        usage = message.get("usage")
+        if isinstance(usage, dict):
+            total += sum(v for v in usage.values() if isinstance(v, (int, float)))
+        if event.get("type") == "assistant" or message.get("role") == "assistant":
+            turns += 1
+    return turns, total
+
+
+def budget_exhausted_in(data):
+    """A turn-cap subtype anywhere in the stream, not only on a result record."""
+    events = data if isinstance(data, list) else [data]
+    for event in events:
+        if isinstance(event, dict) and event.get("subtype") in BUDGET_EXHAUSTED:
+            return event.get("subtype")
+    return None
 
 
 def verdict():
@@ -181,6 +237,32 @@ def verdict():
             results.append(found)
 
     if not results:
+        # No terminal record, so read the stream. A run that died mid-flight
+        # after real work is the pull request's charge to carry: it consumed a
+        # full review and produced nothing usable, and sparing it puts the same
+        # diff back at the head of the queue on the next tick.
+        turns = seen = 0
+        exhausted = None
+        for path in paths:
+            data = load(path)
+            if data is None:
+                continue
+            t, n = stream_totals(data)
+            turns += t
+            seen += n
+            exhausted = exhausted or budget_exhausted_in(data)
+
+        if exhausted:
+            return "pr", f"the model exhausted its turn budget on this diff ({exhausted})"
+        # Either test is enough here, unlike the result-record path above. A
+        # stream that stops mid-flight can show few turns and still have read
+        # most of the diff, because one researcher turn carrying a large file
+        # is a whole unit of work; the tokens are the direct evidence and the
+        # turn count is only a proxy for them.
+        if (turns >= MIN_REAL_TURNS or seen >= MIN_REAL_TOKENS) and seen > 0:
+            return "pr", (f"the model did real work on this diff ({turns} turns, "
+                          f"{int(seen)} tokens) and the run then died without "
+                          f"writing a result record")
         return "unknown", "execution log present but no metrics record found"
 
     # Before anything else: an account-level limit is not this PR's fault at
