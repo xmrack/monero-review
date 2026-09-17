@@ -5,14 +5,13 @@
 #   ./review-local.sh 9876              # the standard review
 #   ./review-local.sh 9876 claude-fable-5-1
 #   DEEP=1 ./review-local.sh 9876       # the full multi-agent deep review
-#   TIER=single ./review-local.sh 9876  # the single-reviewer fallback
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 #
 # TWO TIERS, both the agent fleet, differing in how wide it is thrown:
 #
 #   standard  /monero-standard-review, high effort, 300 turns. The diff is
-#             mapped into at most 5 units, one researcher takes each with all
+#             mapped into at most 4 units, one researcher takes each with all
 #             of its weakness classes, and every candidate faces two verifier
 #             angles whose votes are counted in code. Its own adversary, so
 #             there is no separate refutation pass. This is what every review
@@ -28,10 +27,12 @@
 # cores finishes proportionally sooner. This is the cheapest place to measure
 # what either really costs before spending a CI runner's afternoon on one.
 #
-# TIER=single is not a third tier. It is the single-reviewer shape this queue
-# used to run -- one session over the whole diff, then /monero-review-refute
-# over whatever it found -- kept as the fallback for a session that cannot
-# grant the agent tools. Nothing in CI routes to it.
+# TWO is the whole of it. A single-reviewer shape used to sit below these --
+# one session over the whole diff, then a separate refutation pass over what it
+# found -- as the fallback for a session that could not be granted the agent
+# tools. It is gone: both tiers are the fleet, and a session that cannot
+# dispatch agents now stops and says so rather than reviewing worse and
+# publishing a report that reads the same.
 set -euo pipefail
 
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
@@ -50,8 +51,8 @@ case "$DEEP" in 0|false|no|off) DEEP="" ;; esac
 TIER=${TIER:-standard}
 [ -n "$DEEP" ] && TIER=deep
 case "$TIER" in
-  standard|deep|single) ;;
-  *) echo "!! unknown TIER '$TIER' (standard, deep or single); using standard" >&2
+  standard|deep) ;;
+  *) echo "!! unknown TIER '$TIER' (standard or deep); using standard" >&2
      TIER=standard ;;
 esac
 
@@ -289,10 +290,11 @@ TOOLS="Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Ba
 # because it answers mapping questions and decides nothing.)
 FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-refactor-check),Agent(monero-explore)"
 
-# The changed-file list, on disk before the review starts. The reviewer's
-# Coverage section has to account for every path in it and scripts/coverage.py
-# checks that it did -- so the reviewer copies a total rather than deriving
-# one. Three dots: origin/base..HEAD would be the branch divergence.
+# The changed-file list, on disk before the review starts. The mapper's
+# partition is compared against it inside the workflow script, and whatever it
+# left out is published as `unaccounted` -- so the report copies a total rather
+# than deriving one. Three dots: origin/base..HEAD would be the branch
+# divergence.
 {
   echo "# Files changed by this pull request, from"
   echo "# git diff --name-only origin/base...HEAD"
@@ -305,15 +307,16 @@ FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),A
 # taken without the flag and the CLI does not document its default, so naming
 # a level there would be changing a measured pipeline blind. An empty EFFORT
 # omits the argument entirely.
-IS_FLEET=false
 TIER_MODEL=claude-opus-5
 case "$TIER" in
-  standard) PROMPT="/monero-standard-review"; EFFORT=high; IS_FLEET=true ;;
-  deep)     PROMPT="/monero-deep-review";     EFFORT=;     IS_FLEET=true ;;
-  single)   PROMPT="/monero-security-review"; EFFORT=high ;;
+  standard) PROMPT="/monero-standard-review"; EFFORT=high ;;
+  deep)     PROMPT="/monero-deep-review";     EFFORT= ;;
 esac
 [ "$MODEL" = "auto" ] && MODEL="$TIER_MODEL"
-[ "$IS_FLEET" = "true" ] && TOOLS="$TOOLS,$FLEET_TOOLS"
+# Both tiers are the fleet, so the fleet grants are unconditional. They were
+# conditional while a single-reviewer tier existed that had to run without
+# them; nothing here runs without them now.
+TOOLS="$TOOLS,$FLEET_TOOLS"
 # Built as the whole argument or nothing, so it can be interpolated unquoted
 # without leaving a bare `--effort` behind when the level is empty.
 EFFORT_ARG=()
@@ -323,7 +326,7 @@ EFFORT_ARG=()
 # macOS still ships 3.2. That would abort the deep tier -- the one case where
 # the array is empty -- with "unbound variable" and nothing else.
 
-rm -f "$CACHE/review.md" "$CACHE/exec.json" "$CACHE/exec-refute.json"
+rm -f "$CACHE/review.md" "$CACHE/exec.json"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
 ( cd "$CACHE" && claude -p "$PROMPT" \
@@ -335,138 +338,90 @@ if [ ! -s "$CACHE/review.md" ]; then
   exit 1
 fi
 
-# Adversarial second pass, only if the first found something to attack.
-EXEC_FILES="$CACHE/exec.json"
-# Whether the adversarial pass ran is part of the deliverable, so the script
-# states it rather than leaving a reader to infer it. Same wording as the
-# workflow's stamp, so a local review and a CI review read alike.
-VERIFIED="**NOT VERIFIED** — the adversarial pass did not complete. Expect false positives."
-# labels.py is the one place that knows what a severity heading looks like;
-# asking it here keeps this gate from drifting away from the workflow's, which
-# is how unverified findings got published once already.
-if [ "$IS_FLEET" = "true" ]; then
-  # A fleet pipeline is its own adversary: every candidate faced a panel of
-  # independent verifiers -- three angles at deep, two at medium -- and the
-  # votes were counted in code. Running /monero-review-refute over that would
-  # pay for a second adversary and rewrite a report written to a different
-  # spec, dropping the Coverage section these pipelines exist to produce.
-  #
-  # Read the report's coverage stamp for the same reason the workflow does:
-  # if the agent fleet dies mid-run the pipeline still returns no findings,
-  # and an honest report of that is indistinguishable from a clean review
-  # unless somebody counts the cells that never reported.
-  STAMP=$(grep -o '<!-- deep-scan [^>]*-->' "$CACHE/review.md" | tail -1 || true)
-  field() { printf '%s' "$STAMP" | sed -n "s/.*[[:space:]]$1=\([0-9]\{1,\}\).*/\1/p"; }
-  # 10# forces base 10: `failedCells=08` is otherwise an octal literal and the
-  # arithmetic below dies with "value too great for base". `if`, not `&&`, so
-  # an absent field does not carry a failure into the assignment under -e.
-  num() { v=$(field "$1"); if [ -n "$v" ]; then printf '%s' "$(( 10#$v ))"; fi; }
-  CELLS=$(num cells);      FAILED=$(num failedCells)
-  CANDS=$(num candidates); CONF=$(num confirmed)
-  REFUT=$(num refuted);    UNVER=$(num unverified)
-  # Optional, so an absent field stays empty and never reaches arithmetic.
-  DEFER=$(num deferred)
-  # How many angles the panel actually ran, and which pipeline says it ran.
-  # Older stamps predate both; 3 is the right default for them because medium
-  # did not exist when they were written, and an absent profile is not an
-  # error -- a disagreeing one is.
-  ANGLES=$(num angles); ANGLES=${ANGLES:-3}
-  PROF=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
-  # The stamp is written by the model. The execution log is the independent
-  # record that the fleet it describes was ever dispatched.
-  FLEET=no
-  grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' \
-    "$CACHE/exec.json" 2>/dev/null && FLEET=yes
-  # Both halves of the pipeline can die independently. Healthy research plus a
-  # dead verifier fleet returns every candidate as unverified and an empty
-  # findings list, which reads exactly like a clean review unless somebody
-  # counts. Same checks the workflow runs, in the same order.
-  if [ -z "$CELLS" ] || [ -z "$FAILED" ] || [ -z "$CANDS" ] || \
-     [ -z "$CONF" ] || [ -z "$REFUT" ] || [ -z "$UNVER" ]; then
-    echo "!! $TIER report carries no readable coverage stamp -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran."
-  elif [ -n "$PROF" ] && [ "$PROF" != "$TIER" ]; then
-    echo "!! ran as $TIER but the stamp says $PROF -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — this run was started as \`$TIER\` but the report's coverage stamp says the \`$PROF\` pipeline produced it. The numbers describe a run nobody asked for."
-  elif [ "$FLEET" != "yes" ]; then
-    echo "!! execution log records no Workflow/Agent call -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched."
-  elif [ "$(( CONF + REFUT + UNVER ))" -ne "$CANDS" ]; then
-    echo "!! coverage stamp does not add up -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the coverage stamp does not add up ($CONF + $REFUT + $UNVER is not $CANDS), so it was not taken from a real pipeline result."
-  elif [ "$CELLS" -eq 0 ]; then
-    echo "!! $TIER pass dispatched no research cells -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
-  elif [ "$(( FAILED * 2 ))" -gt "$CELLS" ]; then
-    echo "!! $FAILED of $CELLS research cells failed -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — $FAILED of $CELLS research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
-  elif [ "$CANDS" -gt 0 ] && [ "$(( UNVER * 2 ))" -gt "$CANDS" ]; then
-    echo "!! no panel verdict on $UNVER of $CANDS candidates -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $UNVER of $CANDS candidates. An empty findings list means the panel went silent, not that the candidates died honestly."
-  elif [ "$CANDS" -eq 0 ] && [ "$(( FAILED * 4 ))" -gt "$CELLS" ]; then
-    # The no-findings case has no panel evidence behind it at all, so it rests
-    # entirely on how much of the diff was read. The majority test above is too
-    # lenient for the strongest claim this pipeline makes.
-    echo "!! nothing proposed and $FAILED of $CELLS cells failed -- UNVERIFIED" >&2
-    VERIFIED="**NOT VERIFIED** — nothing was proposed, but $FAILED of $CELLS research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
-  else
-    echo "==> $TIER pass verified itself ($(( CELLS - FAILED )) of $CELLS cells, $(( CONF + REFUT )) of $CANDS candidates decided)"
-    VERIFIED="verified by the $TIER pipeline's own panel, which decided $(( CONF + REFUT )) of $CANDS candidate(s) — $CONF confirmed, $REFUT refuted. Each faced $ANGLES verifiers on separate angles; the votes were counted in code rather than argued in prose. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
-    # `if`, not `&&`: a false && chain here would be the block's exit status.
-    if [ -n "$DEFER" ] && [ "$DEFER" != "0" ]; then
-      VERIFIED="$VERIFIED $DEFER observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
-    fi
-  fi
-elif [ -n "$(python3 "$HERE/scripts/labels.py" "$CACHE/review.md")" ]; then
-  echo "==> findings present, verifying"
-  # Tolerate failure here: pass 1's work still has value, but it must be
-  # labelled, because unverified findings are mostly false positives.
-  # Same model and same effort as the pass it is attacking: an adversary
-  # thinking less than the reviewer refutes by running out of patience rather
-  # than by reading a guard.
-  if ( cd "$CACHE" && claude -p "/monero-review-refute" \
-         --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
-         --output-format json --allowedTools "$TOOLS" \
-         > exec-refute.json ); then
-    EXEC_FILES="$EXEC_FILES,$CACHE/exec-refute.json"
-    VERIFIED="every finding above was attacked by an independent adversarial pass, default verdict REFUTED. Refuted candidates are kept in the report."
-  else
-    echo "!! verification pass failed -- findings are UNVERIFIED" >&2
-    printf '> **UNVERIFIED** — the adversarial verification pass did not\n> complete. Expect false positives.\n\n%s\n' \
-      "$(cat "$CACHE/review.md")" > "$CACHE/review.md.tmp"
-    mv "$CACHE/review.md.tmp" "$CACHE/review.md"
-  fi
-else
-  echo "==> no findings, skipping verification"
-  VERIFIED="first pass reported no findings, so there was nothing to attack."
-fi
-
-# COVERAGE, on the single-reviewer fallback only, and after the refutation
-# pass so a rewrite that dropped the section is caught rather than missed. Both
-# real tiers carry richer accounting in the stamp above, checked there.
+# Whether the pipeline verified itself is part of the deliverable, so the
+# script states it rather than leaving a reader to infer it. Same wording as
+# the workflow's stamp, so a local review and a CI review read alike.
+VERIFIED="**NOT VERIFIED** — the review pass did not complete. Expect false positives."
+# There is no separate adversarial pass to run. A fleet pipeline is its own
+# adversary: every candidate faced a panel of independent verifiers -- three
+# angles at deep, two at standard -- and the votes were counted in code. A
+# second single-model adversary on top would be paid for twice and would
+# rewrite a report written to a different spec, dropping the Coverage section
+# these pipelines exist to produce.
 #
-# This is the only caller of scripts/coverage.py left. CI does not run the
-# fallback, so nothing there does: it stays because the fallback is what a
-# session without the agent grants falls back TO, and a fallback whose report
-# cannot say what it read is the failure the whole check exists to catch.
-if [ "$IS_FLEET" != "true" ]; then
-  COV=$(python3 "$HERE/scripts/coverage.py" "$CACHE/review.md" "$CACHE/PR_FILES.md")
-  COV_STATE=$(printf '%s\n' "$COV" | sed -n 's/^state=//p')
-  COV_NOTE=$(printf '%s\n' "$COV" | sed -n 's/^note=//p')
-  case "$COV_STATE" in
-    ok|unchecked) VERIFIED="$VERIFIED $COV_NOTE" ;;
-    *)
-      echo "!! coverage: $COV_NOTE" >&2
-      VERIFIED="**NOT VERIFIED** — $COV_NOTE In CI this withholds the issue and the pull request stays in the queue."
-      ;;
-  esac
+# Read the report's coverage stamp for the same reason the workflow does: if
+# the agent fleet dies mid-run the pipeline still returns no findings, and an
+# honest report of that is indistinguishable from a clean review unless
+# somebody counts the cells that never reported.
+STAMP=$(grep -o '<!-- deep-scan [^>]*-->' "$CACHE/review.md" | tail -1 || true)
+field() { printf '%s' "$STAMP" | sed -n "s/.*[[:space:]]$1=\([0-9]\{1,\}\).*/\1/p"; }
+# 10# forces base 10: `failedCells=08` is otherwise an octal literal and the
+# arithmetic below dies with "value too great for base". `if`, not `&&`, so
+# an absent field does not carry a failure into the assignment under -e.
+num() { v=$(field "$1"); if [ -n "$v" ]; then printf '%s' "$(( 10#$v ))"; fi; }
+CELLS=$(num cells);      FAILED=$(num failedCells)
+CANDS=$(num candidates); CONF=$(num confirmed)
+REFUT=$(num refuted);    UNVER=$(num unverified)
+# Optional, so an absent field stays empty and never reaches arithmetic.
+DEFER=$(num deferred)
+# How many angles the panel actually ran, and which pipeline says it ran.
+# Older stamps predate both; 3 is the right default for them because medium
+# did not exist when they were written, and an absent profile is not an
+# error -- a disagreeing one is.
+ANGLES=$(num angles); ANGLES=${ANGLES:-3}
+PROF=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
+# The stamp is written by the model. The execution log is the independent
+# record that the fleet it describes was ever dispatched.
+FLEET=no
+grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' \
+  "$CACHE/exec.json" 2>/dev/null && FLEET=yes
+# Both halves of the pipeline can die independently. Healthy research plus a
+# dead verifier fleet returns every candidate as unverified and an empty
+# findings list, which reads exactly like a clean review unless somebody
+# counts. Same checks the workflow runs, in the same order.
+if [ -z "$CELLS" ] || [ -z "$FAILED" ] || [ -z "$CANDS" ] || \
+   [ -z "$CONF" ] || [ -z "$REFUT" ] || [ -z "$UNVER" ]; then
+  echo "!! $TIER report carries no readable coverage stamp -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — the $TIER pass wrote a report carrying no readable coverage stamp, so there is no evidence its agent fleet ran."
+elif [ -n "$PROF" ] && [ "$PROF" != "$TIER" ]; then
+  echo "!! ran as $TIER but the stamp says $PROF -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — this run was started as \`$TIER\` but the report's coverage stamp says the \`$PROF\` pipeline produced it. The numbers describe a run nobody asked for."
+elif [ "$FLEET" != "yes" ]; then
+  echo "!! execution log records no Workflow/Agent call -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — the report carries a coverage stamp, but the execution log records no \`Workflow\` or \`Agent\` tool call, so the agent fleet the stamp describes was never dispatched."
+elif [ "$(( CONF + REFUT + UNVER ))" -ne "$CANDS" ]; then
+  echo "!! coverage stamp does not add up -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — the coverage stamp does not add up ($CONF + $REFUT + $UNVER is not $CANDS), so it was not taken from a real pipeline result."
+elif [ "$CELLS" -eq 0 ]; then
+  echo "!! $TIER pass dispatched no research cells -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — the $TIER pass dispatched no research cells at all, so nothing was examined."
+elif [ "$(( FAILED * 2 ))" -gt "$CELLS" ]; then
+  echo "!! $FAILED of $CELLS research cells failed -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — $FAILED of $CELLS research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+elif [ "$CANDS" -gt 0 ] && [ "$(( UNVER * 2 ))" -gt "$CANDS" ]; then
+  echo "!! no panel verdict on $UNVER of $CANDS candidates -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — the research half ran, but no verifier panel reached a verdict on $UNVER of $CANDS candidates. An empty findings list means the panel went silent, not that the candidates died honestly."
+elif [ "$CANDS" -eq 0 ] && [ "$(( FAILED * 4 ))" -gt "$CELLS" ]; then
+  # The no-findings case has no panel evidence behind it at all, so it rests
+  # entirely on how much of the diff was read. The majority test above is too
+  # lenient for the strongest claim this pipeline makes.
+  echo "!! nothing proposed and $FAILED of $CELLS cells failed -- UNVERIFIED" >&2
+  VERIFIED="**NOT VERIFIED** — nothing was proposed, but $FAILED of $CELLS research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
+else
+  echo "==> $TIER pass verified itself ($(( CELLS - FAILED )) of $CELLS cells, $(( CONF + REFUT )) of $CANDS candidates decided)"
+  VERIFIED="verified by the $TIER pipeline's own panel, which decided $(( CONF + REFUT )) of $CANDS candidate(s) — $CONF confirmed, $REFUT refuted. Each faced $ANGLES verifiers on separate angles; the votes were counted in code rather than argued in prose. Coverage: $(( CELLS - FAILED )) of $CELLS research cells reported."
+  # `if`, not `&&`: a false && chain here would be the block's exit status.
+  if [ -n "$DEFER" ] && [ "$DEFER" != "0" ]; then
+    VERIFIED="$VERIFIED $DEFER observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
+  fi
 fi
 
 # Same footer the workflow appends: model, tier, fleet size, wall clock,
 # whole-run tokens, cost, lead turns. JOURNAL is where the CLI writes one
-# `started` entry per dispatched fleet agent; TIER=single leaves no journal and
-# the agent field is then correctly absent rather than reported as zero.
-EXEC_FILE="$EXEC_FILES" REVIEW_MD="$CACHE/review.md" T0="$T0" MODEL="$MODEL" \
+# `started` entry per dispatched fleet agent; a run that dispatched none leaves
+# no journal, and the agent field is then correctly absent rather than reported
+# as zero.
+EXEC_FILE="$CACHE/exec.json" REVIEW_MD="$CACHE/review.md" T0="$T0" MODEL="$MODEL" \
   TIER="$TIER" \
   JOURNAL="$HOME/.claude/projects/*/*/subagents/workflows/*/journal.jsonl" \
   python3 "$HERE/scripts/telemetry.py"

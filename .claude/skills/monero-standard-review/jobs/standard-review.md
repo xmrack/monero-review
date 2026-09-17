@@ -42,15 +42,15 @@ For the report's `Change:` line: `git diff --shortstat origin/base...HEAD`
 ## 3. Confirm you can actually run it
 
 Check that `Workflow` is among the tools available to you right now, with its
-parameters. This skill's frontmatter asking for it proves nothing: the
-single-reviewer fallback runs with a narrow allowlist carrying neither
-`Workflow` nor `Agent`, and this skill is written for a session where both are
-granted.
+parameters. This skill's frontmatter asking for it proves nothing: a session
+can be started with a narrow allowlist carrying neither `Workflow` nor `Agent`,
+and this skill is written for one where both are granted.
 
 If it is missing, stop with one line: that this review needs the Workflow
-tool, this session does not have it, so nothing ran, and
-`/monero-security-review`, the single-reviewer fallback, is what to use here.
-Do not improvise around it.
+tool, this session does not have it, so nothing ran. There is no lesser
+reviewer to fall back to -- a single-reviewer fallback existed once and was
+removed, because a report it produced was indistinguishable from one the fleet
+produced. Do not improvise around it.
 Dispatching the agents yourself would yield a report claiming a verification
 nobody performed, which is the one thing this skill must never produce.
 

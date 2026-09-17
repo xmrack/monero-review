@@ -35,7 +35,7 @@ Whether this pull request caused the weakness is a label you report, below, and
 not a fourth thing it has to pass.
 
 **REACHABILITY.** Start at the input. Is it genuinely attacker-controlled in the
-terms `.claude/skills/monero-security-review/references/trust-boundaries.md` uses -- bytes off the P2P socket, an RPC
+terms `.claude/references/monero/trust-boundaries.md` uses -- bytes off the P2P socket, an RPC
 field, a block or transaction from a peer, a daemon's answer arriving at a
 wallet -- or does it come from this codebase's own configuration, a build step,
 or a caller that cannot be anyone but the operator? Then ask whether the path is
@@ -138,7 +138,7 @@ does not make this one hold. If its line is wrong but what it describes is
 real elsewhere, write that down precisely -- your reasoning is what the Lead
 reads, and that is a useful outcome, not a failure.
 
-Before you finish, check `.claude/skills/monero-security-review/references/refutations.md`. If this claim has already
+Before you finish, check `.claude/references/monero/refutations.md`. If this claim has already
 been settled there, cite it.
 
 # Rating it, if it holds

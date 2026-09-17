@@ -123,11 +123,11 @@ here; `README.md` is the index):
 
 What to suspect:
 
-- `.claude/skills/monero-security-review/references/trust-boundaries.md`:
+- `.claude/references/monero/trust-boundaries.md`:
   who can reach what, and which inputs are attacker-controlled.
-- `.claude/skills/monero-security-review/references/codebase-notes.md`: how
+- `.claude/references/monero/codebase-notes.md`: how
   this tree is laid out and what is surprising about it.
-- `.claude/skills/monero-security-review/references/refutations.md`: claims
+- `.claude/references/monero/refutations.md`: claims
   already settled in past reviews. Check it before proposing something, and
   cite it when it answers you.
 

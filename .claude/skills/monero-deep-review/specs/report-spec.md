@@ -500,7 +500,7 @@ do not soften something real to be kind about the code.
 Where a refutation settles something about this codebase rather than about this
 diff (what epee's serializer really bounds, what a zero scalar does, which zone
 a limit applies to), say so, and name it as worth adding to
-`.claude/skills/monero-security-review/references/refutations.md`. That file is
+`.claude/references/monero/refutations.md`. That file is
 why the next review does not re-propose it, and this pipeline is the cheapest
 place to grow it. Do not edit it from here: propose, and let a human land it.
 

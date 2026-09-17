@@ -28,7 +28,7 @@ Each unit you emit carries:
   literal, no globs.
 - `role`: one line on what this part of the change does.
 - `boundary`: the trust boundary it sits behind, named as
-  `.claude/skills/monero-security-review/references/trust-boundaries.md` names them: the P2P/Levin surface, the
+  `.claude/references/monero/trust-boundaries.md` names them: the P2P/Levin surface, the
   restricted or unrestricted RPC surface, block and transaction validation,
   the daemon-to-wallet direction, a co-signer's messages (multisig and cold
   signing), a hardware device's responses, the wallet cache and key files,

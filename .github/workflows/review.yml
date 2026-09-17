@@ -60,10 +60,10 @@ on:
       # They are the same thing.
       #
       # A third value briefly existed for the single-reviewer shape this queue
-      # used to run. It is not a tier any more: that reviewer survives at
-      # .claude/skills/monero-security-review/ as the fallback for a session
-      # where the agent fleet cannot be dispatched, and review-local.sh reaches
-      # it with TIER=single. Nothing in CI routes to it.
+      # used to run. It is not a tier any more, and the reviewer itself is
+      # gone: its report was indistinguishable from the fleet's, so a session
+      # that cannot dispatch agents now stops and says so rather than falling
+      # back to something that reads the same and verified nothing.
       mode:
         description: "Review depth. deep = the full multi-agent pipeline; requires a PR number above, never 'sweep'."
         required: false
@@ -211,8 +211,6 @@ env:
   #
   # Copies that still have to be changed by hand, and are documentation
   # rather than the thing that binds:
-  #   .claude/skills/monero-security-review/SKILL.md  (frontmatter)
-  #   .claude/skills/monero-review-refute/SKILL.md    (frontmatter)
   #   .claude/skills/monero-deep-review/SKILL.md      (frontmatter, + FLEET)
   #   .claude/skills/monero-standard-review/SKILL.md  (frontmatter, + FLEET)
   #   review-local.sh                                 (TOOLS, + FLEET_TOOLS)
@@ -238,16 +236,15 @@ env:
   # under different profiles, so there is no longer a pass that runs without
   # these. It is kept as a separate name rather than folded into ALLOWED_TOOLS
   # because the two lists answer different questions -- what any session here
-  # may touch, and what a session supervising a fleet additionally may -- and
-  # the fallback reviewer at .claude/skills/monero-security-review/ still runs
-  # on the first list alone.
+  # may touch, and what a session supervising a fleet additionally may. The
+  # split earned its keep while a single-reviewer fallback ran on the first
+  # list alone; it is kept now because the question it answers is still the
+  # right one to be able to answer separately.
   #
   # `Workflow` runs that script; the six `Agent` entries are the fleet it
-  # dispatches. The fallback reviewer's skill and the refutation skill were never
-  # written to supervise a fleet, so granting these to them would let a
-  # single-reviewer skill fan out unsupervised -- keep them here. (The one
-  # Agent grant they DO get, `Agent(monero-explore)`, is in ALLOWED_TOOLS
-  # above, with the reasoning for why that one is different.)
+  # dispatches. (The one grant every pass here gets whether or not it
+  # supervises a fleet, `Agent(monero-explore)`, is in ALLOWED_TOOLS above,
+  # with the reasoning for why that one is different.)
   #
   # Six separate `Agent(name)` entries rather than one `Agent(a, b, c, ...)`.
   # Rules in this list union -- that is exactly how the 76 `Bash(...)` rules
@@ -1207,11 +1204,12 @@ jobs:
           echo "::notice::tier=$tier model=$model effort=${effort:-(cli default)} turns=$turns prompt=$prompt"
 
       # The changed-file list, on disk before the review starts. Two readers:
-      # the reviewer, whose `## Coverage` section has to account for every path
-      # in it, and scripts/coverage.py, which checks that it did before
-      # anything is published. Precomputing it means the reviewer copies a
-      # total rather than deriving one, so the gate is about whether every file
-      # was accounted for and not about arithmetic.
+      # the report, whose `## Coverage` section has to account for every path
+      # in it, and the workflow script, which compares the mapper's partition
+      # against it and returns whatever was left out as `unaccounted` before
+      # anything is published. Precomputing it means the report copies a total
+      # rather than deriving one, so the gate is about whether every file was
+      # accounted for and not about arithmetic.
       #
       # Three dots. `origin/base..HEAD` would give the branch divergence
       # instead of the change -- measured at 353 files for a two-file backport.
@@ -1373,10 +1371,9 @@ jobs:
       # would be paid for twice and would rewrite a report written to a
       # different spec, throwing `## Coverage` away in the process.
       #
-      # `.claude/skills/monero-review-refute/` is kept, and is not dead: it is
-      # what review-local.sh runs behind the single-reviewer fallback
-      # (TIER=single), which is the path for a session where the fleet cannot
-      # be dispatched. Nothing in CI reaches either of them.
+      # The refutation skill that ran it is gone too, along with the
+      # single-reviewer fallback it sat behind. Neither had a caller left once
+      # both tiers became the fleet.
 
       # Footer with cost/tokens/duration. One pass now, on both tiers -- the
       # adversarial second session is gone, so there is nothing to sum.
@@ -1407,8 +1404,8 @@ jobs:
       # `prompt-injection` is a finding category for exactly that reason. What
       # comes out of here is handed to a job that can write to this repository,
       # so the script takes four typed string fields and refuses any entry
-      # naming a file outside the two reference directories. It cannot propose
-      # a change to a workflow, an agent prompt or a skill.
+      # naming a file outside the reference directory. It cannot propose a
+      # change to a workflow, an agent prompt or a skill.
       - name: Collect proposed reference corrections
         if: always()
         run: |
@@ -1500,9 +1497,8 @@ jobs:
       # no-findings report carrying a non-zero one does not publish at all,
       # and a report with findings publishes saying it is partial.
       #
-      # scripts/coverage.py and the `## Coverage` section in
-      # monero-security-review are kept for the single-reviewer fallback,
-      # which review-local.sh still runs. Nothing in CI calls them.
+      # scripts/coverage.py, which performed the older check, is gone with the
+      # single-reviewer fallback that was its last caller.
 
       - name: Verification status
         id: verified
@@ -2150,10 +2146,10 @@ jobs:
   #   - it checks out THIS repo only; the Monero tree is never fetched, so
   #     PR_CONTEXT.md, PR_DISCUSSION.md and the diff do not exist here;
   #   - its whole input is four short string fields per entry, already filtered
-  #     by extract_updates.py to the two reference directories, so no entry can
+  #     by extract_updates.py to the reference directory, so no entry can
   #     name a workflow, an agent prompt or a skill;
-  #   - `Edit` is granted only under those same two directories, so the
-  #     allowlist refuses what the filter would have to have missed;
+  #   - `Edit` is granted only under that same directory, so the allowlist
+  #     refuses what the filter would have to have missed;
   #   - it opens a pull request and never pushes to the default branch.
   #
   # A change to the files that tell the reviewer what to think is this
@@ -2371,9 +2367,8 @@ jobs:
       # Claude Code carries a built-in rule that refuses Edit and Write under
       # `.claude/**`. It sits ABOVE `--allowedTools` and is not something a
       # prompt, an allowlist or a settings file argument can be relied on to
-      # lift -- and `.claude/references/monero/` and
-      # `.claude/skills/monero-security-review/references/` are the only two
-      # directories this channel exists to edit. So every edit it has ever
+      # lift -- and `.claude/references/monero/` is the only directory this
+      # channel exists to edit. So every edit it has ever
       # attempted was refused, on every run, by a rule nothing in this
       # workflow had noticed.
       #
@@ -2393,7 +2388,7 @@ jobs:
       # nothing here: the run after it recorded `permission_denials: []` only
       # because it had skipped everything and never attempted an Edit at all.
       #
-      # `refs-work/` is a copy of both trees at the repository root, where no
+      # `refs-work/` is a copy of that tree at the repository root, where no
       # such rule applies, with the `.claude/` prefix stripped. The writer
       # reads and edits that; the step after it copies the `.md` files back to
       # their real paths and deletes the copy. A copy rather than a move, and
@@ -2406,10 +2401,8 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf refs-work
-          mkdir -p refs-work/references refs-work/skills/monero-security-review
+          mkdir -p refs-work/references
           cp -a .claude/references/monero refs-work/references/monero
-          cp -a .claude/skills/monero-security-review/references \
-                refs-work/skills/monero-security-review/references
 
           # `file` is rewritten to the copy so the writer opens the file it is
           # actually able to edit, and the real path is kept as `origin` so
@@ -2514,7 +2507,7 @@ jobs:
             it.
 
             EDIT `file`, NOT `origin`. Everything under `refs-work/` is a copy
-            this job made a moment ago of the two reference directories under
+            this job made a moment ago of the reference directory under
             `.claude/`; when you are done the job copies your edits back to
             the real paths, and it is those that reach the pull request. The
             copy exists because Claude Code refuses outright to edit anything
@@ -2560,7 +2553,7 @@ jobs:
             from `SUMMARY.md` and `SKIPPED.md` in the repository root. The
             copy-back step takes only `.md` files from under `refs-work/` and
             ignores anything else you leave there, and the commit step refuses
-            to stage anything outside the two reference directories and aborts
+            to stage anything outside the reference directory and aborts
             the whole job rather than let it through. Do not work around
             either, and do not edit `proposals.json`.
 
@@ -2746,8 +2739,7 @@ jobs:
           ignored=0
           while IFS= read -r src; do
             case "$src" in
-              refs-work/references/monero/*.md | \
-              refs-work/skills/monero-security-review/references/*.md)
+              refs-work/references/monero/*.md)
                 dst=".claude/${src#refs-work/}" ;;
               *)
                 echo "  ignored: $src"
@@ -2836,7 +2828,7 @@ jobs:
           # The ledger is no longer in this list, because it is no longer in
           # this branch. Nothing but a reference edit may be committed here.
           outside=$(git diff --cached --name-only | grep -vE \
-            '^(\.claude/references/monero/|\.claude/skills/monero-security-review/references/)' \
+            '^\.claude/references/monero/' \
             || true)
           if [ -n "$outside" ]; then
             echo "::error::staged changes outside the reference directories; refusing to commit or push"

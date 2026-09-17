@@ -99,8 +99,8 @@ read.
 
 # Shell shapes
 
-The same sandbox as every other review here, whose full account is in
-`.claude/skills/monero-security-review/SKILL.md`. The
+The same sandbox as every other review here, whose full account is under
+"Shell shapes that cost a turn" in `.claude/agents/monero-context.md`. The
 ones that cost a turn: no redirect to a file, no `for`/`while`/`if` block, no
 `$(...)`, nothing outside the tree, no `git -C` (`cd` instead), and `g++ -E` as
 the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command

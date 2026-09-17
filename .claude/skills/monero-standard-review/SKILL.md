@@ -14,9 +14,10 @@ It replaced a single reviewer holding the entire change in one context. That
 shape is fine for a three-file patch and it degrades as the diff widens: every
 tool result stays in the window for the rest of the run, so the files read last
 are read by the most diluted context, and nothing checked whether they had been
-read at all. `.claude/skills/monero-security-review/` still holds that reviewer
-and is what a run falls back to when the agent fleet cannot be dispatched -- it
-is not a tier and nothing routes to it.
+read at all. That reviewer is gone rather than kept as a fallback: the report
+it wrote was indistinguishable from this one's, so a session that cannot
+dispatch the fleet stops and says so instead of reviewing worse and publishing
+something that reads the same.
 
 This is the deep pipeline with the expensive parts removed. It runs the same
 `monero-deep-scan` workflow under `profile: "standard"`, which:
@@ -70,7 +71,7 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=standard -f pr=sw
 
 The workflow appends `Workflow`, `TaskOutput` and the five `Agent(...)` grants
 when it dispatches this skill, exactly as it does for the deep pass, and runs
-no `/monero-review-refute` pass -- this pipeline is its own adversary, and that
+no separate refutation pass -- this pipeline is its own adversary, and such a
 pass would rewrite `review.md` in place and throw `## Coverage` away.
 
 ## The job
@@ -94,8 +95,8 @@ There is one job. Read its recipe and follow it as written:
   - `.claude/references/monero/` -- how the codebase works. `README.md` is the
     index; `macros.md` and `flows.md` are the two every agent should have read
     before it forms a theory.
-  - `.claude/skills/monero-security-review/references/trust-boundaries.md`
-  - `.claude/skills/monero-security-review/references/codebase-notes.md`
-  - `.claude/skills/monero-security-review/references/refutations.md`
+  - `.claude/references/monero/trust-boundaries.md`
+  - `.claude/references/monero/codebase-notes.md`
+  - `.claude/references/monero/refutations.md`
 
 @${CLAUDE_SKILL_DIR}/role.md

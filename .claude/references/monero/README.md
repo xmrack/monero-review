@@ -24,6 +24,15 @@ wins** — and fix the file.
 | **`build-and-tests.md`** | the diff touches CMake, `contrib/depends`, `contrib/guix`, CI or `tests/` |
 | **`navigation.md`** | you are looking for something and want the recipe that actually works |
 
+The three below are the **judgement half** — not what the code is, but what to
+suspect of it and what has already been refuted:
+
+| file | read it when |
+|---|---|
+| **`trust-boundaries.md`** | you need to answer reachability concretely: where untrusted data enters, and the severity each boundary anchors to |
+| **`codebase-notes.md`** | you want the questions that have historically been worth asking of the subsystem in front of you |
+| **`refutations.md`** | **before reporting anything** — the recurring reasons candidate findings here turn out to be unreachable |
+
 ## Suggested order for a change you have not seen before
 
 1. `architecture.md` — 5 minutes, and it prevents most category errors.
@@ -52,19 +61,17 @@ wins** — and fix the file.
    `wallet_api` and `monero-wallet-cli` have different threat models and
    different concurrency. Name the one you mean.
 
-## Relationship to the review references
+## The two halves, and why both
 
-These files describe **what the code is**. The three files in
-`.claude/skills/monero-security-review/references/` describe **what to suspect
-and what has already been refuted**:
+Most of this directory describes **what the code is**. `trust-boundaries.md`,
+`codebase-notes.md` and `refutations.md` describe **what to suspect of it**.
+Use both: the first half to understand the code, the second to judge it. A
+finding that skips the first is usually a category error; one that skips the
+second has usually already been refuted.
 
-- `trust-boundaries.md` — where untrusted data enters, and severity anchoring.
-- `codebase-notes.md` — the review-oriented map, and the questions worth asking
-  of each subsystem.
-- `refutations.md` — the recurring reasons candidate findings here turn out to
-  be unreachable. **Read it before reporting anything.**
-
-Use both: this directory to understand the code, those three to judge it.
+They lived under the single-reviewer skill until that reviewer was removed.
+Nothing about them was ever skill-specific — every agent in the fleet reads
+them — so they are here now, where the rest of the shared references are.
 
 ## Keeping it honest
 
