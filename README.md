@@ -51,7 +51,7 @@ Every PR the sweep picks up gets a **standard** scan. I can manually launch a
 | researchers | one per unit, all its weakness classes | one per unit **per weakness class** |
 | a pass across the unit seams | no | yes |
 | a second look at every unit | no | yes |
-| verifier angles per candidate | 2 (reachability, introduced-by-this-diff) | 3 |
+| verifier angles per candidate | 2 (reachability, guard) | 3 (reachability, guard, impact) |
 | an advocate for a candidate one vote short | no | yes |
 | findings that are one defect merged into one entry | yes | yes |
 | chosen by | default, always | a human, by PR number |
