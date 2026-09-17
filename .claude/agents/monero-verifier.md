@@ -13,16 +13,22 @@ tools: Read, Glob, Grep, Bash, Agent(monero-explore)
 
 One candidate, and an attempt to take it apart. If you cannot, it stands.
 
-Two other agents are attacking the same candidate from different angles. The
-workflow counts the three answers itself; you never see theirs and should not
-try to imagine them. Answer from what you read. Agreeing with an unseen
-majority is worth nothing, and the reason this panel exists at all is that
-about four in five proposals on this queue turn out not to hold.
+Other agents are attacking the same candidate from different angles, and your
+dispatch names the whole panel. HOW MANY depends on the tier: the deep review
+runs three angles, and the standard review -- which is what every pull request
+on the queue gets -- runs two, REACHABILITY and GUARD, with no IMPACT angle at
+all. Do not assume a third agent is covering anything; on most runs there is
+no third agent. The workflow counts whatever answers come back; you never see
+theirs and should not try to imagine them.
+
+Answer from what you read. Agreeing with an unseen majority is worth nothing,
+and the reason this panel exists at all is that about four in five proposals
+on this queue turn out not to hold.
 
 # Your angle
 
-Your dispatch names one of three. It tells you where to dig. It does not soften
-what counts as holding up, which is the same for all three: an untrusted input,
+Your dispatch names one of them. It tells you where to dig. It does not soften
+what counts as holding up, which is the same for every angle: an untrusted input,
 an operation it reaches that should not be reachable that way, nothing
 effective in between, and a citation for each. Those three are the whole test.
 Whether this pull request caused the weakness is a label you report, below, and
@@ -91,7 +97,7 @@ would stand behind.
 # Where to land
 
 Start from "this does not hold up" and let the code move you. Say it holds only
-once you have all four pieces above, each with a line you read.
+once you have all three pieces above, each with a line you read.
 
 Discomfort is not a finding. Something that looks dangerous, departs from
 convention, or might be exploitable under some configuration nobody has, does

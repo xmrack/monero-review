@@ -193,7 +193,7 @@ const CANDIDATES_SCHEMA = {
     // is nevertheless not the same.
     //
     // This needs a channel that is not the candidate path, because the
-    // four-part test would throw most of these away and be RIGHT to: a
+    // three-part test would throw most of these away and be RIGHT to: a
     // reordered check with no untrusted input behind it is not a security
     // finding. It is still the thing a maintainer most wants to be told,
     // because the whole value of "this is just a refactor" is that a reviewer
@@ -245,7 +245,7 @@ const CANDIDATES_SCHEMA = {
     //
     // No panel and no severity, for the same reason the refactor channel has
     // neither. "This comment is wrong" has no untrusted input and reaches
-    // nothing, so the four-part test would throw it away and be right to,
+    // nothing, so the three-part test would throw it away and be right to,
     // while the maintainer still wants it -- a stale comment is what the NEXT
     // reader will believe.
     commentDiscrepancy: {
@@ -1080,7 +1080,7 @@ if (deferred.length) {
      'A claim like this is usually killed by the very next statement, and the',
      'point of this pass is that somebody checks rather than assuming.',
      '',
-     'File it as a candidate if all four legs hold. If it does not hold, return',
+     'File it as a candidate if all three legs hold. If it does not hold, return',
      'no candidates and say why in notFinished, naming the line that settles it',
      '-- that sentence is what gets published in its place.',
      '',
@@ -1104,7 +1104,7 @@ if (deferred.length) {
 
 // ---- Check the drift entries before anybody reads them ----
 //
-// These reach no panel, and that is the point: asking the four-part candidate
+// These reach no panel, and that is the point: asking the three-part candidate
 // test about a hunk with no untrusted input behind it throws away the honest
 // answer. But "no panel" was never meant to be "no reader". An entry here
 // costs a maintainer a file, both versions of it, and the attention to compare
@@ -1217,7 +1217,7 @@ if (refactorDrift.length) {
      'somebody checked.',
     ].join('\n'),
     // Its own agent, not monero-verifier. The verifier's whole body is the
-    // four-part candidate test, and pointing that at a drift entry asks the
+    // three-part candidate test, and pointing that at a drift entry asks the
     // wrong question in the way that loses the real ones: most of these have
     // no untrusted input, which is exactly why they are not candidates.
     { label: 'refactor-check:' + group.map((g) => g[0]).join('+'), phase: 'Check refactors',
@@ -1389,7 +1389,15 @@ const judged = await parallel(candidates.map((c) => () => parallel(
   ANGLES.map((angle) => () => agent(
     [CONTEXT, '',
      'Try to take ONE candidate apart. If you cannot, it stands.',
-     'Your angle: ' + angle,
+     // The verifier prompt tells the agent its dispatch names the whole panel,
+     // because the panel is not the same size at both tiers: three angles at
+     // deep, two at standard, which is every pull request on the queue. An
+     // agent that assumes a third angle is covering IMPACT leaves the hole
+     // nobody else fills.
+     'The panel on this candidate is ' + ANGLES.length + ' angle(s): ' + ANGLES.join(', ') + '.',
+     'Your angle: ' + angle + '. It says where to dig, not what counts as holding up.',
+     'No other angle is covering what yours does not' +
+       (ANGLES.includes('IMPACT') ? '.' : ', and no angle on this panel is asking what the impact buys.'),
      'Start from "this does not hold up" and let the code move you. Say it holds',
      'only with a line you read for each of: an untrusted input, what it reaches,',
      'and nothing effective in between.',
@@ -1519,7 +1527,7 @@ const results = judged.filter(Boolean)
 const dropped = judged.length - results.length
 if (dropped) log(dropped + ' candidate(s) failed verification outright and are reported as unverified')
 
-// All three angles start from "this does not hold". That bias is what makes the
+// Every angle starts from "this does not hold". That bias is what makes the
 // panel worth having, and it is also the one thing in this design that can lose
 // a real finding: the documented way a genuine defect dies here is a verifier
 // refuting it with a guard it assumed rather than read. A candidate that

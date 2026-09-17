@@ -47,6 +47,27 @@ client is generally not a finding, because that client can already do far worse
 by design. Confirm the handler's actual gating before claiming remote reach —
 do not assume from the method name.
 
+**This refutation does not cover who can reach the unrestricted port.** It
+answers one question only: given a client already speaking to the admin
+interface deliberately, is this handler extra power. It says nothing about a
+request the operator never made.
+
+The daemon is unrestricted BY DEFAULT. So a page in a browser, or any other
+process on the machine, issuing a cross-site or otherwise unattended request
+to `127.0.0.1:18081` is not "a client that can already do far worse" — it is
+an attacker who was never given the admin interface and took it. Reach of that
+shape is a finding, and the severity table's `Unrestricted-RPC-only` row does
+not apply to it.
+
+This is not hypothetical and it is the reason the distinction is written down:
+on PR 11196 an unauthenticated cross-site `GET` reaching `/stop_daemon` on a
+default daemon went unpublished, and recovering that finding is what the
+current finding standard exists for. A verifier citing this section against
+that shape of candidate has cited the wrong section.
+
+So before refuting on this basis, say which of the two it is: an operator who
+opened the admin interface on purpose, or a request that arrived without one.
+
 ## Boost already throws
 
 `boost::regex` has a complexity limit and throws when a match exceeds it, and
@@ -129,16 +150,22 @@ it, and all three have to go your way:
    reaches by mistyping an address, because there is no attacker in it.
 
 MEASURED, on 11185: `PendingTransactionImpl::commit` was proposed as reporting
-success after broadcasting nothing. The new `m_status = Status_Ok` in the
-broadcast branch at `src/wallet/api/pending_transaction.cpp:181` (the branch
-sits in lines 148-182; line 162 is inside the cold-sign loop over
-`m_pending_tx`) genuinely does overwrite a prior `Status_Error` on an empty
-`m_pending_tx`. It died on all three questions at once: nothing is broadcast so
-no state moves, `src/wallet/api/wallet2_api.h:858` documents the `status()`
-check that catches it, and the only in-tree caller,
-`WalletImpl::submitTransaction` at `src/wallet/api/wallet.cpp:1280` (`bool
-WalletImpl::submitTransaction(const string &fileName) {`), builds its own
-pending transaction through `load_tx` and never holds an errored empty object.
+success after broadcasting nothing. It died on all three questions at once:
+nothing is broadcast so no state moves, the header documents the `status()`
+check that catches it (`src/wallet/api/wallet2_api.h:862`, `:881`, `:893` all
+say "caller is responsible to check PendingTransaction::status()"), and the
+only in-tree caller, `WalletImpl::submitTransaction` at
+`src/wallet/api/wallet.cpp:1155`, builds its own pending transaction through
+`load_tx` and never holds an errored empty object.
+
+**The mechanism has since been rewritten and the old line numbers are gone**,
+which is the lesson as much as the verdict. `pending_transaction.cpp` is 266
+lines; the only `m_status = Status_Ok` assignments left are the constructor at
+`:55` and the save-to-file success at `:102`. The broadcast branch
+(`:105-136`) sets `m_status` only from its `catch` blocks, so an empty
+`m_pending_tx` now returns `true` off the constructor's optimistic initial
+value rather than off an overwrite. Same shape, different line. Re-read the
+function on the head you are reviewing before citing any anchor in this file.
 
 Where it dies here it is usually still worth telling a maintainer, because the
 author did not mean to write it. That is what `## Needs human review` is for:
@@ -197,7 +224,7 @@ MEASURED, on 11185: pending multisig rescan state is applied by transfer index
 with no check on which output sits at that index, so a reorg during the rescan
 was proposed as writing a composite key image built from another output. The
 wrong indices only arise from a lying daemon's chain view, and the resync
-erases it (`src/wallet/wallet2.cpp:4433`). The code is identical in
+erases it (`m_transfers.erase` at `src/wallet/wallet2.cpp:4430`). The code is identical in
 `origin/base`.
 
 Three limits:

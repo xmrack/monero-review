@@ -349,7 +349,7 @@ from nobody looking, and the Coverage **Refactors.** line spends a maintainer's
 attention only when something was actually raised.
 
 Why it gets its own section rather than a place among the findings: most of
-these have no untrusted input behind them, so the four-part candidate test
+these have no untrusted input behind them, so the three-part candidate test
 throws them out and is right to. That test is asking whether an attacker can do
 something. This section is asking a different question, which is whether the
 change does what it says. A maintainer wants the answer to both, and only one

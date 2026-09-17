@@ -227,8 +227,13 @@ one scope collide.
   (`contrib/epee/include/warnings.h:7`). Adding or removing one changes
   nothing. `DISABLE_GCC_WARNING` is a no-op under clang.
   `PUSH_WARNINGS` / `POP_WARNINGS` are real `_Pragma`s.
-- **`POD_CLASS`** (`src/common/pod-class.h:33`) is `struct`. Used 11 times,
-  all inside `#pragma pack(push,1)` in `src/crypto/crypto.h`.
+- **`POD_CLASS` is gone**, and so is `src/common/pod-class.h`. Older notes
+  and older review comments still reach for it. The key types it used to
+  declare are now plain `struct`s inside `#pragma pack(push, 1)` at
+  `src/crypto/crypto.h:50-91` — `ec_point`, `ec_scalar`, `ec_coord`,
+  `public_key`, `key_derivation`, `key_image`, `signature`, `view_tag`. The
+  packing is what makes them wire-shaped, so a field added inside that region,
+  or a `pop` moved, changes serialized layout with nothing warning about it.
 - **`CRYPTO_MAKE_COMPARABLE` / `_CONSTANT_TIME` / `CRYPTO_MAKE_HASHABLE` /
   `CRYPTO_DEFINE_HASH_FUNCTIONS`** (`src/crypto/generic-ops.h`) generate the
   `operator==`, `std::hash` and `boost::hash_value` for the key types. **None

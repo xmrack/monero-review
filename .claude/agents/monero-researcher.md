@@ -167,7 +167,7 @@ so a guess costs the run agents and reaches nobody. What survives is read by a
 maintainer who has been told somebody checked.
 
 This is **not a candidate**. It needs no untrusted input, no sink and no
-reachability argument, and the four-part test does not apply to it. Two rules
+reachability argument, and the three-part test does not apply to it. Two rules
 follow, and they point in opposite directions on purpose:
 
 - do not dress one up as a candidate to get it into the report. A reordered

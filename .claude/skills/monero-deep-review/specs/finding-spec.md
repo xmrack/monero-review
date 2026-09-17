@@ -41,7 +41,7 @@ The scope that remains is the unit: the code the change touches and the paths
 walked out of it. A weakness met on that walk counts. Going looking for
 weaknesses in code the change neither touches nor reaches does not.
 
-`prompt-injection` is the one category exempt from all four. Text in the tree
+`prompt-injection` is the one category exempt from all three. Text in the tree
 aimed at steering a reviewer is a finding on sight, with its file and line, and
 needs no reachability argument.
 

@@ -108,7 +108,7 @@ rg -n 'CRITICAL_REGION_LOCAL1?\(|m_sync_lock|m_incoming_tx_lock|m_blockchain_loc
 ```
 grep -n "^[a-z_:<>, ]*Blockchain::" src/cryptonote_core/blockchain.cpp
 ```
-`db_lmdb.cpp` (5769 lines) and `wallet2.cpp` (15450) respond to the same
+`db_lmdb.cpp` (5809 lines) and `wallet2.cpp` (15613) respond to the same
 trick with `BlockchainLMDB::` and `wallet2::`.
 `cryptonote_format_utils.cpp` uses a strict `//---` separator between every
 function, so `grep -n '^\s*//---'` enumerates it.
@@ -117,8 +117,10 @@ function, so `grep -n '^\s*//---'` enumerates it.
 ```
 rg -n 'HF_VERSION_|hf_version|get_current_hard_fork_version|get_ideal_version' <dir>
 ```
-Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-ops.h`, not
-`cryptonote_config.h`.
+Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-def.h:36`, not in
+`cryptonote_config.h` and not in `hash-ops.h` either. It is a bare `#define`,
+so it does not answer to the `HF_VERSION_` grep above; a RandomX gating change
+is invisible to that pattern.
 
 **Where does the wallet talk to the daemon?**
 ```

@@ -71,7 +71,7 @@ counts.
 Not severity. Not whether an attacker can reach it. Not whether it matters. A
 behaviour change nobody can reach is still a behaviour change, and the
 maintainer is the one who knows which behaviour was intended. Applying the
-four-part candidate test here would throw away most of what this channel exists
+three-part candidate test here would throw away most of what this channel exists
 to carry, and would be the one way to get this job badly wrong.
 
 Not a fix, either. Which version is correct is not yours to say.
