@@ -265,6 +265,23 @@ section and they must not be silently absent: name each one under **Not
 covered** with its file and line. An absent section reads as "nothing drifted",
 which is only true if that list is empty.
 
+`commentDiscrepancy` is not a finding either. Each entry is a comment -- or a
+sentence of the description, a commit message or the upstream review discussion
+-- that the code underneath contradicts. No panel graded it, it has no severity
+and no vote, and it must never get a `### [SEVERITY]` heading. Write the
+entries under `## Comment discrepancy`, below `## Needs human review`, one
+bullet each leading with what the code does, then the claim quoted exactly from
+`says` and named, then the entry's `shownBy` as a **Wrong where.** clause.
+Quote `says` rather than paraphrasing it: a maintainer is going to open that
+line, and a paraphrase publishes the reviewer's reading of the comment as the
+comment. Leave which of the two is meant to change to the reader.
+
+Omit the heading entirely when the array is empty, and stamp
+`comments=coverage.commentDiscrepancies` always, which is what separates
+"nothing disagreed" from "nobody looked at the comments". Nothing on the
+Coverage lines: a channel with no check stage behind it has no arithmetic to
+report.
+
 Keep `refuted` in the report, one line each. It is most of what this pipeline
 produces and it is how the next reviewer avoids buying a panel for the same
 idea twice. Nothing merges that list upstream, so two proposals killed by the
@@ -273,7 +290,8 @@ is genuinely the same one, and never by dropping a site.
 
 End the file with the coverage stamp the REPORT SPEC describes, including
 `drift` and `driftPublished` from `coverage.driftProposed` and
-`coverage.driftPublished`. The harness
+`coverage.driftPublished`, and `comments` from
+`coverage.commentDiscrepancies`. The harness
 reads it and refuses to publish a run whose research mostly failed, or whose
 panels mostly returned no verdict, because such a run and a genuinely clean one
 are otherwise indistinguishable from the outside. Write it even when everything

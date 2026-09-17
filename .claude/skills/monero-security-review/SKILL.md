@@ -819,6 +819,9 @@ that you attacked your own claim: there is no panel here to do it for you.>
 ## Needs human review
 - <`file:line`, what the head does that `origin/base` does not, then **Told apart by.** and the input that makes the two observably differ, then the quoted claim that made the hunk look like a refactor. Omit this whole section when nothing drifted. No severity, no fix: this is for a human to check, not a finding.>
 
+## Comment discrepancy
+- <`file:line`, what the code does, then **Says.** and the claim quoted exactly -- from a comment, the description, a commit message or the review discussion -- then **Wrong where.** and the input, state or path under which believing the claim would be wrong. Omit this whole section when nothing disagreed. No severity, no fix, and no rewrite of the comment: which of the two is meant to change is for a human to say.>
+
 ## Not covered
 - <what you could not check, and why>
 
@@ -873,6 +876,25 @@ too. Treat a claim of refactor or cleanup as the reason to read that hunk
 closely, not the reason to skim it, and expect it to hide in a pull request
 that is part new feature and part cleanup, where the new code takes the
 attention.
+
+**A comment the code contradicts goes in its own section too.** You read this
+change with its comments in front of you, which is right -- a comment is the
+author saying what the code is for, and a reviewer without it reads every terse
+guard as a missing one. The cost is that a wrong comment talks you out of the
+bug beneath it, so treat the sentence as a thing to check. Where a comment, or
+a claim in the description, a commit message or the review discussion,
+contradicts the code under it, put it under `## Comment discrepancy` with the
+`file:line`, the claim quoted exactly, what the code does instead, and the
+input or path where believing the claim would be wrong. Quote it rather than
+paraphrasing: a maintainer is going to open that line.
+
+**The bar is contradiction, not vagueness.** Most comments in this tree are
+terse, informal, incomplete or mildly stale, and a section full of those is
+worth nothing. The test is whether a reader who believed the sentence would
+write or approve wrong code: a documented bound nothing enforces, a "caller
+validates this" where no caller does, a stated invariant some path breaks. If
+you cannot name where believing it goes wrong, there is no entry. Where the
+comment is right and the CODE is wrong, that is usually a finding as well.
 
 **Name what tells the two versions apart, or do not write the entry.** Put it
 in the bullet as a **Told apart by.** clause: a value, a length, a call order,

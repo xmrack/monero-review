@@ -71,6 +71,12 @@ you claim cannot weigh what you cite.
 
 - `path/to/file.cpp:123` · <What the head does that `origin/base` does not. One sentence, and it comes first.> **Told apart by.** <The input, state, call order, configuration or error path under which the two observably differ, from the entry's `distinguishingInput`, concrete enough that the reader could construct it.> **Presented as.** <what made the hunk look like a refactor, quoted: the title, the sentence in the description, the commit subject, or that the hunk is a move with no new caller>. <At most three more sentences of evidence, each carrying the line it rests on.> <Which behaviour was intended is a question for a human.>
 
+## Comment discrepancy
+
+<Only when the run returned `commentDiscrepancy`. Omit the heading entirely when it is empty.>
+
+- `path/to/file.cpp:123` · <What the code does, in one sentence, and it comes first.> **Says.** <the claim, quoted exactly from the entry's `says`, and named: the comment, the description, the commit message or the review discussion.> **Wrong where.** <The input, state or path under which believing the claim would be wrong, from the entry's `shownBy`, concrete enough that the reader could construct it.> <Which of the two is meant to change is a question for a human.>
+
 ## Not covered
 
 - <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet.>
@@ -96,7 +102,7 @@ you claim cannot weigh what you cite.
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
 -->
 
-<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> -->
+<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> -->
 ```
 
 # The header is three lines
@@ -348,6 +354,47 @@ throws them out and is right to. That test is asking whether an attacker can do
 something. This section is asking a different question, which is whether the
 change does what it says. A maintainer wants the answer to both, and only one
 of them is a severity.
+
+# Comment discrepancy is a separate question again
+
+An entry here is a comment, or a sentence of the author's own prose, that the
+code underneath contradicts. The run reads the comments rather than hiding
+them, because a comment is the author saying what the code is for and a
+reviewer without it reads every terse guard as a missing one. The cost of
+reading them is that a wrong one talks a reader out of the bug beneath it, and
+this section is what that cost buys back: the claim was checked, and here is
+where it does not hold.
+
+Quote `says` exactly. The maintainer is going to open that line, and a
+paraphrase publishes the reviewer's reading of the comment as the comment.
+
+`shownBy` is what makes the entry worth a maintainer's minute, and it is the
+same discipline as **Told apart by.** above: the input, the state or the path
+where believing the claim goes wrong. An entry that cannot name one is a
+reviewer who would have phrased the comment differently, and it is required on
+every entry for exactly that reason -- the workflow drops one that arrives
+without it.
+
+Unlike the section above it, nothing re-read these before you: there is no
+checker on this channel, because the evidence is a quoted sentence and the code
+under it and a maintainer settles it by opening one file. So the bar lives on
+the entry rather than in a later stage, and publishing a weak one spends a
+maintainer's attention directly.
+
+## What never goes in an entry
+
+- a severity, a confidence or a vote. No panel graded these, and a
+  `### [SEVERITY]` heading on one would label the issue as though one had;
+- a style note. Terse, informal, incomplete and mildly stale are what most
+  comments in this tree are, and a section full of them is worth nothing;
+- a rewrite of the comment. Which of the two is meant to change is the
+  maintainer's to say;
+- a restatement of the code. What the comment claims, and where that claim
+  fails, is the entry.
+
+Omit the heading when the array is empty. The stamp carries `comments=` either
+way, so an absent section still reads as "nothing disagreed" rather than
+"nobody looked at the comments".
 
 # Refuted stays in
 
