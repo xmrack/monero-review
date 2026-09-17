@@ -849,7 +849,13 @@ function harvest(r, tag, extra, kind) {
     if (kind !== 'deferred') {
       for (const n of r.notFinished) {
         const t = String(n)
-        if (DEFER_HINT.test(t) && /[A-Za-z0-9_./-]+\.(?:c|h|cpp|hpp|inl|cc)\b/.test(t)) {
+        // Any source path, not just C and C++. The old list of extensions
+        // silently dropped every deferral naming a Rust file, and monero-oxide
+        // is both in scope and the part of the tree a reviewer is least able
+        // to fall back on -- so the one stage built to stop an observation
+        // going unread was losing exactly the observations nobody else covers.
+        // CMake, Python, shell and the build files had the same problem.
+        if (DEFER_HINT.test(t) && /[A-Za-z0-9_./-]+\.[A-Za-z0-9_+]{1,10}\b/.test(t)) {
           deferred.push({ from: tag, kind: kind || 'cell', note: t })
         }
       }
@@ -880,7 +886,12 @@ function harvest(r, tag, extra, kind) {
   // wants it once.
   for (const u of (r.referenceUpdates || [])) {
     if (!u || !u.file || !u.correction || !u.evidence) continue
+    // The CORRECTION is in the key, not just what the reference says now.
+    // Researchers are told to write the literal `missing` when the gap is that
+    // the file says nothing, so keying on `says` alone collapsed every such
+    // gap in one file to a single entry and dropped the rest with no record.
     const key = u.file + '#' + String(u.says || '').trim().slice(0, 120)
+      + '#' + String(u.correction || '').trim().slice(0, 120)
     if (referenceSeen.has(key)) continue
     referenceSeen.add(key)
     referenceUpdates.push({ ...u, from: tag })
@@ -1313,7 +1324,7 @@ if (!candidates.length) {
     referenceUpdates,
     coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
                 reLookApplicable: !BOUNDED,
-                marginalReLooked: 0, rescuedOnReLook: [], anchorDoubted: [],
+                marginalReLooked: 0, rescuedOnReLook: [], reLookFailed: [], anchorDoubted: [],
                 // Present and zero rather than absent: the stamp asks for all
                 // three on every report, and a field the Lead has to invent a
                 // value for is how a stamp stops being copied from a result.
@@ -1457,6 +1468,7 @@ const judged = await parallel(candidates.map((c) => () => parallel(
     ? { proposed: c.provenance, votes: provVotes, settled: provenance } : null
   let severity = c.severity
   for (const v of agreeing) if (v.severity) severity = lessSevere(severity, v.severity)
+  const rejecting = cast.filter((v) => v.holds === false).length
   return {
     candidate: c,
     votes: record,
@@ -1469,8 +1481,28 @@ const judged = await parallel(candidates.map((c) => () => parallel(
     // Fewer than two answers is a panel failure, not a verdict: with one yes and
     // two silences the old form said "refuted" while no angle had refuted
     // anything, and the report has no refutation to cite.
-    outcome: cast.length < 2 ? 'unverified' : (agreeing.length >= 2 ? 'holds' : 'refuted'),
-    rejecting: cast.filter((v) => v.holds === false).length,
+    // A REFUTATION HAS TO BE ONE. Three states and each needs its own test:
+    //
+    //   fewer than two answers   nobody looked, so `unverified` (above);
+    //   two agreeing             `holds`;
+    //   otherwise                refuted ONLY when the panel actually said so.
+    //
+    // That last line is the fix. At deep the panel is three angles, and one
+    // agreeing plus one rejecting plus one agent that returned nothing used to
+    // land here as `refuted` -- a majority nobody cast. The candidate was then
+    // denied the advocate too, because the re-look below requires all three to
+    // have answered, so a single rejection and a single failure quietly killed
+    // a finding and `## Refuted` presented it as the panel's verdict.
+    //
+    // So an incomplete panel that SPLIT is `unverified`: reported as undecided,
+    // which is what it is. An incomplete panel where everyone who answered
+    // rejected is still a refutation -- two independent noes is a real answer
+    // whatever the third angle did. A complete panel is unchanged, which keeps
+    // the standard tier's documented 1-1 behaviour exactly as it was.
+    outcome: cast.length < 2 ? 'unverified'
+      : (agreeing.length >= 2 ? 'holds'
+        : (cast.length < ANGLES.length && rejecting < 2 ? 'unverified' : 'refuted')),
+    rejecting,
     severity,
     // `high` needs three agreeing angles, so the standard profile's two-angle
     // panel caps every surviving finding at `medium` however sure its proposer
@@ -1537,9 +1569,16 @@ const advocated = await parallel(marginal.map((r) => () => agent(
 )))
 
 const promoted = []
+// An advocate that returned nothing did not consider the rejections and find
+// them sound -- it did not run. Every other stage here records its own
+// failures (failedCells, seamFailed, gapFailed, deferredFailed, mergeFailed,
+// driftUnchecked) and this one used to report a rescue that never happened as
+// a refusal, with `marginalReLooked` counting it as looked at.
+const reLookFailed = []
 advocated.forEach((adv, i) => {
   const r = marginal[i]
-  if (!adv || adv.rebutted !== true) return
+  if (!adv) { reLookFailed.push(r.candidate.id); return }
+  if (adv.rebutted !== true) return
   r.outcome = 'holds'
   // Rescued against the panel's majority, so it is published at the lowest
   // confidence whatever anyone claimed, and the split is on the record.
@@ -1776,6 +1815,19 @@ const findings = assembled.map((entry) => {
     // an advocate restored has to say so.
     rescued: rescuedFrom ? rescuedFrom.rescued : undefined,
     rescuedMemberId: rescuedFrom ? rescuedFrom.candidate.id : undefined,
+    // Hoisted for the same reason `rescued` is. `...primary` carries only the
+    // primary's count, so a merged entry whose OTHER site is the one the
+    // verifiers could not find at its cited line would have published with no
+    // anchor warning at all.
+    anchorDoubted: members.reduce((n, m) => Math.max(n, m.anchorDoubted || 0), 0),
+    // Only when it describes the severity actually published. The entry is
+    // published at the group's worst severity, so the primary's own from-to
+    // can contradict the heading a reader is looking at -- "HIGH lowered to
+    // MEDIUM" beside an entry published as HIGH because another member
+    // carried it. Where that happens the member's lowering is still on its
+    // own site below, and not asserted about the entry.
+    severityLowered: (primary.severityLowered && severity === primary.severity)
+      ? primary.severityLowered : undefined,
     merged: {
       title: entry.title || primary.candidate.title,
       sameDefectBecause: entry.sameDefectBecause,
@@ -1793,6 +1845,10 @@ const findings = assembled.map((entry) => {
         agreeing: m.agreeing,
         cast: m.cast,
         votes: m.votes,
+        // Per site, so a member's own correction is not lost behind the
+        // entry-level answer above.
+        severityLowered: m.severityLowered || undefined,
+        anchorDoubted: m.anchorDoubted || undefined,
       })),
     },
   }
@@ -1832,7 +1888,16 @@ return {
     reLookApplicable: !BOUNDED,
     marginalReLooked: marginal.length,
     rescuedOnReLook: promoted,
-    anchorDoubted: results.filter((r) => r.anchorDoubted >= 2).map((r) => r.candidate.id),
+    // The ones whose advocate returned nothing. They stay refuted, because
+    // the panel did reject them, but nothing re-examined that rejection and
+    // the report must not imply otherwise.
+    reLookFailed,
+    // From what actually PUBLISHES, for the same reason `severityLowered`
+    // below is: the Lead is told to re-anchor an id named here or drop the
+    // finding, and built from `results` this named refuted and unverified
+    // candidates too -- sending the Lead to correct an entry no reader can
+    // find in the report.
+    anchorDoubted: findings.filter((r) => r.anchorDoubted >= 2).map((r) => r.candidate.id),
     // THE THREE THE STAMP IS BUILT FROM, and they are not interchangeable.
     // `confirmed` counts CANDIDATES whose panel said holds, so it is unmoved by
     // the merge and `confirmed + refuted + unverified == candidates` still

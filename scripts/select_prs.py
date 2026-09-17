@@ -162,6 +162,18 @@ MAX_PR_PAGES = 5
 MAX_ISSUE_PAGES = 100
 
 
+# What a GitHub call fails with when the failure is transient rather than an
+# answer. `urllib.error.URLError` (no route, DNS, TLS) and `TimeoutError` (the
+# 30s read timeout below) are both `OSError`; `TimeoutError` is NOT a subclass
+# of `URLError`, which is why catching that alone let a read timeout through.
+# `ValueError` is `json.load` meeting the HTML body of a 502 from a proxy.
+#
+# Every caller here fails OPEN on these: a hiccup while probing one pull
+# request must not drop it from review, and must not abort the sweep either --
+# the tick runs twice an hour and the next one will see the same queue.
+TRANSIENT = (OSError, ValueError)
+
+
 def get(path, params=None):
     url = f"{API}{path}"
     if params:
@@ -260,7 +272,7 @@ def head_pushed_at(upstream, sha):
     """
     try:
         commit = get(f"/repos/{upstream}/commits/{sha}")
-    except (urllib.error.HTTPError, urllib.error.URLError, KeyError) as exc:
+    except (*TRANSIENT, KeyError) as exc:
         print(f"warn: commit date for {sha[:12]} failed ({exc}); "
               "treating it as settled", file=sys.stderr)
         return None
@@ -278,9 +290,13 @@ def worth_reviewing(upstream, number):
     """False only if every changed file is documentation-ish."""
     try:
         files = get(f"/repos/{upstream}/pulls/{number}/files", {"per_page": 100})
-    except urllib.error.HTTPError as exc:
+    except TRANSIENT as exc:
         # Fail open: an API hiccup should not silently drop a PR from review.
-        print(f"warn: file listing for #{number} failed ({exc.code}); "
+        # This used to catch HTTPError alone, which is the one failure the API
+        # gives you an answer with -- a read timeout, a refused connection or a
+        # proxy's HTML error page all went uncaught and took the whole sweep
+        # down with a traceback, which is the opposite of failing open.
+        print(f"warn: file listing for #{number} failed ({exc}); "
               "reviewing anyway", file=sys.stderr)
         return True, []
     names = [f["filename"] for f in files]
@@ -315,10 +331,21 @@ def main():
     # makes the backlog permanently invisible however wide MAX_AGE_DAYS is.
     prs = []
     for page in range(1, MAX_PR_PAGES + 1):
-        batch_of_prs = get(f"/repos/{upstream}/pulls", {
-            "state": "open", "per_page": 100, "page": page,
-            "sort": "updated", "direction": "desc",
-        })
+        try:
+            batch_of_prs = get(f"/repos/{upstream}/pulls", {
+                "state": "open", "per_page": 100, "page": page,
+                "sort": "updated", "direction": "desc",
+            })
+        except TRANSIENT as exc:
+            # Keep the pages already in hand and work from those. A traceback
+            # here aborted the tick outright, which is a worse answer than a
+            # short queue: the run is scheduled twice an hour and the next one
+            # sees the same pull requests. Page 1 failing leaves `prs` empty,
+            # and the selection below then picks nothing and says so.
+            print(f"warn: listing open pull requests failed on page {page} "
+                  f"({exc}); working from the {len(prs)} already fetched",
+                  file=sys.stderr)
+            break
         if not batch_of_prs:
             break
         prs.extend(batch_of_prs)

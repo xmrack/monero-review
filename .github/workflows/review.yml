@@ -940,6 +940,34 @@ jobs:
           rm -rf .claude
           cp -r .harness/.claude .claude
 
+      # The scripts this job runs are staged OUTSIDE the workspace, and every
+      # invocation below uses this copy rather than `.harness/scripts`.
+      #
+      # `.harness` is a checkout of this repository inside $GITHUB_WORKSPACE,
+      # which is exactly where the reviewing model works, and ALLOWED_TOOLS
+      # grants unqualified `Write` and `Edit`. Several of these scripts then
+      # run AFTER the model finishes -- labels.py twice, once inside the step
+      # that publishes with GH_TOKEN. So a prompt injection in the pull
+      # request's own text had a path to arbitrary code execution with this
+      # job's token: rewrite `.harness/scripts/labels.py`, wait to be run.
+      # $RUNNER_TEMP is outside the workspace and outside what the model can
+      # write, which closes it without narrowing the tools the review needs.
+      - name: Stage the harness scripts out of the model's reach
+        run: |
+          set -euo pipefail
+          # The LOCATION is the control: $RUNNER_TEMP is outside the workspace
+          # the model works in. The read-only bit below is belt and braces for
+          # anything else running as the runner user, and is not what stops the
+          # model -- it never gets a path here to write to in the first place.
+          # u+w first, so a leftover read-only tree from an earlier attempt on
+          # a self-hosted runner cannot make `rm -rf` fail and take the job.
+          chmod -R u+w "$RUNNER_TEMP/harness-scripts" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/harness-scripts"
+          cp -r .harness/scripts "$RUNNER_TEMP/harness-scripts"
+          find "$RUNNER_TEMP/harness-scripts" -name '__pycache__' -type d -prune -exec rm -rf {} +
+          chmod -R a-w "$RUNNER_TEMP/harness-scripts"
+          echo "staged $(find "$RUNNER_TEMP/harness-scripts" -type f | wc -l) script(s)"
+
       # Rust dependencies pinned by git revision, which nothing else here
       # reaches. `external/` is submodules and the submodule fetch covers them;
       # a Cargo git dependency is neither a submodule nor vendored, so
@@ -960,7 +988,7 @@ jobs:
       - name: Fetch pinned Rust dependencies
         continue-on-error: true
         timeout-minutes: 10
-        run: python3 .harness/scripts/fetch_rust_deps.py .
+        run: python3 "$RUNNER_TEMP"/harness-scripts/fetch_rust_deps.py .
 
       # TOOLS, NOT REQUIREMENTS. Every install here is best-effort and the
       # whole step is non-fatal: a flaky apt mirror must never cost a review.
@@ -1096,7 +1124,7 @@ jobs:
       # reachability it could not verify.
       - name: Build symbol index
         continue-on-error: true
-        run: bash .harness/scripts/build_index.sh .
+        run: bash "$RUNNER_TEMP"/harness-scripts/build_index.sh .
 
       # WHICH REVIEW THIS RUN IS, resolved once, in one place. Every step
       # below reads these outputs rather than re-deriving the decision from
@@ -1386,17 +1414,8 @@ jobs:
         run: |
           set -euo pipefail
           [ -s review.md ] || exit 0
-          python3 .harness/scripts/extract_updates.py review.md workflow-updates.json
+          python3 "$RUNNER_TEMP"/harness-scripts/extract_updates.py review.md workflow-updates.json
 
-      # Only when there is something. `if-no-files-found: ignore` keeps a run
-      # that proposed nothing from failing, and the `propose` job below reads
-      # the absence as "nothing to do".
-      - uses: actions/upload-artifact@v5
-        if: always()
-        with:
-          name: updates-${{ matrix.pr }}
-          path: workflow-updates.json
-          if-no-files-found: ignore
 
       # you is where the money went -- a Lead that spent nothing and a fleet
       # that spent everything look identical in the token columns.
@@ -1414,8 +1433,8 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           # always() means this runs even if the harness checkout never happened
-          [ -f .harness/scripts/telemetry.py ] || exit 0
-          python3 .harness/scripts/telemetry.py
+          [ -f "$RUNNER_TEMP"/harness-scripts/telemetry.py ] || exit 0
+          python3 "$RUNNER_TEMP"/harness-scripts/telemetry.py
 
       # Which tool calls were refused, printed into the log. The job log
       # otherwise carries only `permission_denials_count`, and that number has
@@ -1430,8 +1449,8 @@ jobs:
         env:
           EXEC_FILE: ${{ env.PASS1_EXEC }}
         run: |
-          [ -f .harness/scripts/denials.py ] || exit 0
-          python3 .harness/scripts/denials.py | tee -a "$GITHUB_STEP_SUMMARY"
+          [ -f "$RUNNER_TEMP"/harness-scripts/denials.py ] || exit 0
+          python3 "$RUNNER_TEMP"/harness-scripts/denials.py | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Whether the review actually verified itself is part of the deliverable,
       # so the workflow says so -- like the telemetry above, and for the same
@@ -1477,7 +1496,9 @@ jobs:
       # instead -- the mapper's partition is compared against the real
       # changed-file list and whatever it left out is returned as
       # `unaccounted` for the report to name. That is strictly the better
-      # check, and the gate below reads its result out of the stamp.
+      # check, and the gate below reads `unaccounted` out of the stamp: a
+      # no-findings report carrying a non-zero one does not publish at all,
+      # and a report with findings publishes saying it is partial.
       #
       # scripts/coverage.py and the `## Coverage` section in
       # monero-security-review are kept for the single-reviewer fallback,
@@ -1501,7 +1522,7 @@ jobs:
 
           # If we cannot read what is in the file, assume the worst: an
           # unreadable report must not publish as a verified one.
-          if ! sevs=$(python3 .harness/scripts/labels.py review.md); then
+          if ! sevs=$(python3 "$RUNNER_TEMP"/harness-scripts/labels.py review.md); then
             echo "labels.py unavailable -- treating findings as unverified" >&2
             sevs=unknown
           fi
@@ -1537,6 +1558,18 @@ jobs:
           # on -- a deferral is a researcher doing the right thing, and the
           # ones that matter (nobody settled them) are named in the report.
           defer=$(num deferred)
+          # Changed files the mapper's partition placed in neither a unit nor
+          # an exclusion, compared in JavaScript against the real list from
+          # PR_FILES.md. Nobody read those. This is the number the old
+          # scripts/coverage.py step used to establish before it was removed,
+          # and until now nothing here read it: a review that mapped 6 of 40
+          # files, proposed nothing and balanced every other identity
+          # published as a clean bill, and the issue it filed is the dedup
+          # record that stops the pull request ever being looked at again.
+          #
+          # Optional, like `angles`: a stamp written before the field existed
+          # carries none, and an absent value must not reach arithmetic.
+          unacc=$(num unaccounted)
           # The merge stage's two numbers: how many entries the report actually
           # writes under `## Findings`, and how many confirmed candidates were
           # folded into another entry. Optional the same way `angles` is --
@@ -1579,9 +1612,19 @@ jobs:
           # hits `"name": "Workflow"` there. If a good deep run ever comes
           # back "no trace", print exec-pass1.json from the run's artifact
           # and check how a tool call is spelled, rather than loosening it.
+          # `Agent` ALONE IS NOT EVIDENCE. Agent(monero-explore) is in the base
+          # ALLOWED_TOOLS and is available whether or not a fleet ran, so the
+          # old pattern was satisfied by a single exploratory call -- a Lead
+          # that dispatched one explore agent and then wrote a plausible stamp
+          # passed as fully verified, and every other number in this gate is
+          # the model's own claim. What actually dispatches the fleet is the
+          # Workflow tool; a fleet agent by name is accepted too, so a future
+          # direct dispatch still reads as evidence. A false negative here is
+          # loud and safe (the report is held as unverified), which is the
+          # direction this check should fail in.
           fleet=no
           if [ -n "${PASS1_EXEC:-}" ] && [ -f "${PASS1_EXEC:-}" ] &&
-             grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' "$PASS1_EXEC"; then
+             grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"Workflow"|monero-(mapper|researcher|verifier|merger|refactor-check)' "$PASS1_EXEC"; then
             fleet=yes
           fi
 
@@ -1637,6 +1680,15 @@ jobs:
             # bill of health, it is a thin one.
             state=unverified
             note="**NOT VERIFIED**: nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
+          elif [ "$cands" -eq 0 ] && [ -n "$unacc" ] && [ "$unacc" -gt 0 ]; then
+            # Same reasoning as the test above, applied to the other way a
+            # clean bill can be thin. There, cells were dispatched and died;
+            # here, files were never placed in a unit at all, so no cell was
+            # ever dispatched for them and the failure count stays at zero.
+            # The arithmetic all balances and the report still says "No
+            # findings" over a diff nobody finished reading.
+            state=unverified
+            note="**NOT VERIFIED**: nothing was proposed, but $unacc changed file(s) were placed in neither a unit nor an exclusion, so no researcher was ever sent to them. A no-findings result rests entirely on how much of the diff was read, and this one did not read all of it."
           else
             state=fleet
             covered="$(( cells - failed )) of $cells research cells reported"
@@ -1668,6 +1720,13 @@ jobs:
             if [ -n "$defer" ] && [ "$defer" != "0" ]; then
               note="$note $defer observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
             fi
+            # A report WITH findings still publishes when some files went
+            # unplaced -- what it found is real -- but the reader has to be
+            # told the review is partial, because the issue is the dedup
+            # record and nothing will come back for the rest.
+            if [ -n "$unacc" ] && [ "$unacc" != "0" ]; then
+              note="$note $unacc changed file(s) were placed in neither a unit nor an exclusion and were read by nobody; the report names them under Not covered. Treat this as a partial review of the change."
+            fi
           fi
 
           echo "state=$state" >> "$GITHUB_OUTPUT"
@@ -1694,6 +1753,20 @@ jobs:
       # pushes later a recount would answer a different question. Second and
       # last line of the footer block, under the same rule as the telemetry
       # line above it.
+      # AFTER the verification gate, and conditional on it. These corrections
+      # rewrite `.claude/references/monero/`, which the propose job below calls
+      # this pipeline's own supply chain. They used to be uploaded before the
+      # gate ran, so a review judged NOT VERIFIED -- a stamp that did not add
+      # up, a fleet that never dispatched -- still fed corrections into a job
+      # that opens a pull request against this repository. A review too
+      # untrustworthy to publish is too untrustworthy to teach the reviewer.
+      - uses: actions/upload-artifact@v5
+        if: always() && steps.verified.outputs.state == 'fleet'
+        with:
+          name: updates-${{ matrix.pr }}
+          path: workflow-updates.json
+          if-no-files-found: ignore
+
       - name: Queue depth
         if: always()
         env:
@@ -1910,7 +1983,7 @@ jobs:
           # inherited rather than dug, without opening them. It is emitted when
           # ANY surviving finding is pre-existing, so on a mixed issue it means
           # "at least one", and the report's Result line carries the split.
-          sevs=$(python3 .harness/scripts/labels.py review.md || true)
+          sevs=$(python3 "$RUNNER_TEMP"/harness-scripts/labels.py review.md || true)
           for sev in $sevs; do
             case "$sev" in
               critical)     colour=B60205; desc="Review found a critical severity issue" ;;
@@ -2014,8 +2087,8 @@ jobs:
           # 2. The execution log. `|| true` so a parsing bug degrades to the
           # clock rather than failing the step under `set -e`.
           verdict=""
-          if [ -f .harness/scripts/attempt.py ]; then
-            verdict=$(python3 .harness/scripts/attempt.py | sed -n 's/^verdict=//p') || true
+          if [ -f "$RUNNER_TEMP"/harness-scripts/attempt.py ]; then
+            verdict=$(python3 "$RUNNER_TEMP"/harness-scripts/attempt.py | sed -n 's/^verdict=//p') || true
           fi
           case "$verdict" in
             pr)
@@ -2793,7 +2866,6 @@ jobs:
             echo "the writer changed no reference file; no branch pushed and no pull request opened"
             echo "--- what it said ---"
             cat "$body" || true
-            echo "opened=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -2839,7 +2911,6 @@ jobs:
           if gh pr create --head "$BRANCH" --title "$TITLE" \
                --body-file "$body" >"$RUNNER_TEMP/pr.out" 2>&1; then
             cat "$RUNNER_TEMP/pr.out"
-            echo "opened=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           cat "$RUNNER_TEMP/pr.out" >&2
@@ -2876,7 +2947,6 @@ jobs:
           # One issue per run, matching one branch per run. There is no
           # stickiness to arrange any more: nothing accumulates.
           gh issue create --title "$TITLE" --body-file "$body"
-          echo "opened=1" >> "$GITHUB_OUTPUT"
 
       # Runs whether or not a pull request was opened, and deliberately: a
       # correction the writer considered and skipped must not be re-proposed
