@@ -187,11 +187,21 @@ and occasionally between a finding and a note.
 MEASURED, on 11185: a race was proposed in `WalletImpl::scanTransactions`,
 which calls `scan_tx` outside the refresh lock so that `detach_blockchain` can
 erase `m_transfers` while the refresh thread holds a reference into it. The
-mechanism holds. The reach does not: `grep -rn scanTransactions src tests
-utils` on master returns four lines and every one is a declaration or the
-definition -- `src/wallet/api/wallet.cpp:1293`, `src/wallet/api/wallet.h:176`,
-and the pure virtual with its doc comment at
-`src/wallet/api/wallet2_api.h:957` and `:961`. No caller exists.
+mechanism holds. The reach did not: `grep -rn scanTransactions src tests
+utils` on master at the time returned four lines and every one was a
+declaration or the definition. No caller existed.
+
+**This measurement has expired, exactly as the second limit below predicts.**
+An in-tree caller now exists: `src/wallet/wallet_rpc_server.cpp:3287` calls
+`m_wallet_impl->scanTransactions(txids, &wont_reprocess_recent_txs_via_untrusted_daemon)`
+from `on_scan_tx`. Every cited anchor has moved too -- the definition is now at
+`src/wallet/api/wallet.cpp:1556`, the declaration at
+`src/wallet/api/wallet.h:192`, the pure virtual at
+`src/wallet/api/wallet2_api.h:1469`. The race is still not reachable in-tree,
+but for a different reason: nothing in `monero-wallet-rpc` or `simplewallet`
+enables the API background refresh thread, so there is no concurrent refresh to
+race with. "No caller" is no longer the narrowing; "no concurrent refresh" is,
+and it is a weaker one. Re-measure before citing either.
 
 Two limits, and both matter:
 

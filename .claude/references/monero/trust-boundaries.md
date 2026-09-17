@@ -79,14 +79,23 @@ outside and are parsed into wallet state.
 
 ## 5. Co-signer messages — multisig and cold signing
 
-`src/multisig/`, `src/wallet/wallet2.cpp` multisig paths, and the unsigned and
-signed transfer blobs a cold wallet exchanges
+`src/multisig/`, `src/wallet/wallet2.cpp` multisig paths,
+`src/wallet/pending_tx_validation.cpp`, and the unsigned and signed transfer
+blobs a cold wallet exchanges
 
 A co-signer is a counterparty, not a colleague. Every message arriving from one
 is attacker-controlled input from the perspective of the wallet that parses it:
 key-exchange rounds (`multisig_kex_msg.cpp`, `parse_and_validate_msg`), partial
 signatures and the nonce commitments they carry, and the unsigned/signed tx
 blobs moved on a USB stick between a view-only wallet and an offline signer.
+
+Do not conclude from `wallet2.cpp` alone that these blobs are unvalidated. The
+check that binds an unsigned, signed or multisig blob to its `construction_data`
+lives in `tools::wallet::sanity_check_pending_tx`
+(`src/wallet/pending_tx_validation.cpp`); `wallet2::sanity_check_pending_tx`
+(`src/wallet/wallet2.cpp:7273`) only forwards to it, and the three blob parsers
+call it at `src/wallet/wallet2.cpp:8145`, `:8201` and `:8343`. Read that file
+before reporting a missing check here.
 
 What makes this a boundary rather than a detail: the wallet holds a key share
 and is being asked to combine it with something a stranger chose. A message
