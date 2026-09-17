@@ -232,6 +232,55 @@ const CANDIDATES_SCHEMA = {
         required: ['file', 'line', 'claim', 'before', 'after', 'distinguishingInput'],
       },
     },
+    // Also not a candidate: a comment, or a claim in the author's own text,
+    // that the code underneath it contradicts.
+    //
+    // The review reads the comments rather than hiding them, which is the
+    // right way round -- a comment is the author telling you what the code is
+    // for, and a reviewer who cannot see it reads every terse guard as a
+    // missing one. What it costs is that a wrong comment talks a reader out of
+    // the bug beneath it, and nothing downstream ever revisits that. So the
+    // claim becomes a thing to CHECK: hold the sentence and the code side by
+    // side, and say so where they disagree.
+    //
+    // No panel and no severity, for the same reason the refactor channel has
+    // neither. "This comment is wrong" has no untrusted input and reaches
+    // nothing, so the four-part test would throw it away and be right to,
+    // while the maintainer still wants it -- a stale comment is what the NEXT
+    // reader will believe.
+    commentDiscrepancy: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'number' },
+          symbol: { type: 'string' },
+          // Which claim. An inline comment is the common case; the others are
+          // the author's prose, which reaches a reviewer the same way and is
+          // believed the same way.
+          source: {
+            type: 'string',
+            enum: ['comment', 'pr-description', 'commit-message', 'review-discussion'],
+          },
+          // The claim, QUOTED. Not paraphrased: the report puts this in front
+          // of a maintainer who will go and read the line, and a paraphrase is
+          // how a reviewer's reading of a comment gets published as the
+          // comment.
+          says: { type: 'string' },
+          // What the code does instead, with the line that shows it.
+          does: { type: 'string' },
+          // What makes the two disagree, concretely: the input, the state or
+          // the path where believing the comment would be wrong. This is the
+          // field that keeps the section honest, and it is the analogue of the
+          // refactor channel's distinguishingInput. A comment that is merely
+          // terse, aspirational or out of date in a way that misleads nobody
+          // cannot fill it in, and that is the answer -- not an entry.
+          shownBy: { type: 'string' },
+        },
+        required: ['file', 'line', 'source', 'says', 'does', 'shownBy'],
+      },
+    },
     // The OTHER thing a reader can find that is not a finding: a place where
     // this repository's own map of the Monero tree is wrong.
     //
@@ -656,7 +705,31 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'way, for a human to check. If it IS attacker-reachable, file the candidate',
    'as well; the two are not alternatives.',
    '',
-   'THIRD CHANNEL, and the same shape: `referenceUpdates`. You are reading the',
+   'THIRD CHANNEL, same shape, and it runs over the code you are already',
+   'reading: `commentDiscrepancy`. The comments are in front of you and they',
+   'stay there -- a comment is the author saying what the code is FOR, and you',
+   'need it. What you owe is to check it rather than believe it. Where a',
+   'comment, or a sentence in the description, a commit message or the upstream',
+   'review discussion, says something the code underneath CONTRADICTS, record',
+   'it: `file`, `line`, `source` (comment, pr-description, commit-message or',
+   'review-discussion), `says` (the claim QUOTED, never paraphrased), `does`',
+   '(what the code actually does, with the line), and `shownBy` (the input,',
+   'state or path where believing the claim would be wrong).',
+   'THE BAR IS CONTRADICTION, not vagueness. A comment that is terse, informal,',
+   'aspirational, or silent about a case is not an entry -- most comments are',
+   'all four and the section is worthless if it fills up with them. The test is',
+   'whether a reader who BELIEVED this sentence would write or approve wrong',
+   'code: a documented bound the code does not enforce, a "caller validates"',
+   'nobody validates, a stated invariant a path breaks, a claim the parameter',
+   'is checked when it is not. If you cannot fill in `shownBy` with something',
+   'concrete, there is no discrepancy and you have found a comment you would',
+   'have written differently.',
+   'This is NOT a candidate and needs no untrusted input, sink or reachability.',
+   'Where the code is right and the comment is stale, it still goes here -- the',
+   'next reader believes it. Where the COMMENT is right and the code is wrong,',
+   'that is usually a candidate as well: file both.',
+   '',
+   'FOURTH CHANNEL, and the same shape: `referenceUpdates`. You are reading the',
    'Monero tree with THIS repository\'s own map of it open --',
    '`.claude/references/monero/*.md`, and the review references beside them.',
    'Where one of those files disagrees with the code you just read, say so:',
@@ -710,6 +783,13 @@ const proposed = []
 // once.
 const refactorDrift = []
 const driftSeen = new Set()
+// Comments the code underneath contradicts. Same shape as the drift channel
+// and gathered the same way: no panel, no severity, no merge.
+//
+// Deduplicated on file:line, because the comment above a function and the
+// reader of the function are two passes meeting one sentence.
+const commentDiscrepancy = []
+const commentSeen = new Set()
 // Corrections to this repository's own reference files. Not a finding, not
 // graded, and never edited from here -- the report names them and a human
 // lands them. Declared beside the drift channel because `harvest` fills both
@@ -784,6 +864,16 @@ function harvest(r, tag, extra, kind) {
     if (driftSeen.has(key)) continue
     driftSeen.add(key)
     refactorDrift.push({ ...d, from: tag })
+  }
+  // Every field is required to publish one, and an entry missing `shownBy` is
+  // the entry the bar exists to stop: a reader who felt a comment read oddly
+  // but could not say where believing it goes wrong.
+  for (const d of (r.commentDiscrepancy || [])) {
+    if (!d || !d.file || !d.says || !d.does || !d.shownBy) continue
+    const key = d.file + '#' + (d.line || 0)
+    if (commentSeen.has(key)) continue
+    commentSeen.add(key)
+    commentDiscrepancy.push({ ...d, from: tag })
   }
   // Same shape, and deduped on the file plus what it says: several readers
   // walking the same subsystem meet the same stale sentence, and the report
@@ -1189,6 +1279,12 @@ const coverageBase = {
   driftProposed: refactorDrift.length,
   driftPublished: driftPublished.length,
   driftRejected, driftUnchecked,
+  // Everything raised on the comment channel publishes: there is no check
+  // stage between the reader and the report, because the evidence is a quoted
+  // sentence and the code beneath it, both of which a maintainer can settle by
+  // opening one file. The count is stamped either way, so an absent section
+  // still says "nothing disagreed" rather than "nobody read the comments".
+  commentDiscrepancies: commentDiscrepancy.length,
   profile: PROFILE,
   // False at standard because the profile has no seam pass at all, and false at
   // deep on a single-unit change because there are no seams. `profile` is what
@@ -1213,6 +1309,7 @@ const provenanceTally = () => {
 if (!candidates.length) {
   return {
     findings: [], refuted: [], unverified: [], refactorDrift: driftPublished,
+    commentDiscrepancy,
     referenceUpdates,
     coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
                 reLookApplicable: !BOUNDED,
@@ -1256,6 +1353,13 @@ if (!candidates.length) {
       'Name every entry in coverage.driftUnchecked under',
       '**Not covered** with its file and line -- nobody read those, and they must',
       'not be silently absent.',
+      'If `commentDiscrepancy` is non-empty, write the `## Comment discrepancy`',
+      'section the REPORT SPEC describes: one entry per item, no severity, no vote.',
+      'Each is a comment or an author claim the code contradicts, quoted. OMIT THE',
+      'HEADING ENTIRELY when the array is empty -- a no-findings report does not',
+      'carry an empty section saying the comments were fine. Stamp',
+      'comments=coverage.commentDiscrepancies always, which is what separates',
+      '"nothing disagreed" from "nobody looked".',
       'If `referenceUpdates` is non-empty, emit the `<!-- workflow-updates ... -->`',
       'JSON stamp the REPORT SPEC describes, immediately above the coverage stamp.',
       'Those are places where THIS repository\'s own reference files disagree with',
@@ -1716,6 +1820,7 @@ log(holds.length + ' stood up, ' + refuted.length + ' taken apart' +
 
 return {
   findings, refuted, unverified, refactorDrift: driftPublished,
+  commentDiscrepancy,
   // Unchecked by design: there is no panel for "architecture.md is out of
   // date". The evidence is a citation in the tree a human can open, and a
   // wrong one costs that human a minute rather than putting a false security
@@ -1834,7 +1939,25 @@ return {
     'coverage.driftUnchecked under **Not covered** with its file and line, because',
     'those are the ones nobody read.',
     '',
-    '`referenceUpdates` is a THIRD channel and is not a finding either. Each entry',
+    '`commentDiscrepancy` IS NOT A FINDING EITHER, and not a refutation. Each entry',
+    'is a comment -- or a sentence in the description, a commit message or the',
+    'upstream review discussion -- that the code underneath contradicts. No panel',
+    'graded it, it carries no severity and no vote, and it must never get a',
+    '`### [SEVERITY]` heading. It goes in `## Comment discrepancy`, below',
+    '`## Needs human review`, one entry per item: the `file:line`, the claim QUOTED',
+    'from `says`, what the code does instead from `does`, and the `shownBy` clause',
+    'naming where believing the claim would be wrong. Quote `says` exactly -- the',
+    'maintainer is going to open that line, and a paraphrase publishes the',
+    'reviewer\'s reading of the comment as the comment. OMIT THE SECTION ENTIRELY',
+    'when the array is empty. Stamp comments=coverage.commentDiscrepancies always,',
+    'so an absent section still reads as "nothing disagreed" rather than "nobody',
+    'checked". This is not a place for style notes: every entry has to be a',
+    'contradiction somebody could act on. Unlike the section above it NOTHING',
+    're-read these -- there is no checker on this channel -- so where an entry\'s',
+    '`shownBy` does not actually describe a way the claim misleads, drop it rather',
+    'than publishing it, and say so under **Not covered**.',
+    '',
+    '`referenceUpdates` is a FOURTH channel and is not a finding either. Each entry',
     'is a place where this repository\'s own reference files disagree with the',
     'Monero tree, found by a reader that had just walked the code they describe.',
     'It does NOT go in the report: a Monero maintainer does not care that our',

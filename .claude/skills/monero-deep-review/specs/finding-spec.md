@@ -61,6 +61,22 @@ the entry rather than optional. An entry nothing can tell apart is dropped
 there, which costs the run an agent and the proposer nothing, and is the reason
 a maintainer can trust the ones that survive.
 
+A comment the code contradicts is **not a candidate either**, for the same
+reason and with the same consequence. It goes in `commentDiscrepancy`, which
+faces no panel and carries no severity. The comments are read rather than
+hidden -- without them every terse guard looks like a missing one -- and the
+price of reading them is that a wrong one talks a reviewer out of the bug
+beneath it. Checking the claim is what buys that back.
+
+That channel has no second reader, because it needs none: the evidence is a
+quoted sentence and the code under it, and a maintainer settles it by opening
+one file. What stands in for the checker is the bar on the entry. It is
+contradiction, not vagueness -- a documented bound nothing enforces, a "caller
+validates this" where no caller does, a stated invariant some path breaks. A
+comment merely terse, informal or harmlessly stale is not an entry, and
+`shownBy`, the input or path under which believing the claim goes wrong, is
+where that bar is enforced.
+
 # Where it is
 
 - `file`, repository-relative.

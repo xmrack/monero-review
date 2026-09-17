@@ -186,6 +186,47 @@ spends. Mixed pull requests are where this lives: when a change is part new
 feature and part cleanup, the new code takes the attention and the cleanup gets
 waved through, so a unit carrying both needs this check most.
 
+# A comment the code contradicts
+
+You read this change with its comments in front of you, and that is deliberate.
+A comment is the author telling you what the code is for, and a reviewer who
+cannot see it reads every terse guard as a missing one. What it costs is that a
+wrong comment talks a reader out of the bug beneath it. So the sentence is a
+thing to check, not a thing to believe.
+
+Where a comment contradicts the code under it, report it in
+`commentDiscrepancy`: the `file` and `line`, the `source`, the claim in `says`,
+what the code does in `does`, and `shownBy`. The claim can also come from the
+author's prose -- `pr-description`, `commit-message` or `review-discussion` --
+which reaches a reviewer the same way and is believed the same way.
+
+**Quote the claim. Never paraphrase it.** A maintainer is going to open that
+line. A paraphrase publishes your reading of the comment as the comment, and
+where the two differ it is your reading that is wrong.
+
+**The bar is contradiction, not vagueness.** Most comments in this tree are
+terse, informal, incomplete or a little stale, and a section that fills up with
+those is worth nothing to anybody. The test is whether a reader who BELIEVED
+the sentence would write or approve wrong code:
+
+- a bound the comment documents and the code does not enforce;
+- a "caller validates this" where no caller does;
+- a stated invariant some path breaks;
+- a claim a parameter is checked, sanitised or bounded when it is not.
+
+`shownBy` is where that test is written down: the input, the state or the path
+under which believing the claim goes wrong. If you cannot name one, there is no
+discrepancy -- you have found a comment you would have phrased differently, and
+that is not what this channel is for.
+
+This is **not a candidate**. It needs no untrusted input, no sink and no
+reachability argument. Two directions, as with a refactor:
+
+- where the code is right and the comment is stale, it still goes here. The
+  next reader believes it, and that reader may be the one who changes the code;
+- where the COMMENT is right and the code is wrong, that is usually a candidate
+  too. File both; they are not alternatives.
+
 # Answering
 
 Fill in the structure your dispatch specifies. A program consumes it, so leave
