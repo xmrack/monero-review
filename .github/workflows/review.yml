@@ -623,6 +623,14 @@ jobs:
           # and git's abbreviation length is not stable across repo states.
           echo "HEAD_SHA=$(git rev-parse HEAD | cut -c1-12)" >> "$GITHUB_ENV"
           echo "HEAD_SHA_FULL=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          # Exported for the same reason as the SHA, and it is not decoration:
+          # a reference correction is stamped with the branch the reviewed pull
+          # request TARGETS, because a citation taken off a backport's head
+          # describes release-v0.18 and the references describe master. Without
+          # this the later job cannot tell a reader which tree a line number is
+          # from, and a proposal reading "line 14523" was merged into a file
+          # that documents a different branch.
+          echo "BASE_REF=$BASE" >> "$GITHUB_ENV"
 
           # Prove the diff is actually obtainable before spending a review on
           # it. Roughly half of published reviews have reported being unable to
@@ -1408,6 +1416,14 @@ jobs:
       # change to a workflow, an agent prompt or a skill.
       - name: Collect proposed reference corrections
         if: always()
+        env:
+          # Stamped onto every correction so the later job can say which tree
+          # a citation describes. From the harness, never from the review: a
+          # provenance field the reviewed author could influence would answer
+          # the opposite of the question it is there to settle. UPSTREAM and
+          # the two SHA/branch values are workflow state; the number is the
+          # matrix leg, so a batch keeps each correction with its own PR.
+          PR_NUMBER: ${{ matrix.pr }}
         run: |
           set -euo pipefail
           [ -s review.md ] || exit 0
@@ -2396,6 +2412,29 @@ jobs:
       # files under `refs-work/`, which the commit step's path gate catches and
       # refuses, where a move would leave every reference file DELETED from
       # `.claude/` -- and a deletion under those prefixes satisfies that gate.
+      # Same control, and the same reason, as "Stage the harness scripts out of
+      # the model's reach" in the review job above.
+      #
+      # `scripts/pr_body.py` assembles the pull request body, and it runs in
+      # the step that holds GH_TOKEN, AFTER the writer has finished. The writer
+      # works in $GITHUB_WORKSPACE with unqualified `Write` and `Edit`, so left
+      # where it sits in the checkout it would be a file the writer can rewrite
+      # and then have executed with this job's token -- the exact path the
+      # review job closed. The proposals it reads are derived from a stranger's
+      # pull request, so this is not a hypothetical shape.
+      #
+      # $RUNNER_TEMP is outside the workspace. The read-only bit is belt and
+      # braces; the location is the control.
+      - name: Stage the body assembler out of the writer's reach
+        if: steps.check.outputs.any != '0'
+        run: |
+          set -euo pipefail
+          chmod -R u+w "$RUNNER_TEMP/propose-scripts" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/propose-scripts"
+          mkdir -p "$RUNNER_TEMP/propose-scripts"
+          cp scripts/pr_body.py "$RUNNER_TEMP/propose-scripts/pr_body.py"
+          chmod -R a-w "$RUNNER_TEMP/propose-scripts"
+
       - name: Stage the references where the writer may edit them
         if: steps.check.outputs.any != '0'
         run: |
@@ -2570,6 +2609,27 @@ jobs:
             If you edited nothing at all, say so plainly in the first line --
             no pull request is opened in that case, and `SUMMARY.md` and
             `SKIPPED.md` become the run's log instead.
+
+            Two things about how those two files are read, because both have
+            rendered badly on GitHub before:
+
+            - NEVER break an inline code span across lines. Wrapping prose at
+              80 columns is fine and welcome, but a newline INSIDE backticks
+              becomes a space in the rendered code, so
+              `boost::lock_guard<boost::` + newline + `mutex>` publishes as
+              `boost::lock_guard<boost:: mutex>`. Let a line run long instead,
+              or quote a shorter fragment. The assembler collapses the run of
+              whitespace such a break leaves behind, but it cannot know the
+              two halves were meant to touch.
+            - Do not open either file with a top-level heading. The assembler
+              supplies the section headings and demotes any you write, so
+              `# Skipped` at the top of `SKIPPED.md` only ever produced the
+              word twice, once at a size larger than anything around it.
+
+            Say which tree a citation describes when it matters, but do not
+            invent provenance: the pull request the observation came from, its
+            head and its base branch are stamped into the body automatically
+            from the harness's own record, above whatever you write.
           # `Edit` and `Write` are UNQUALIFIED, and that is deliberate rather
           # than careless. The per-path form --
           #   Edit(.claude/references/monero/**),Write(SUMMARY.md), ...
@@ -2796,13 +2856,18 @@ jobs:
           # SUMMARY.md and SKIPPED.md are the pull request's body, not repository
           # content. Move them out before staging, or every run leaves two more
           # files behind in the tree.
+          #
+          # The assembler does three things this step used to get wrong: it
+          # stamps the body with which upstream pull request and which head the
+          # corrections were read from, it demotes the writer's headings under
+          # the section headings it supplies (this step printed `### Skipped`
+          # and then cat a SKIPPED.md opening with its own `# Skipped`), and it
+          # closes up inline code the writer wrapped across a line. It reads
+          # proposals.json for the provenance, so it runs BEFORE the rm below.
           body="$RUNNER_TEMP/body.md"
-          : > "$body"
-          [ -f SUMMARY.md ] && { cat SUMMARY.md >> "$body"; rm -f SUMMARY.md; }
-          [ -f SKIPPED.md ] && {
-            printf '\n### Skipped\n\n' >> "$body"; cat SKIPPED.md >> "$body"; rm -f SKIPPED.md
-          }
-          rm -f proposals.json
+          python3 "$RUNNER_TEMP"/propose-scripts/pr_body.py \
+            "$body" SUMMARY.md SKIPPED.md proposals.json
+          rm -f SUMMARY.md SKIPPED.md proposals.json
 
           git add -A
 
@@ -2887,15 +2952,11 @@ jobs:
             echo "push failed, retry $i"; sleep $((2 ** i))
           done
 
-          {
-            echo
-            echo "Opened by the review pipeline from $RUN_URL. The job that wrote"
-            echo "these corrections has no Monero checkout and verified none of"
-            echo "them against the tree; that is what a reviewer is for."
-            echo
-            echo "---"
-            echo "_Generated by [Claude Code](https://claude.ai/code)_"
-          } >> "$body"
+          # The footer and the `---` rule are written by the assembler above,
+          # together with the rest of the body. They were appended here, after
+          # the push, for no reason except that this is where the RUN_URL was
+          # to hand -- and being built in two places is how the body came to
+          # carry a heading twice.
 
           # Both streams into one file: the refusal below is matched by text,
           # and which stream `gh` writes it on is not worth depending on.
