@@ -43,6 +43,36 @@ STAMP_LINE = re.compile(r"^[ \t]*<!--[ \t]*workflow-updates\b.*?-->[ \t]*\r?\n?"
 
 FIELDS = ("file", "says", "correction", "evidence")
 
+# Where the observation was made, stamped onto every entry from the harness's
+# own environment. NOT taken from the model's stamp, and a `source` key in the
+# stamp is dropped: the whole point is to tell a human which tree a line number
+# came from, and a field the reviewed pull request's author could influence
+# answers the opposite question.
+#
+# It matters because the two trees disagree. A reviewer reads the PR's HEAD --
+# master plus that author's unmerged changes, or release-v0.18 plus them for a
+# backport -- while the references describe the branch the PR targets. A
+# citation lifted from the head can name a line the change itself moved, or a
+# symbol that exists only on that branch. Merging it then writes the pull
+# request's private state into a file that claims to describe Monero.
+SOURCE_KEYS = ("upstream", "pr", "head", "base")
+
+
+def source_from_env():
+    """The reviewed pull request, as the workflow knows it. None when unset."""
+    got = {
+        "upstream": os.environ.get("UPSTREAM", ""),
+        "pr": os.environ.get("PR_NUMBER", ""),
+        "head": os.environ.get("HEAD_SHA", ""),
+        "base": os.environ.get("BASE_REF", ""),
+    }
+    # All or nothing. A half-filled stamp reads like a provenance claim while
+    # answering none of the question, which is worse than saying nothing: the
+    # later job prints "could not be determined" and a reader knows to check.
+    if not all(got.values()):
+        return None
+    return {k: " ".join(str(got[k]).split())[:200] for k in SOURCE_KEYS}
+
 # Where a correction is allowed to land. An entry naming anything else is
 # dropped here rather than passed to a job that can write: the proposer is a
 # model that has spent half an hour reading attacker-controlled text, and the
@@ -90,6 +120,11 @@ def main():
     except OSError:
         return
 
+    source = source_from_env()
+    if source is None:
+        print("extract: no reviewed-PR context in the environment; corrections "
+              "will carry no provenance", file=sys.stderr)
+
     entries = []
     for match in STAMP.finditer(text):
         try:
@@ -105,6 +140,10 @@ def main():
         for entry in parsed:
             got = clean(entry)
             if got:
+                # After clean(), so a `source` the model wrote is already gone:
+                # clean() copies only FIELDS.
+                if source is not None:
+                    got["source"] = dict(source)
                 entries.append(got)
 
     # Strip whether or not anything parsed. A stamp that failed to parse is
