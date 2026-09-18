@@ -186,9 +186,15 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 - **`add_new_tx` returns `true` for a transaction already in the pool or
   already on chain.** The field that means "newly accepted" is
   `tvc.m_added_to_pool`.
-- **`tvc.m_no_drop_offense` decides whether a peer is banned** for a rejected
-  transaction. Any new rejection added before the expensive checks must set it,
-  or a fee-policy disagreement becomes a ban.
+- **`tvc.m_no_drop_offense` decides whether the connection is dropped** for a
+  rejected transaction — **not** whether the peer is banned. The drop adds no
+  ban: `handle_notify_new_transactions` calls `drop_connection(context, false,
+  false)` (`src/cryptonote_protocol/cryptonote_protocol_handler.inl:970`), and
+  that `false` `add_fail` becomes a score of 0 at `:2845`
+  (`return drop_connection_with_score(context, add_fail ? 1 : 0,
+  flush_all_spans);`), so `add_host_fail` never runs. Any new rejection added
+  before the expensive checks must still set it, or a fee-policy disagreement
+  disconnects the peer.
 - **Two `Blockchain::check_tx_inputs` overloads** — the six-argument one takes
   the blockchain lock and handles the per-block-checkpoint fast path; the
   four-argument one does the rule work. Likewise two `create_block_template`
