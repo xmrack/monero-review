@@ -1252,7 +1252,28 @@ jobs:
       # three hours would be spared instead of recorded. Keeping the id makes
       # every one of those a no-op.
       - id: claude
-        uses: anthropics/claude-code-action@v1
+        # PINNED, and not as routine supply-chain hygiene: `@v1` is a moving
+        # tag that follows the action's main branch, and the action bundles the
+        # Claude Code CLI. So an upstream CLI release reaches this pipeline
+        # within the hour, unreviewed, and a tool this workflow depends on can
+        # disappear between two scheduled runs with nothing changed here.
+        #
+        # That is not hypothetical. MEASURED on 2026-09-18: run 703 at 06:03
+        # reviewed 11196 successfully on CLI 2.1.276, whose session advertised
+        # 29 tools including `TaskOutput`. The action bumped to 2.1.277 at
+        # 18:07. Run 706 at 18:33 was handed 28 tools with `TaskOutput` GONE;
+        # the Lead searched for it twice, dispatched the fleet anyway, tried
+        # `sleep 120` to wait (the sandbox refuses it), and ended its turn --
+        # which kills every agent it had just started. It exited `success`
+        # after 74s having written no review, and the PR was charged for it.
+        #
+        # a4f54ef is that 2.1.276 commit: the last version a run is known to
+        # have completed on. Unpin, or move it forward, only after checking
+        # that the session still advertises a tool the recipe can block on --
+        # `.claude/skills/*/jobs/*.md` step 4b names what it needs, and
+        # scripts/attempt.py refuses to charge a pull request when it is
+        # absent.
+        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1 @ CLI 2.1.276
         env:
           # Wait out a usage limit instead of dying on it -- DEEP RUNS ONLY.
           #
@@ -2531,7 +2552,14 @@ jobs:
       - name: Write the corrections
         id: writer
         if: steps.check.outputs.any != '0'
-        uses: anthropics/claude-code-action@v1
+        # Same commit as the review job's, and pinned for the same reason --
+        # see the long note on that step. This writer does not block on a
+        # fleet, so it did not fail the way the review did, but it is the step
+        # that edits files and opens a pull request with this job's token, and
+        # leaving one of the two on a moving tag defeats pinning the other:
+        # the next surprise simply arrives through this one instead. Move both
+        # together.
+        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1 @ CLI 2.1.276
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
