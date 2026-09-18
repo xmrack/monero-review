@@ -80,6 +80,21 @@ LIMIT_PHRASES = (
 # so it is still found; BUDGET_EXHAUSTED is matched on `subtype` separately.
 METRIC_KEYS = ("total_cost_usd", "duration_ms", "usage", "num_turns")
 
+# The tools a Lead can block on while the agent fleet runs. Both tiers dispatch
+# `Workflow`, which returns a task id IMMEDIATELY and leaves the fleet running
+# outside the turn; without one of these the run cannot wait for its own
+# result, and ending the turn kills every agent it just started.
+#
+# This is a HARNESS capability, and the pull request cannot influence it, so a
+# run that never had one is infrastructure however many turns it burned first.
+# MEASURED on run 35380878405: the action's CLI went 2.1.276 -> 2.1.277 between
+# two scheduled runs, `TaskOutput` vanished from the session's tool list, and
+# the Lead spent 14 turns and 472,273 tokens before walking away from a fleet
+# it could not wait for. The old logic read that as "did real work and produced
+# nothing" and charged the PR -- twice more and 11342 would have been retired
+# from the queue for an upstream release.
+WAIT_TOOLS = {"TaskOutput"}
+
 
 def load(path):
     """Parse a log that may be JSON or JSONL. Returns None on anything odd."""
@@ -196,6 +211,47 @@ def stream_totals(data):
     return turns, total
 
 
+def fleet_wait_missing(data):
+    """True when the session was never offered a tool it could wait on.
+
+    Read from the `init` event's own tool list, which is what the session was
+    actually handed -- not from the workflow's allowlist, which only says what
+    WOULD be permitted. Allowlisting a tool the CLI no longer ships does not
+    bring it back, and that gap is exactly the failure this detects.
+
+    Returns None when the log carries no tool list at all, so an older or
+    differently shaped log falls through to the existing tests rather than
+    being spared on a guess.
+    """
+    events = data if isinstance(data, list) else [data]
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        if event.get("type") != "system" or event.get("subtype") != "init":
+            continue
+        tools = event.get("tools")
+        if isinstance(tools, list):
+            return not (WAIT_TOOLS & set(tools))
+    return None
+
+
+def dispatched_fleet(data):
+    """True when the run started a `Workflow` -- i.e. agents were left running."""
+    events = data if isinstance(data, list) else [data]
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        message = event.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (isinstance(block, dict) and block.get("type") == "tool_use"
+                    and block.get("name") == "Workflow"):
+                return True
+    return False
+
+
 def budget_exhausted_in(data):
     """A turn-cap subtype anywhere in the stream, not only on a result record."""
     events = data if isinstance(data, list) else [data]
@@ -226,6 +282,22 @@ def verdict():
         # is more reliable than the clock -- a validation skip exits 0 in
         # seconds but an auth failure can hang first.
         return "infra", "no execution log was written, so the model never ran"
+
+    # BEFORE any measure of how much work was done, because the amount of work
+    # is exactly what misleads here: a run with no way to wait for its fleet
+    # burns a full reviewer's turns and tokens and then produces nothing, which
+    # is indistinguishable by volume from a diff nobody can review.
+    for path in paths:
+        data = load(path)
+        if data is None:
+            continue
+        if fleet_wait_missing(data):
+            how = ("after dispatching the fleet, so those agents were killed "
+                   "when the turn ended" if dispatched_fleet(data)
+                   else "so it could not run the fleet at all")
+            return "infra", ("the session was offered no tool it could block on "
+                             f"(none of {sorted(WAIT_TOOLS)}) {how}. That is the "
+                             "harness's capability, not this pull request's diff")
 
     results = []
     for path in paths:

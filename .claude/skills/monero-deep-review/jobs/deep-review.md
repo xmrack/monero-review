@@ -42,13 +42,28 @@ For the report's `Change:` line: `git diff --shortstat origin/base...HEAD`
 
 ## 3. Confirm you can actually run it
 
-Check that `Workflow` is among the tools available to you right now, with its
-parameters. This skill's frontmatter asking for it proves nothing: the
-scheduled pipeline runs with a narrow allowlist carrying neither `Workflow` nor
-`Agent`, and this skill is written for a session where both are granted.
+Check that BOTH `Workflow` and `TaskOutput` are among the tools available to
+you right now, with their parameters. This skill's frontmatter asking for them
+proves nothing, and neither does the workflow's allowlist: an allowlist says
+what would be PERMITTED, and permitting a tool the CLI no longer ships does not
+bring it back.
 
-If it is missing, stop with one line: that the deep review needs the Workflow
-tool, this session does not have it, so nothing ran. There is no lesser
+`TaskOutput` is as load-bearing as `Workflow` here, and more expensive to
+discover late. `Workflow` returns the moment it is called and leaves the fleet
+running outside your turn, so without something to block on you cannot reach
+your own result -- and ending the turn kills every agent you just started.
+MEASURED on run 35380878405, on the standard tier: the CLI dropped `TaskOutput`
+between two scheduled runs, the Lead dispatched anyway, tried `sleep` (the
+sandbox refuses it), and abandoned the fleet mid-flight. A deep run walks away
+from dozens of agents and hours of work the same way.
+
+**If `TaskOutput` is missing, do not call `Workflow` at all.** Dispatching a
+fleet you cannot wait for is worse than not starting: it spends the whole
+budget and abandons the agents, and the run looks from the outside exactly like
+a diff too hard to review. Stop first and the failure is honest and cheap.
+
+If either is missing, stop with one line naming which one, that this session
+does not have it, so nothing ran. There is no lesser
 reviewer to fall back to -- a single-reviewer fallback existed once and was
 removed, because a report it produced was indistinguishable from one the fleet
 produced. Do not improvise around it. Dispatching the agents
