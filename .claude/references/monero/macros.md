@@ -118,7 +118,7 @@ serializer for several of the same types.
 
 | macro family | defined in | generates |
 |---|---|---|
-| `BEGIN_URI_MAP2` / `MAP_URI_AUTO_JON2[_IF]` / `MAP_URI_AUTO_BIN2` | `contrib/epee/include/net/http_server_handlers_map2.h` | `handle_http_request_map()` — a chain of `else if` |
+| `BEGIN_URI_MAP2` / `MAP_URI_AUTO_JON2[_IF][_UNSAFE]` / `MAP_URI_AUTO_BIN2` | `contrib/epee/include/net/http_server_handlers_map2.h` | `handle_http_request_map()` — a chain of `else if` |
 | `BEGIN_JSON_RPC_MAP` / `MAP_JON_RPC[_WE][_IF]` | same | another `else if` chain on the method name |
 | `CHAIN_HTTP_TO_MAP2` | same | `handle_http_request()` |
 | `BEGIN_INVOKE_MAP2` / `HANDLE_INVOKE_T2` / `HANDLE_NOTIFY_T2` | `contrib/epee/include/storages/levin_abstract_invoke2.h` | `handle_invoke_map()`, dispatching on `CMD::ID == command` |
@@ -129,9 +129,17 @@ Consequences:
 - **A URI string or JSON-RPC method name appears exactly once**, in the table.
   Grepping for the handler finds its declaration and definition but not the
   URI.
-- **The whole restricted-mode access-control policy is the `_IF` suffix.**
+- **Restricted-mode access-control policy is the `_IF` suffix.**
   `MAP_URI_AUTO_JON2_IF(..., !m_restricted)` versus `MAP_URI_AUTO_JON2(...)`.
   Dropping four characters from a table line silently exposes a method.
+- **`_IF` is no longer the only suffix carrying policy.** A second family,
+  `MAP_URI_AUTO_JON2_UNSAFE` and `MAP_URI_AUTO_JON2_IF_UNSAFE`, prepends a 415
+  branch requiring `Content-Type: application/json`; both are defined in
+  `contrib/epee/include/net/http_server_handlers_map2.h`, and
+  `src/rpc/core_rpc_server.h` uses `MAP_URI_AUTO_JON2_IF_UNSAFE` on
+  `/stop_daemon`, `/start_mining` and eleven other URIs. Auditing a table line
+  now means reading **both** suffixes — the restricted-mode gate and the
+  content-type gate are separate, and a line can lose either one on its own.
 - **The chains are opened by `if (false) return true;` and order matters.** An
   entry added after a matching one is dead code that compiles cleanly.
 - A Levin command with no `HANDLE_NOTIFY_T2` entry logs "Unknown command" and

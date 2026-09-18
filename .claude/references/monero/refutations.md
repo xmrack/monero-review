@@ -68,6 +68,28 @@ that shape of candidate has cited the wrong section.
 So before refuting on this basis, say which of the two it is: an operator who
 opened the admin interface on purpose, or a request that arrived without one.
 
+## The bodyless request never reaches a JSON-RPC method
+
+The unattended cross-origin `GET` above is the primitive the URI-level gates
+exist for, and it stops short of `/json_rpc`. `BEGIN_JSON_RPC_MAP` parses the
+body before it dispatches on a method name: it answers `-32700` when the body
+does not parse as JSON
+(`contrib/epee/include/net/http_server_handlers_map2.h:161`) and `-32600` when
+it parses but names no method (`:174`). Both replies are produced before any
+handler runs, and this is the same map on the daemon and on the wallet.
+
+So a missing content-type check on `/json_rpc` is not reachable by a bodyless
+request, and a candidate that borrows the `/stop_daemon` reach to attack a
+JSON-RPC method has skipped a step.
+
+Two limits:
+
+- **It refutes the reach, not the check.** An attacker who can put a body on
+  the request — anything beyond the bodyless primitive — is not covered here.
+- **It covers `/json_rpc` only.** Every other URI is dispatched by the
+  `BEGIN_URI_MAP2` chain, which does not parse a body first; see
+  `references/monero/macros.md` for the suffixes that gate those lines.
+
 ## Boost already throws
 
 `boost::regex` has a complexity limit and throws when a match exceeds it, and
