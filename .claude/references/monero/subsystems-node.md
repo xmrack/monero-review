@@ -180,8 +180,16 @@ does not validate anything beyond parsing**. There is no key-offset cap in
 the parse path; a cap on that lives in consensus checks, not here.
 `calculate_transaction_hash` is v1 = hash of the whole blob, v2 =
 `cn_fast_hash` over three sub-hashes (prefix, base-rct slice, prunable hash).
-`get_block_hashing_blob` is the **PoW preimage** and is distinct from what
-`calculate_block_hash` hashes.
+`get_block_hashing_blob` is the **PoW preimage**, and `calculate_block_hash`
+hashes exactly those same bytes and nothing else — `bool hash_result =
+get_object_hash(get_block_hashing_blob(b), res);` at
+`src/cryptonote_basic/cryptonote_format_utils.cpp:1605`, against
+`get_block_longhash` at
+`src/cryptonote_basic/cryptonote_format_utils.cpp:1795` hashing the same
+blob, where `get_object_hash(const blobdata&, crypto::hash&)` is a bare
+`cn_fast_hash` with no prefix. The block id and the PoW preimage are the same
+bytes, so **any change to `get_block_hashing_blob` changes block ids as well
+as PoW**.
 
 **Traps.**
 

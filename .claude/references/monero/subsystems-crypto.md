@@ -250,7 +250,19 @@ top block.
 
 - **Interpreter vs JIT vs light vs full memory.** `randomx_create_vm` is a
   24-arm switch on `(FULL_MEM|JIT|HARD_AES|LARGE_PAGES)`. All must produce
-  identical output.
+  identical output; those four flags, and `RANDOMX_FLAG_SECURE`, are
+  output-neutral by construction.
+- **`RANDOMX_FLAG_V2` is the exception — it is meant to change the hash.**
+  The vendored RandomX v2.0.1 adds `RANDOMX_FLAG_V2 = 128`
+  (`external/randomx/src/randomx.h:52`), and with it set `Program::getSize`
+  returns `RANDOMX_PROGRAM_SIZE_V2` 384 rather than the V1 256
+  (`external/randomx/src/program.hpp:56-58`,
+  `external/randomx/src/configuration.h:56-57`). It is chosen per block by
+  `rx_slow_hash`'s variant argument (`get_variant_flags` in
+  `src/crypto/rx-slow-hash.c`), not by `randomx_get_flags`, and
+  `disabled_flags()` at `src/crypto/rx-slow-hash.c:123-128` refuses to let
+  `MONERO_RANDOMX_UMASK` clear it. So V2 is consensus-selected per block,
+  while the other flags must remain output-neutral.
 - **Rounding mode.** The `CFROUND` instruction must set the same effective
   mode in every backend; `randomx_calculate_hash` brackets the whole
   computation with `_mm_getcsr`/`_mm_setcsr` or `fegetenv`/`fesetenv`, and the
@@ -287,9 +299,17 @@ top block.
   soft AES. Read the template parameters, not the name.
 - **Two unrelated families of `get_block_longhash`** exist, and the
   `blockchain.cpp` calls that look like they pass a thread count do not.
-  `get_altblock_longhash` calls `rx_slow_hash` unconditionally — it does not
-  check `major_version` and does not honour the 202612 exception; its caller
-  guards that.
+  `get_altblock_longhash` calls `rx_slow_hash` without an `RX_BLOCK_VERSION`
+  check and does not honour the 202612 exception; its caller guards that. It
+  does **not** ignore `major_version`, though: it reads `b.major_version`
+  twice, passing `get_randomx_variant_for_hf_version(b.major_version)` to
+  pick the RandomX variant and gating the `rx_commitment` on
+  `b.major_version >= HF_VERSION_POW_COMMITMENT`
+  (`src/cryptonote_core/cryptonote_tx_utils.cpp:720-727`, reached from
+  `Blockchain::handle_alternative_block` at
+  `src/cryptonote_core/blockchain.cpp:1999`). Variant and commitment
+  selection for an alt block happen here, on the attacker-supplied claimed
+  version — not in the caller.
 - `assert()` in the vendored code is compiled out under `-DNDEBUG`, taking
   `randomx_init_dataset`'s bounds assert and `initCache`'s input validation
   with it.
