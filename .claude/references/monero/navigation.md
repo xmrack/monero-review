@@ -117,8 +117,13 @@ function, so `grep -n '^\s*//---'` enumerates it.
 ```
 rg -n 'HF_VERSION_|hf_version|get_current_hard_fork_version|get_ideal_version' <dir>
 ```
-Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-def.h:36`, not in
-`cryptonote_config.h` and not in `hash-ops.h` either. It is a bare `#define`,
+Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-def.h:36` — and in
+`src/crypto/hash-ops.h:100` as well, which now carries a second, identical
+definition — but not in `cryptonote_config.h`. Check both:
+`rg -n 'RX_BLOCK_VERSION' src/crypto/hash-ops.h src/crypto/hash-def.h`.
+`hash-ops.h` includes `hash-def.h` at line 84, so every TU sees both
+definitions; they are identical replacement lists, so there is no diagnostic
+to warn you if the two ever drift. It is a bare `#define`,
 so it does not answer to the `HF_VERSION_` grep above; a RandomX gating change
 is invisible to that pattern.
 
