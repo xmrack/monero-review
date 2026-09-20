@@ -184,8 +184,10 @@ requested key image is missing, leaving the output partially populated.
 
 ## `src/wallet/wallet_rpc_server.*` — `monero-wallet-rpc`
 
-97 method names dispatched by a macro-generated `else if` chain onto 93
-handlers. `main()` is at the bottom of `wallet_rpc_server.cpp`.
+98 method names dispatched by a macro-generated `else if` chain onto 93
+handlers — `grep -c "MAP_JON_RPC_WE(" src/wallet/wallet_rpc_server.h` returns
+98, the most recent addition being `wallet_exists`. `main()` is at the bottom
+of `wallet_rpc_server.cpp`.
 
 **Threading.** `http_server_impl_base::run(1, true)` — **exactly one network
 thread**, under an explicit comment. The only members touched from another
@@ -197,9 +199,10 @@ wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
 
 **Authorisation** is HTTP digest auth in epee plus a coarse `--restricted-rpc`
 allowlist, expressed **only as per-handler early returns — there is no central
-table**. There are 38 `if (m_restricted)` returns in
-`src/wallet/wallet_rpc_server.cpp` and two inverted ones (`if (!m_restricted)`,
-at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new handler is unrestricted unless it says otherwise.
+table**. There are 39 `if (m_restricted)` returns in
+`src/wallet/wallet_rpc_server.cpp` — `grep -c "if (m_restricted)"` on that file
+returns 39, the newest being in `on_wallet_exists` — and two inverted ones
+(`if (!m_restricted)`, at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new handler is unrestricted unless it says otherwise.
 
 **Traps.**
 
@@ -224,8 +227,9 @@ at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new han
   `cryptonote`.
 - `tests/fuzz/fuzz_rpc` targets the **daemon's** `core_rpc_server` only. There
   is no wallet-RPC fuzz target.
-- `WALLET_RPC_VERSION_MINOR` (currently 33) must be bumped on **any** change to
-  `wallet_rpc_server_commands_defs.h`; MAJOR bumps reset it.
+- `WALLET_RPC_VERSION_MINOR` (currently 34 — `#define WALLET_RPC_VERSION_MINOR 34`
+  in `src/wallet/wallet_rpc_server_commands_defs.h`) must be bumped on **any**
+  change to `wallet_rpc_server_commands_defs.h`; MAJOR bumps reset it.
 - Every dispatch-table method name must have a wrapper in
   `utils/python-rpc/framework/wallet.py` or the `check_missing_rpc_methods`
   test fails.
