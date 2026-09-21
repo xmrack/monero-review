@@ -23,8 +23,11 @@ Four facts change what a search means in this tree:
    `class Request`, `struct request`, and every `m_cur_*` in the LMDB backend
    are all invisible to grep.
 3. **`git grep` and `git ls-files` cannot see inside submodules.**
-   `external/randomx`, `supercop`, `rapidjson` and `gtest` are separate
-   repositories — use `rg` or `find` there.
+   `external/randomx`, `supercop`, `rapidjson`, `gtest`, `polyseed` and
+   `utf8proc` are separate repositories — use `rg` or `find` there. The last
+   two are the `.gitmodules` entries `external/polyseed`
+   (`https://github.com/tevador/polyseed.git`) and `external/utf8proc`
+   (`https://github.com/JuliaStrings/utf8proc.git`).
 4. **Spelling.** The consensus verdict flag is **`m_verifivation_failed`**
    (and `m_verifivation_impossible`). The correct spelling matches nothing.
 
