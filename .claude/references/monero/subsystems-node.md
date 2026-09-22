@@ -119,7 +119,14 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
 - `serialization::serialize` on a reading archive succeeds only if
   `ar.eof()`. Callers that must tolerate trailing bytes say
   `serialize_noeof` explicitly — `parse_and_validate_tx_prefix_from_blob` is
-  the notable one.
+  one. `parse_and_validate_tx_base_from_blob` sidesteps both: it calls
+  `bool r = tx.serialize_base(ba);` directly, then
+  `check_stream_state(ba, !require_eof)`, and `require_eof` defaults to
+  `false` (`cryptonote_format_utils.h`), so it **tolerates trailing bytes by
+  default**. The DB, tx_pool, RPC and wallet2 callers all take the default;
+  in the tree the review read, only `make_pool_supplement_from_block_entry`
+  (pruned `tx_entry` blobs) passes `require_eof=true`
+  (`src/cryptonote_basic/cryptonote_format_utils.cpp`).
 - Varints must be **canonical**: `tools::read_varint` returns
   `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
   and `EVARINT_OVERFLOW` (-1) above the target width.
