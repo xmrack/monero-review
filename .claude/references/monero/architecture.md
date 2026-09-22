@@ -155,7 +155,13 @@ their bounds.
 `randomx` (proof-of-work), `supercop` (assembly Ed25519 for the wallet),
 `db_drivers/liblmdb` (a *patched* LMDB, not upstream), `easylogging++`,
 `rapidjson`, `gtest`, `qrcodegen`, and — added for the polyseed seed scheme,
-`external/CMakeLists.txt:35-36` — `polyseed` and `utf8proc`. Those last two
+`external/CMakeLists.txt:35-36` — `polyseed` and `utf8proc`. One more:
+`mx25519` (X25519 scalar multiplication, a prerequisite for carrot_core),
+`add_subdirectory(mx25519)` at `external/CMakeLists.txt:33`, added without
+`EXCLUDE_FROM_ALL` where `randomx` and `polyseed` have it. Unlike `polyseed`
+it currently reaches `src/` through no edge at all — no Monero target links
+it, and `grep -rn mx25519 src tests contrib utils` returns no matches
+(monero-project/monero PR 10964). `polyseed` and `utf8proc`
 reach `src/` through one edge only: `target_link_libraries` in
 `src/mnemonics/CMakeLists.txt:42-47` and
 `src/mnemonics/polyseed/CMakeLists.txt:19-26` make `mnemonics` link

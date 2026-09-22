@@ -23,11 +23,14 @@ Four facts change what a search means in this tree:
    `class Request`, `struct request`, and every `m_cur_*` in the LMDB backend
    are all invisible to grep.
 3. **`git grep` and `git ls-files` cannot see inside submodules.**
-   `external/randomx`, `supercop`, `rapidjson`, `gtest`, `polyseed` and
-   `utf8proc` are separate repositories — use `rg` or `find` there. The last
-   two are the `.gitmodules` entries `external/polyseed`
-   (`https://github.com/tevador/polyseed.git`) and `external/utf8proc`
-   (`https://github.com/JuliaStrings/utf8proc.git`).
+   `external/randomx`, `supercop`, `rapidjson`, `gtest`, `polyseed`,
+   `utf8proc` and `mx25519` are separate repositories — use `rg` or `find`
+   there. The last three are the `.gitmodules` entries `external/polyseed`
+   (`https://github.com/tevador/polyseed.git`), `external/utf8proc`
+   (`https://github.com/JuliaStrings/utf8proc.git`) and, added by
+   monero-project/monero PR 10964 at `.gitmodules:14-16`, `external/mx25519`
+   (`https://github.com/tevador/mx25519.git`) — a mode 160000 gitlink at
+   commit `420ccc2f5012ee1f8e02c1976e89620e1b0959f6`.
 4. **Spelling.** The consensus verdict flag is **`m_verifivation_failed`**
    (and `m_verifivation_impossible`). The correct spelling matches nothing.
 
