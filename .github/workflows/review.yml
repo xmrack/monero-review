@@ -26,17 +26,11 @@ on:
         # silently defeat it on every manual dispatch, which is exactly the
         # failure the older "the dropdown must equal DEFAULT_MODEL" rule was
         # written to prevent.
-        #
-        # `claude-opus-5` stays listed under the newer default so a dispatch
-        # can put the two side by side on one pull request. Nothing on 5.5 has
-        # been measured on this queue yet, and the predecessor is the only
-        # thing there are numbers for.
         default: auto
         type: choice
         options:
           - auto
           - claude-opus-5-5
-          - claude-opus-5
           - claude-fable-5-1
       # Which review runs. TWO TIERS, and that is the whole of it.
       #
