@@ -78,6 +78,18 @@ Field macros and counts: `KV_SERIALIZE` **922**, `KV_SERIALIZE_OPT` 135,
   `KV_SERIALIZE` to `KV_SERIALIZE_OPT` makes it vanish from responses whenever
   it holds the default. `KV_SERIALIZE_VAL_POD_AS_BLOB_OPT_N` has no such
   short-circuit, so the two "OPT" families are **not symmetric**.
+- **Plain `KV_SERIALIZE` drops fields on store too.** An empty `std::vector` or
+  `std::list` member is never written, so its key is missing from the
+  response: `serialize_stl_container_t_val` and
+  `serialize_stl_container_t_obj` in
+  `contrib/epee/include/serialization/keyvalue_serialization_overloads.h`
+  open with `if(!container.size()) return true;`.
+- **A present key with the wrong JSON type throws; it does not default.** The
+  missing-key leniency above covers absent keys only. `portable_storage::get_value`
+  reaches `ASSERT_AND_THROW_WRONG_CONVERSION` in
+  `contrib/epee/include/storages/portable_storage_val_converters.h` via
+  `get_value_visitor`, which throws "WRONG DATA CONVERSION" instead of falling
+  back to a default — even under the `_OPT` forms.
 - **`typedef epee::misc_utils::struct_init<request_t> request;`** means
   `COMMAND_RPC_X::request` and `::request_t` are *different types*, and the
   zero-initialisation of every field comes from that typedef, not from member
