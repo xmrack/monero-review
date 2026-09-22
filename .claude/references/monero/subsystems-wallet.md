@@ -154,8 +154,10 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
   header** — there is no target; the headers reach the build another way.
 - Two independent version numbers govern the cache: `VERSION_FIELD(2)` in the
-  native serializer (`src/wallet/wallet2.h:1087`) and
-  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (`src/wallet/wallet2.h:1777`), plus
+  native serializer (near `src/wallet/wallet2.h:1113`) and
+  `BOOST_CLASS_VERSION(tools::wallet2, 31)` (near `src/wallet/wallet2.h:1805`;
+  line numbers drift, so re-find both with
+  `grep -n 'BOOST_CLASS_VERSION(tools::wallet2,\|VERSION_FIELD(' src/wallet/wallet2.h`), plus
   per-struct Boost versions on the nested types. They are bumped independently
   and a field added to one path is not automatically carried by the other, so
   ask which serializer a new cache field is reachable through: the Boost path
