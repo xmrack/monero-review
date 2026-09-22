@@ -375,24 +375,32 @@ and an atomic counter.
   Nested inside an existing batch, a `LockedTXN` is a no-op — so "the DB batch
   is rolled back" only holds when that `LockedTXN` opened it.
 - **`txpool_tx_meta_t` is written raw** and pinned by two asserts at
-  `src/blockchain_db/blockchain_db.h:194-195`:
+  `src/blockchain_db/blockchain_db.h:197-198`:
   `static_assert(sizeof(txpool_tx_meta_t) == 192)` and
   `static_assert(offsetof(txpool_tx_meta_t, valid_input_verification_id) == 160)`.
   Those two are the invariant, **not the field count**. The struct carries
-  reserve in two places, and they behave differently. `:168-173` is a
-  bitfield byte — `double_spend_seen:1, pruned:1, is_local:1,
-  dandelionpp_stem:1, is_forwarding:1, bf_padding:3` — with only **three
-  spare bits left**, so a fourth flag has to come out of `padding` instead.
-  `:175` is `uint8_t padding[44]; // til 160 bytes`, ahead of
-  `crypto::hash valid_input_verification_id` at `:178`. A field carved out of
+  reserve in two places — both inside `:167-181` — and they behave
+  differently. One is a bitfield byte — `double_spend_seen:1, pruned:1,
+  is_local:1, dandelionpp_stem:1, is_forwarding:1, prunable_hash_valid:1,
+  bf_padding:2` — with only **two spare bits left**, so a third flag has to
+  come out of `padding` instead. The other is
+  `uint8_t padding[12]; // til 160 bytes` — **12 spare bytes, not 44** —
+  sitting between `crypto::hash prunable_hash` and
+  `crypto::hash valid_input_verification_id`. A field carved out of
   either reserve needs **no** migration: records written by older daemons read
   back as all-zero there, which every consumer must treat as "absent". Adding
   a field is a DB migration only when it changes the size or moves an existing
   offset — and moving `valid_input_verification_id` trips the `offsetof`
   assert at compile time, which is the point of it. The writers that zero the
-  reserve are `src/cryptonote_core/tx_pool.cpp:247-248` and `:323-324`
-  (`meta.bf_padding = 0; memset(meta.padding, 0, sizeof(meta.padding));`); a
-  new write path that forgets that pair persists stack garbage into the DB.
+  reserve are `src/cryptonote_core/tx_pool.cpp:278-279` and `:355-356`, both
+  in `tx_memory_pool::add_tx`
+  (`meta.bf_padding = 0; memset(meta.padding, 0, sizeof(meta.padding));`) —
+  but that pair **no longer clears the whole reserve**: `bf_padding = 0`
+  leaves `prunable_hash_valid` untouched, and the `memset` covers 12 bytes
+  rather than 44. A write path must also call `cache_prunable_hash` (the
+  helper at `tx_pool.cpp:125`), which those two paths do at `:280` and
+  `:357-358`. A new write path that forgets any of that persists stack
+  garbage into the DB.
 - The table schema is **duplicated** in
   `src/blockchain_utilities/blockchain_prune.cpp`; `open()`'s comment says to
   change both.
