@@ -3020,9 +3020,7 @@ jobs:
           Proposed by the review run at $RUN_URL. Each entry names what the
           reference said, what the Monero tree shows, and the citation that
           settles it. The job that wrote this has no Monero checkout, on
-          purpose, so it verified none of them -- the evidence is what to check.
-
-          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+          purpose, so it verified none of them -- the evidence is what to check."
 
           # No lease and no force: this branch is new every run, so there is
           # nothing on the remote to overwrite and nothing to be raced for.
