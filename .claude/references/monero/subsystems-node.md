@@ -119,7 +119,14 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
 - `serialization::serialize` on a reading archive succeeds only if
   `ar.eof()`. Callers that must tolerate trailing bytes say
   `serialize_noeof` explicitly — `parse_and_validate_tx_prefix_from_blob` is
-  the notable one.
+  the notable one. Some skip the eof check without it:
+  `parse_and_validate_tx_base_from_blob` calls the member
+  `tx.serialize_base(ba)` directly, so it accepts trailing bytes by default
+  and checks `::serialization::check_stream_state` only when the caller passes
+  `require_eof=true`. The pruned-blob branch of
+  `make_pool_supplement_from_block_entry` (P2P sync) is the only caller that
+  does (`src/cryptonote_basic/cryptonote_format_utils.cpp`;
+  `git grep parse_and_validate_tx_base_from_blob -- src` lists the callers).
 - Varints must be **canonical**: `tools::read_varint` returns
   `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
   and `EVARINT_OVERFLOW` (-1) above the target width.
