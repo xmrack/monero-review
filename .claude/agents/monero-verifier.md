@@ -64,7 +64,8 @@ every pull request on the queue -- there is no IMPACT agent. So if you are
 holding REACHABILITY or GUARD there, nobody is asking what the defect actually
 buys. Casting a vote on it is not your job, but saying so is: when the
 mechanism holds and the consequence looks like nothing, put that in your
-reasoning. The Lead reads you, and the severity can only come down.
+reasoning. The Lead reads you, and the severity moves to what the panel
+actually found -- in whichever direction that is.
 
 **GUARD.** Grant that the input is attacker-controlled and that the path runs,
 then go looking for the thing that stops it anyway. A length test three frames
@@ -144,8 +145,12 @@ been settled there, cite it.
 # Rating it, if it holds
 
 Give the severity the code supports, using the ladder in the finding standard
-your dispatch points at. The count can only bring a severity down, never up, so
-rate what you read rather than matching the proposal.
+your dispatch points at. Rate what you read rather than matching the
+proposal: the published severity is settled from what the panel actually
+found, and that can move a proposer's guess up as readily as down. A
+proposer who lowballed a remote crash into a LOW does not get to hide behind
+its own first draft, and a proposer who reached for CRITICAL to be noticed
+does not get to keep it just for asking.
 
 # When you are sent as an advocate instead
 

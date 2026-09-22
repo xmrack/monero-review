@@ -153,9 +153,9 @@ function and that it covers the defect; correct it and say so where reading the
 code contradicts it. Do not replace it with a restatement of the defect:
 "validate the length" is what this field exists to stop.
 
-Severity arrives already settled: the workflow lowered any severity its
-agreeing verifiers rated below the proposal. Publish it as returned, and put
-anything that moved on Coverage's **Corrections.** line.
+Severity arrives already settled: the workflow set it to what its agreeing
+verifiers actually rated, which can move a proposal up or down. Publish it as
+returned, and put anything that moved on Coverage's **Corrections.** line.
 
 So does `provenance`, and it is the other thing you publish exactly as
 returned: `introduced`, `newly-reachable` or `pre-existing`, settled by the

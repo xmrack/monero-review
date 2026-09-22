@@ -4,7 +4,7 @@
     RUN_URL=... pr_body.py <out.md> [SUMMARY.md] [SKIPPED.md] [proposals.json]
 
 The writer produces prose; this turns it into something that renders on GitHub
-and says where its claims came from. Three jobs, and each exists because the
+and says where its claims came from. Four jobs, and each exists because the
 published pull requests got it wrong:
 
 1. PROVENANCE. A correction is observed while reading some upstream pull
@@ -28,8 +28,16 @@ published pull requests got it wrong:
    middle of the call. Whitespace inside a span that got wrapped is collapsed
    to one space.
 
-Nothing else is touched: paragraph wrapping outside code spans renders as a
-paragraph either way, so it is left exactly as written.
+4. HARD-WRAPPED PARAGRAPHS. GitHub renders a single newline inside an issue or
+   pull request body as a visible line break -- unlike a plain markdown file
+   read elsewhere, where the same newline is a soft break and the paragraph
+   flows as one line. The writer hard-wraps at about 80 columns on the
+   assumption that it does not matter outside a code span; on GitHub it does,
+   and a hard-wrapped bullet publishes as a stack of short lines that break
+   well before the reader's actual line width. Lines that are part of the same
+   paragraph or list item are rejoined with a single space; a heading, a list
+   marker's own first line, a block quote, a table row, a thematic break and a
+   blank line each stay exactly where they are, so no visible structure moves.
 
 Exit status is always 0 where it can be. A body that fails to assemble would
 throw away a correction the pipeline already paid to find, so every failure
@@ -47,6 +55,12 @@ FENCE = re.compile(r"^(\s*)(```+|~~~+)")
 # markdown the writer produced, so this sees the same spans GitHub will.
 CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.DOTALL)
 HEADING = re.compile(r"^(#{1,6})(\s+)(.*)$")
+# Lines that must never be folded into a neighbour: each stays exactly where
+# it is, and each also ends whatever paragraph or list item came before it.
+LIST_MARKER = re.compile(r"^\s*([-*+]|\d+[.)])(\s+|$)")
+BLOCK_QUOTE = re.compile(r"^\s*>")
+TABLE_ROW = re.compile(r"^\s*\|")
+THEMATIC_BREAK = re.compile(r"^\s*([-*_])(?:\s*\1){2,}\s*$")
 
 
 def split_fences(text):
@@ -80,6 +94,43 @@ def unwrap_code_spans(text):
             return m.group(0)
         return m.group(1) + " ".join(inner.split()) + m.group(1)
     return CODE_SPAN.sub(fix, text)
+
+
+def _standalone(line):
+    """A line that is never folded into a neighbour, in either direction."""
+    return (not line.strip() or HEADING.match(line) or BLOCK_QUOTE.match(line)
+            or TABLE_ROW.match(line) or THEMATIC_BREAK.match(line))
+
+
+def unwrap_paragraphs(text):
+    """Rejoin a paragraph or list item the writer hard-wrapped across lines.
+
+    GitHub turns a single newline inside an issue or pull request body into a
+    visible line break, so text hard-wrapped at ~80 columns -- fine in a plain
+    markdown file, where the same newline is a soft break -- publishes as a
+    stack of short lines instead of the paragraph it was written as. A line
+    that opens a list item starts a fresh line of its own; anything that
+    follows it without itself being standalone or a new list item is a
+    continuation and is folded back onto it with a single space.
+    """
+    out, buf = [], []
+
+    def flush():
+        if buf:
+            out.append(" ".join(part.strip() for part in buf))
+            buf.clear()
+
+    for line in text.split("\n"):
+        if _standalone(line):
+            flush()
+            out.append(line)
+        elif LIST_MARKER.match(line):
+            flush()
+            buf.append(line)
+        else:
+            buf.append(line)
+    flush()
+    return "\n".join(out)
 
 
 def demote_headings(text, floor=3):
@@ -123,6 +174,7 @@ def clean_block(text, floor=3, drop=None):
             parts.append(chunk)
             continue
         chunk = unwrap_code_spans(chunk)
+        chunk = unwrap_paragraphs(chunk)
         chunk = demote_headings(chunk, floor)
         parts.append(chunk)
     out = "\n".join(parts)

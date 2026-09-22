@@ -214,9 +214,15 @@ node a peer can crash, stall, or make do unbounded work is a real finding in a
 currency, and a validation rule an attacker can make expensive can reach
 CRITICAL if it splits the chain.
 
-**Where two tiers are arguable, take the lower one.** An inflated HIGH costs a
-reader more than a cautious rating, and inflating to be noticed does not work:
-the panel can only bring a severity down.
+**Rate what the evidence supports, not what gets attention.** The panel checks
+this the same way it checks provenance: a verifier who reads the code rates it
+independently of what the proposer wrote, and the published severity is the
+panel's own answer, which can correct a proposal in either direction. Reaching
+for CRITICAL to be noticed does not work, because a verifier who reads a MEDIUM
+in the code says so; but so does lowballing a remote crash into a LOW to avoid
+the argument, because a verifier who reads a HIGH says that instead. Where two
+tiers are genuinely arguable to you, say which and why, and let the panel's own
+read settle it rather than defaulting yourself to the cautious one.
 
 # Confidence
 
