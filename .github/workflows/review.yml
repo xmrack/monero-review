@@ -26,10 +26,16 @@ on:
         # silently defeat it on every manual dispatch, which is exactly the
         # failure the older "the dropdown must equal DEFAULT_MODEL" rule was
         # written to prevent.
+        #
+        # `claude-opus-5` stays listed under the newer default so a dispatch
+        # can put the two side by side on one pull request. Nothing on 5.5 has
+        # been measured on this queue yet, and the predecessor is the only
+        # thing there are numbers for.
         default: auto
         type: choice
         options:
           - auto
+          - claude-opus-5-5
           - claude-opus-5
           - claude-fable-5-1
       # Which review runs. TWO TIERS, and that is the whole of it.
@@ -137,7 +143,20 @@ env:
   # any dispatch that omits the input. Keep the `model:` input default above
   # identical, or the dropdown lies about scheduled runs again.
   #
-  # Opus. Measured cost per review on this queue, from published telemetry
+  # Opus 5.5, and it is UNMEASURED on this queue. The cost curve below was
+  # measured on Opus 5 and is kept because it is the only real sample this
+  # repo has. Published token prices are $4/$20 per MTok against Opus 5's
+  # $5/$25, so the same token counts should land about a fifth cheaper -- an
+  # expectation from a price list, not a measurement. Watch the per-issue
+  # telemetry footer on the first few runs rather than trusting that
+  # arithmetic.
+  #
+  # AND WATCH EFFORT, which is the part a price list does not cover. Opus 5.5
+  # defaults to `medium`, one level below Opus 5's `high`. Both tiers now name
+  # a level outright rather than inherit one -- deep did not until this model
+  # bump, and the router carries the reasoning for why that changed.
+  #
+  # Measured cost per review on this queue, on Opus 5, from published telemetry
   # footers rather than from one early sample:
   #
   #   single reviewer   $1.10 (1 file) · $2.18 (2) · $3.27 (5) · $4.12 (7)
@@ -149,7 +168,8 @@ env:
   # review. That was a single early sample and it is nowhere near the median;
   # it was repeated in three other places from here. Cost tracks the size of
   # the diff, so quote the curve or quote nothing, and watch the per-issue
-  # footer rather than guessing.
+  # footer rather than guessing. The trap is open again on 5.5, where the only
+  # number anybody has is a price per token.
   #
   # Fable is the other option and is UNMEASURED on this queue: no cost,
   # runtime or finding-quality sample yet. Two things to watch on the first
@@ -166,7 +186,7 @@ env:
   # Sonnet figures above are what the queue used to cost when it ran Sonnet
   # outright; they are kept because they are the only measured comparison this
   # repo has, not because any tier reaches for them.
-  DEFAULT_MODEL: claude-opus-5
+  DEFAULT_MODEL: claude-opus-5-5
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
   # ~42 at 3. Start at 1 so the first drain is survivable, then widen.
@@ -1164,12 +1184,22 @@ jobs:
           # value does not reach them. The Lead itself only fixes the range,
           # lists the files, calls Workflow and writes the report.
           #
-          # DEEP DELIBERATELY PASSES NO EFFORT. Its one real measurement --
-          # 3h13m and $99.79 on 9559 -- was taken without the flag, the CLI
-          # does not document its default, and there is no way from here to
-          # know whether naming a level would raise or lower it. An empty
-          # `effort` omits the argument entirely below, so deep runs exactly as
-          # it was measured. Set it only alongside a fresh measurement.
+          # DEEP NAMES `high`, AND IT USED TO NAME NOTHING. Passing no flag
+          # kept it reproducing its one real measurement -- 3h13m and $99.79 on
+          # 9559, taken without the flag -- back when the unnamed default was
+          # Opus 5's `high`. Opus 5.5 defaults to `medium`, one level lower, so
+          # the same empty value now means something weaker than it did, and it
+          # would leave deep BELOW the standard tier on the one lever that is
+          # supposed to separate them. `high` is the level that measurement is
+          # believed to have run at, so naming it is the closest thing to
+          # holding deep still while the default moved underneath.
+          #
+          # It is still a change to a measured pipeline: nothing on this queue
+          # has run on 5.5, so treat $99.79 as a stale baseline rather than a
+          # target, and take a telemetry footer off the first deep run before
+          # reading anything into the number. `xhigh` is the other candidate --
+          # it is what Claude Code itself defaults to for agentic work -- and it
+          # wants its own measurement before it goes in here.
           #
           # Turns are not billed; tokens are, so headroom is free and running
           # out is not. Both tiers get more than a single reviewer's 200
@@ -1182,7 +1212,7 @@ jobs:
               effort=high; turns=300
               prompt=/monero-standard-review; label= ;;
             deep)
-              effort=;     turns=400
+              effort=high; turns=400
               prompt=/monero-deep-review; label=deep-review ;;
           esac
           model="$DEFAULT_MODEL"
@@ -2689,7 +2719,7 @@ jobs:
           # checkout; it cannot make any of that land. That is enforcement in
           # git rather than in a pattern whose semantics I could not verify.
           claude_args: |
-            --model claude-opus-5
+            --model claude-opus-5-5
             --max-turns 40
             --allowedTools "Read,Grep,Glob,Edit,Write"
 
@@ -2998,7 +3028,7 @@ jobs:
           settles it. The job that wrote this has no Monero checkout, on
           purpose, so it verified none of them -- the evidence is what to check.
 
-          Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+          Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
           # No lease and no force: this branch is new every run, so there is
           # nothing on the remote to overwrite and nothing to be raced for.
