@@ -317,6 +317,11 @@ stood up, how many of those were published as one entry with another, and where
 `review.md` is. Claim no more verification than `coverage`
 supports, and say plainly that this was the standard tier, not the deep one.
 
+If the report goes private (see "Some reviews must not be published in public"
+in the REPORT SPEC), this message names `review.md` and the count of findings,
+and nothing else: no titles, files, functions or bug classes. It is kept in the
+execution log, and nothing it says may describe the bug.
+
 If `coverage.unaccounted` is not empty, lead with that rather than the findings.
 If `coverage.failedCells` is a large share of the cells dispatched, lead with
 *that*: the run did not review what it set out to, and no number of clean units

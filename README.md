@@ -40,6 +40,33 @@ gh variable set REVIEW_PAUSED --body 1 --repo xmrack/monero-review
 
 `--body 0` resumes. Reviewing a PR by number still works while paused.
 
+## Private disclosure
+
+This repository is public, and so are its run logs, step summaries and
+artifacts. Some reviews are filed in the private
+`xmrack/monero-review-disclosure` repository instead:
+
+- a surviving CRITICAL or HIGH finding that the pull request did not introduce,
+  which means it is already in live code
+- a CRITICAL or HIGH finding the pull request introduced that still affects
+  live code (the reviewer marks it)
+- an obvious fix by Monero developers for a critical or high security bug
+  (the reviewer marks it)
+
+`scripts/disclosure.py` makes the decision. For a private review, this
+repository gets no issue, no review text in the run summary, no review or
+transcript artifact, and no reference-correction pull request. A finding the
+pull request introduces, in code that is not live yet, is reported here as
+usual.
+
+This needs a `DISCLOSURE_TOKEN` secret: a fine-grained token with Issues
+read/write on the disclosure repository. If the secret is missing, nothing is
+reviewed.
+
+```bash
+gh secret set DISCLOSURE_TOKEN --repo xmrack/monero-review
+```
+
 ## Two tiers
 
 Every PR the sweep picks up gets a **standard** scan. I can manually launch a 

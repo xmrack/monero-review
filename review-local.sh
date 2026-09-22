@@ -442,3 +442,9 @@ mkdir -p "$HERE/reviews"
 OUT="$HERE/reviews/pr-$PR-$SHA.md"
 cp "$CACHE/review.md" "$OUT"
 echo "==> $OUT"
+
+# Nothing leaves this machine from here, but a local review is easy to paste
+# somewhere public by hand. Say so when CI would have filed it privately.
+if python3 "$HERE/scripts/disclosure.py" "$OUT" | grep -qx 'route=private'; then
+  echo "!! this review is for the private disclosure repository ($(python3 "$HERE/scripts/disclosure.py" "$OUT" | sed -n 's/^reason=//p')). Do not post it in public." >&2
+fi
