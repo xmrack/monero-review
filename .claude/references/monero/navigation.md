@@ -27,7 +27,13 @@ Four facts change what a search means in this tree:
    `utf8proc` are separate repositories — use `rg` or `find` there. The last
    two are the `.gitmodules` entries `external/polyseed`
    (`https://github.com/tevador/polyseed.git`) and `external/utf8proc`
-   (`https://github.com/JuliaStrings/utf8proc.git`).
+   (`https://github.com/JuliaStrings/utf8proc.git`). On a tree carrying
+   PR 10965 (head `a53c1f41f4ae`) there is a seventh, `external/mx25519`
+   (`https://github.com/tevador/mx25519.git`), and it is as invisible as the
+   rest: `git ls-files external/mx25519` prints only the path itself, and
+   `git ls-tree HEAD external/mx25519` shows mode 160000 commit
+   `420ccc2f5012ee1f8e02c1976e89620e1b0959f6`. Grep the mx25519 assembly with
+   git tooling and you get nothing — that is the submodule, not absent code.
 4. **Spelling.** The consensus verdict flag is **`m_verifivation_failed`**
    (and `m_verifivation_impossible`). The correct spelling matches nothing.
 

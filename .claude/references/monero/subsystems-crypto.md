@@ -16,7 +16,8 @@ Verified against master `3d3920d7`.
 
 ## `src/crypto/` — the primitives
 
-`cncrypto` is five things that live together for historical reasons.
+`cncrypto` is five things that live together for historical reasons — six on
+a tree carrying PR 10965, which adds item 6 below.
 
 1. **Ed25519 group and scalar arithmetic**, plain C: `crypto-ops.c` (4042
    lines) and `crypto-ops-data.c` (882 lines of precomputed tables, no
@@ -41,6 +42,16 @@ Verified against master `3d3920d7`.
    cache encryption.
 5. **Proof-of-work**: `slow-hash.c` (legacy CryptoNight) and `rx-slow-hash.c`
    (the RandomX shim) — see below.
+6. **Montgomery-curve (x25519) scalar multiplication**: `x25519.cpp` /
+   `x25519.h`, a thin wrapper over the `external/mx25519` submodule. **Added
+   by PR 10965 (head `a53c1f41f4ae`); absent from master `3d3920d7`** — if
+   the tree in front of you has no sixth item, that is why.
+   `src/crypto/CMakeLists.txt` adds `x25519.cpp` to `crypto_sources` and
+   `mx25519_static` to `target_link_libraries(cncrypto PUBLIC)` — a public
+   edge, so it is felt by everything above `cncrypto`.
+   `external/CMakeLists.txt` adds `add_subdirectory(mx25519)`, and
+   `.gitmodules` points `external/mx25519` at
+   `https://github.com/tevador/mx25519.git`.
 
 **`src/crypto/wallet/` is a build-time swap, and it is not opt-in.**
 `MONERO_WALLET_CRYPTO_LIBRARY` defaults to `auto`; `monero_crypto_autodetect`

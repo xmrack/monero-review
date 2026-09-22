@@ -142,11 +142,35 @@ The one-namespace-one-directory cases are `src/net` (`net`), `src/lmdb`
 `external/easylogging++`, `external/rapidjson/include`,
 `external/supercop/include` and — appended by the polyseed work —
 `external/polyseed/include` and `external/utf8proc` are all on the global
-include path (one `include_directories` call, `CMakeLists.txt:473`). So **a
-bare quoted include is usually an epee header**: `#include "span.h"`,
-`#include "string_tools.h"`, `#include "misc_log_ex.h"`.
-Five basenames collide between `src/` and
-`contrib/epee/include`: `base.h`, `enums.h`, `error.h`, `fwd.h`, `wire.h`.
+include path (one `include_directories` call, `CMakeLists.txt:476` on
+master — find it with `grep -n '^include_directories(' CMakeLists.txt`
+rather than trusting the number). So **a bare quoted include is usually an
+epee header**: `#include "span.h"`, `#include "string_tools.h"`,
+`#include "misc_log_ex.h"`.
+
+PR 10965 (head `a53c1f41f4ae`) rewrites that call as a multi-line,
+alphabetised list at `CMakeLists.txt:477-487` and gives it a ninth root,
+`external/mx25519/include`, so a bare `#include "mx25519.h"` resolves
+globally the way a bare epee include does — `src/crypto/x25519.h:50` relies
+on it. Alphabetising also reorders the roots: `contrib/epee/include` comes
+first and `src` last, where `src` used to precede epee.
+
+Five basenames are shared between `src/` and `contrib/epee/include` —
+`base.h`, `enums.h`, `error.h`, `fwd.h`, `wire.h` — but **none of them
+collides as an include-relative path**, so the `src`/epee ordering in
+`include_directories` never decides a resolution. epee holds
+`serialization/wire.h`, `serialization/wire/error.h`,
+`serialization/wire/fwd.h`, `serialization/wire/json/base.h` and
+`net/enums.h`; `src` holds `crypto/wire.h`, `common/error.h`,
+`net/error.h`, `lmdb/error.h`, `cryptonote_basic/fwd.h`, `net/fwd.h`,
+`rpc/fwd.h` and `cryptonote_protocol/enums.h`. Re-check with:
+
+```
+find src contrib/epee/include -name 'base.h' -o -name 'enums.h' \
+     -o -name 'error.h' -o -name 'fwd.h' -o -name 'wire.h'
+```
+
+No two hits share a root-relative path.
 
 **Forward-declaration headers** are `fwd.h` per subsystem, except
 `src/common/common_fwd.h`. Two epee files named `fwd.h` are *not* pure forward
