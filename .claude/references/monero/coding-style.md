@@ -138,11 +138,15 @@ included under `#ifdef`.
 The one-namespace-one-directory cases are `src/net` (`net`), `src/lmdb`
 (`lmdb`), `src/wallet/api` (`Monero`) and `src/ringct` (`rct`).
 
-**Include paths.** `src`, `contrib/epee/include`, `external`,
-`external/easylogging++`, `external/rapidjson/include`,
-`external/supercop/include` and — appended by the polyseed work —
-`external/polyseed/include` and `external/utf8proc` are all on the global
-include path (one `include_directories` call, `CMakeLists.txt:473`). So **a
+**Include paths.** Nine roots are on the global include path, in one
+`include_directories` call now written one root per line in alphabetical
+order at `CMakeLists.txt:477-487`: `contrib/epee/include`, `external`,
+`external/easylogging++`, `external/mx25519/include`,
+`external/polyseed/include`, `external/rapidjson/include`,
+`external/supercop/include`, `external/utf8proc`, `src`. Note that `src` is
+last, not first, and that the ninth root — `external/mx25519/include`, added
+alongside the mx25519 submodule — is recent (`CMakeLists.txt:477-487` in
+monero-project/monero PR 10964). So **a
 bare quoted include is usually an epee header**: `#include "span.h"`,
 `#include "string_tools.h"`, `#include "misc_log_ex.h"`.
 Five basenames collide between `src/` and
