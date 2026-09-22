@@ -55,12 +55,12 @@ though they will.
 
 **Panel split.** <Only for a finding carrying `rescued`. At most 3 sentences: that the panel rejected it two to one and an advocate restored it, what the two rejections relied on, and the line the advocate showed they were wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
 
-**Defect.** <At most 5 sentences and at most 120 words: the untrusted input, what it reaches, why nothing stops it, and every frame the input crosses on the way. A citation for each. One line.>
+**Defect.** <At most 6 sentences and at most 144 words: the untrusted input, what it reaches, why nothing stops it, and every frame the input crosses on the way. A citation for each. One line.>
 
 **Impact.** <At most 2 sentences. What someone gets, and the clause that makes it worse, or narrower, than it sounds.>
 **Needs:** <what has to hold: a non-default flag, an attacker position, a victim action. Write "nothing" when that is true; it is the strongest thing this line can say. One line. The break above this label is deliberate, and it is the only one in the block.>
 
-**Fix.** <At most 4 sentences and at most 100 words. The file and the function to change, and the change. At the cause, not at one caller. One line.>
+**Fix.** <At most 5 sentences and at most 120 words. The file and the function to change, and the change. At the cause, not at one caller. One line.>
 
 **Where it came from.** <At most 2 sentences. One of: introduced by this change, and the `+` line or the deleted guard; newly reachable, and what now reaches it; or pre-existing, and where outside the change's own code it sits. Take the word from the finding's `provenance`, which the panel settled. One line.>
 
@@ -78,7 +78,7 @@ though they will.
 
 <Only when the run returned `commentDiscrepancy`. Omit the heading entirely when it is empty.>
 
-- `path/to/file.cpp:123` · <What the code does, in one sentence, and it comes first.> **Says.** <the claim, quoted exactly from the entry's `says`, and named: the comment, the description, the commit message or the review discussion.> **Wrong where.** <The input, state or path under which believing the claim would be wrong, from the entry's `shownBy`, concrete enough that the reader could construct it.> <Which of the two is meant to change is a question for a human.>
+- `path/to/file.cpp:123` · <What the code does, in one sentence, and it comes first.> **Says.** <the claim, quoted exactly from the entry's `says`, and named: the comment, the description, the commit message or the review discussion.> **Wrong where.** <The input, state or path under which believing the claim would be wrong, from the entry's `shownBy`, concrete enough that the reader could construct it.> <At most one more sentence of evidence, carrying the line it rests on.> <Which of the two is meant to change is a question for a human.>
 
 ## Not covered
 
@@ -184,7 +184,7 @@ reachable, or let past a guard it added is this change's business, and marking
 those as not-introduced would be false. Their **Where it came from.** block
 carries the distinction in full.
 
-**Defect.** Five sentences at most, and at most 120 words. The untrusted
+**Defect.** Six sentences at most, and at most 144 words. The untrusted
 input, what it reaches, why nothing stops it, each with a line you read. Spend
 the room on the route rather than on adjectives: an input that crosses three
 frames before it does damage needs those frames named, and a chain compressed
@@ -202,7 +202,7 @@ whether a MEDIUM is this afternoon's problem or next month's. State the
 condition plainly: a flag by its real spelling, an attacker position, a victim
 action.
 
-**Fix.** Four sentences at most and at most 100 words, and it must survive
+**Fix.** Five sentences at most and at most 120 words, and it must survive
 being read alone. Name the file, name the function, say what changes.
 "Validate the length" is not a fix; "reject the packet in
 `handle_notify_new_transactions` before the resize at `:412`, since every
