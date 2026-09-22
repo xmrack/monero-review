@@ -29,7 +29,10 @@ separate the PRs actually in line from the doc-only residue:
   open      open PRs upstream
 
 Env: UPSTREAM, REVIEW_REPO, MAX_AGE_DAYS, BATCH, SETTLE_MINUTES,
-     BASE_BRANCH, GH_TOKEN (optional), API (optional base URL, for testing).
+     BASE_BRANCH, GH_TOKEN (optional), API (optional base URL, for testing),
+     DISCLOSURE_REPO and DISCLOSURE_TOKEN (optional, together: the private
+     repository that security-sensitive reviews are filed in instead, read as
+     part of the same dedup record).
 """
 import collections
 import datetime
@@ -174,20 +177,21 @@ MAX_ISSUE_PAGES = 100
 TRANSIENT = (OSError, ValueError)
 
 
-def get(path, params=None):
+def get(path, params=None, token=None):
     url = f"{API}{path}"
     if params:
         url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+    token = token or TOKEN
     req = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": "monero-review",
-        **({"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}),
+        **({"Authorization": f"Bearer {token}"} if token else {}),
     })
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
 
 
-def review_state(repo):
+def review_state(repo, token=None):
     """Read this repo's issue titles as the record of what has been attempted.
 
     Returns (done, failed, seen): SHAs with a completed review, a count of
@@ -214,7 +218,8 @@ def review_state(repo):
     for page in range(1, MAX_ISSUE_PAGES + 1):
         try:
             issues = get(f"/repos/{repo}/issues",
-                         {"state": "all", "per_page": 100, "page": page})
+                         {"state": "all", "per_page": 100, "page": page},
+                         token=token)
         # OSError covers HTTPError and URLError both, so a 502, a rate limit,
         # a timeout and a DNS failure all land here rather than only the first.
         except (OSError, ValueError) as exc:
@@ -362,6 +367,20 @@ def main():
               f"({len(prs)}); older ones are not in this tick's queue",
               file=sys.stderr)
     state = review_state(repo)
+    # The private disclosure repository is half of the same record. A review
+    # routed there leaves nothing here, so without reading it the PR looks
+    # unreviewed and is reviewed -- and routed there -- again on every tick.
+    # Its warnings say "the disclosure record", never its findings: stderr
+    # lands in a public job log.
+    disclosure_repo = os.environ.get("DISCLOSURE_REPO", "")
+    disclosure_token = os.environ.get("DISCLOSURE_TOKEN", "")
+    if state is not None and disclosure_repo and disclosure_token:
+        private = review_state(disclosure_repo, token=disclosure_token)
+        if private is None:
+            state = None
+        else:
+            state = (state[0] | private[0], state[1] + private[1],
+                     state[2] | private[2])
     if state is None:
         # Select NOTHING. The record of what has been reviewed is the only
         # thing standing between this queue and re-reading work it has already
