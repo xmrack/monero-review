@@ -164,10 +164,10 @@ code contradicts it. Do not replace it with a restatement of the defect:
 there is one **Fix.** for the whole entry, because one change at one place
 fixing them all is what the merge decided.
 
-Severity arrives already settled: the workflow lowered any severity its
-agreeing verifiers rated below the proposal. Publish it as returned, and put
-every entry in `coverage.severityLowered` on Coverage's **Corrections.** line
-with both values.
+Severity arrives already settled: the workflow set it to the median of what
+its agreeing verifiers actually rated, which can move a proposal up or down.
+Publish it as returned, and put every entry in `coverage.severityChanged` on
+Coverage's **Corrections.** line with both values.
 
 So does `provenance`, and it is the other thing you publish exactly as
 returned: `introduced`, `newly-reachable` or `pre-existing`, settled by the

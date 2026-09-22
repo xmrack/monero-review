@@ -96,7 +96,7 @@ you claim cannot weigh what you cite.
 **Not read.** <each area a reader failed on, named; omit the line when none failed>
 **Handed on.** <each observation one reader passed to another, and how it was settled; omit the line when none was>
 **Refactors.** <<n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions; omit the line when nothing was raised>
-**Corrections.** <a severity lowered, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
+**Corrections.** <a severity the panel moved, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
 
 <!-- workflow-updates
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
@@ -230,7 +230,7 @@ It comes last in the block because it is the audit trail: a reader who accepts
 the finding never needs it, and a reader who doubts it needs nothing else.
 
 **Nothing else gets a block.** No **Panel.**, no **Notes.**, no **Discussion.**
-An exception the reader must know about (a severity the panel brought down, an
+An exception the reader must know about (a severity the panel moved, an
 anchor you re-checked, a duplicate that could not be merged) goes in Coverage's
 **Corrections.** line, once, not appended to each finding.
 
@@ -248,9 +248,10 @@ hop in it, not to be filled.
 
 # Severity, and no confidence word
 
-**Severity comes back already decided.** The workflow lowered any severity its
-agreeing verifiers rated below the proposal. Publish what it returned, and note
-any that moved in **Corrections.**
+**Severity comes back already decided.** The workflow set it to what its
+agreeing verifiers actually rated, which can move a proposal up or down --
+never invent a severity the panel did not return. Publish what it returned,
+and note any that moved in **Corrections.**
 
 The heading is `### [SEVERITY] Title` and nothing else. A confidence beside the
 severity puts two graded words in one bracket, they read as one scale, and

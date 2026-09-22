@@ -59,7 +59,8 @@ Every PR the sweep picks up gets a **standard** scan. I can manually launch a
 Both run `.claude/workflows/monero-deep-scan.js` under different profiles.
 
 Every candidate goes to a panel whose votes are counted in JavaScript rather
-than argued in prose, and the count lowers severity. What survives is checked for duplicates. 
+than argued in prose, and the count settles severity at what the panel actually
+found, moving a proposer's guess up or down. What survives is checked for duplicates. 
 
 ## Where things are
 

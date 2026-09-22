@@ -101,7 +101,7 @@ though they will.
 **Second look.** <what the second pass over each area found that the first missed, or that it did not run and why; omit the line when it ran and found nothing>
 **Handed on.** <each observation one reader passed to another, and how it was settled; omit the line when none was>
 **Refactors.** <<n> raised, <n> published in `## Needs human review`, the rest dropped by the reader that compared both versions; omit the line when nothing was raised>
-**Corrections.** <a severity lowered, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
+**Corrections.** <a severity the panel moved, an anchor re-checked, a provenance the panel corrected or the verifiers split on, two entries that may be one defect; omit the line when there is nothing to correct>
 
 <!-- workflow-updates
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
@@ -241,7 +241,7 @@ the claim rather than in a footnote below it. The `<n>/3` on the locator line
 says a minority agreed but not that anybody went back. Three sentences.
 
 **Nothing else gets a block.** No **Notes.**, no **Discussion.** An exception
-the reader must know about (a severity the panel brought down, an anchor you
+the reader must know about (a severity the panel moved, an anchor you
 re-checked, a duplicate that could not be merged) goes in Coverage's
 **Corrections.** line, once, not appended to each finding.
 
@@ -259,10 +259,11 @@ hop in it, not to be filled.
 
 # Severity, and no confidence word
 
-**Severity comes back already decided.** The workflow lowered any severity its
-agreeing verifiers rated below the proposal, and caps a confidence by how many
-agreed. Publish what it returned. `coverage.severityLowered` lists every one
-that moved, with both values. Note it in **Corrections.**
+**Severity comes back already decided.** The workflow set it to what its
+agreeing verifiers actually rated -- the median of their votes, which can move
+a proposal up or down -- and caps a confidence by how many agreed. Publish
+what it returned. `coverage.severityChanged` lists every one that moved, with
+both values. Note it in **Corrections.**
 
 The heading is `### [SEVERITY] Title` and nothing else. A confidence beside the
 severity puts two graded words in one bracket, they read as one scale, and
