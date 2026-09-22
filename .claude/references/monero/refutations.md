@@ -131,6 +131,22 @@ Changes under `tests/` do not ship. They matter only if they also modify
 non-test code, or if they weaken a fuzz harness in a way that would hide future
 bugs — the latter is worth a LOW note, not a vulnerability report.
 
+## Carrot is in the tree but not in a shipping binary
+
+`carrot_core` is not reachable from any production code path. It links only
+into the unit test binary — `tests/unit_tests/CMakeLists.txt:125` is where
+`carrot_core` is linked, and nothing else links it. `CarrotEnoteV1` has no
+serializer. The consuming output type exists only as a TODO comment: `grep -rn
+txout_to_carrot_v1 src/` returns one hit, at
+`src/cryptonote_basic/cryptonote_format_utils.cpp:290`.
+
+So a candidate whose reachability depends on a wallet or a daemon scanning
+Carrot enotes is refuted on this ground, until that wiring lands. As with the
+no-caller entry below, that is a fact with an expiry date and wiring it up is
+exactly the kind of thing a pull request does — re-run the grep and re-read
+the CMake file on the head you are reviewing. Read here on PR 9559's head
+(`79aa8910218b`).
+
 ## A wrong return value the API tells the caller not to trust
 
 A function that returns the wrong boolean is a bug. It is a SECURITY finding
