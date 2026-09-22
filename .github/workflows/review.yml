@@ -183,9 +183,11 @@ env:
   DEFAULT_MODEL: claude-opus-5-5
   # THE CLAUDE CODE CLI IS NOT PINNED. Every `claude` step runs whatever
   # `@anthropic-ai/claude-code@latest` is when the job starts, installed by
-  # `Install the Claude Code CLI` and handed to claude-code-action through
-  # `path_to_claude_code_executable`, so the action's own bundled CLI is never
-  # used. A new model needs a new CLI, and the pinned one is what broke this
+  # `Install the Claude Code CLI`. The review pass runs it directly with
+  # `claude -p` (see the `claude` step for why not the action); the propose
+  # job's writer hands it to claude-code-action through
+  # `path_to_claude_code_executable`. Neither uses the action's own bundled
+  # CLI. A new model needs a new CLI, and the pinned one is what broke this
   # queue: Opus 5.5 on the action's bundled 2.1.276 was refused before a
   # single turn -- `API Error: 400 Claude Code 2.1.276 does not support this
   # model; version 2.1.280 or newer is required` (runs 35758244967 and
@@ -561,10 +563,14 @@ jobs:
     # That is the ordinary price of a longer review and this repo already paid
     # it whenever a run passed 30 minutes.
     timeout-minutes: ${{ inputs.mode == 'deep' && 350 || 240 }}
+    # No `id-token`. It was here for claude-code-action's OIDC exchange, and
+    # the review pass no longer runs the action. Granting it anyway puts
+    # ACTIONS_ID_TOKEN_REQUEST_TOKEN and _URL into every step's environment,
+    # which lets any process in the job mint an OIDC token for this repo --
+    # including a shell the model under review is running.
     permissions:
       contents: read
       issues: write
-      id-token: write
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -1274,11 +1280,32 @@ jobs:
       # there: the model can Write anywhere in the workspace, and a binary it
       # could replace is a binary that runs its code with this job's token.
       #
+      # Also the sandbox the model's shell runs in: CLAUDE_CODE_SUBPROCESS_
+      # ENV_SCRUB on the `claude` step puts every Bash call inside bubblewrap
+      # and needs socat beside it. It FAILS CLOSED -- with either missing,
+      # every Bash call returns "Sandbox is required but failed to
+      # initialize", measured on 2.1.280 -- so this step installs both and
+      # proves the sandbox starts. Ubuntu 24.04 blocks the unprivileged user
+      # namespaces bubblewrap needs, through AppArmor, so that is lifted for
+      # this runner first. The runner is a throwaway VM, so the change goes
+      # nowhere.
+      #
       # Before T0, deliberately: a failed install is infrastructure and must
       # never be timed as an attempt on the pull request.
       - name: Install the Claude Code CLI
         run: |
           set -euo pipefail
+          sudo apt-get install -y -qq bubblewrap socat >/dev/null \
+            || { sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap socat >/dev/null; }
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if ! bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true; then
+            echo "::error::bubblewrap cannot start a sandbox on this runner; the review's shell would be refused"
+            exit 1
+          fi
+          echo "sandbox: $(bwrap --version), $(socat -V 2>/dev/null | sed -n 2p)"
+
           dir="$RUNNER_TEMP/claude-cli"
           chmod -R u+w "$dir" 2>/dev/null || true
           rm -rf "$dir"
@@ -1308,31 +1335,39 @@ jobs:
       # three hours would be spared instead of recorded. Keeping the id makes
       # every one of those a no-op.
       - id: claude
-        # PINNED, and not as routine supply-chain hygiene: `@v1` is a moving
-        # tag that follows the action's main branch, and the action bundles the
-        # Claude Code CLI. So an upstream CLI release reaches this pipeline
-        # within the hour, unreviewed, and a tool this workflow depends on can
-        # disappear between two scheduled runs with nothing changed here.
+        # THE CLI, CALLED DIRECTLY -- not claude-code-action. The Lead
+        # dispatches the fleet, ends its turn, and is woken by the fleet's
+        # completion notification for the turn that writes review.md, so the
+        # session emits TWO `result` records and the second is the one that
+        # matters. The action stops reading at the first. MEASURED on run
+        # 35764473253: the Lead dispatched the fleet and signed off, and the
+        # action saved its log two seconds after that first `result` and
+        # exited, taking every agent with it -- no notification, no review,
+        # spared as infra by attempt.py. `claude -p` itself stays up until the
+        # woken turn finishes, measured on 2.1.280.
         #
-        # That is not hypothetical. MEASURED on 2026-09-18: run 703 at 06:03
-        # reviewed 11196 successfully on CLI 2.1.276, whose session advertised
-        # 29 tools including `TaskOutput`. The action bumped to 2.1.277 at
-        # 18:07. Run 706 at 18:33 was handed 28 tools with `TaskOutput` GONE;
-        # the Lead searched for it twice, dispatched the fleet anyway, tried
-        # `sleep 120` to wait (the sandbox refuses it), and ended its turn --
-        # which kills every agent it had just started. It exited `success`
-        # after 74s having written no review, and the PR was charged for it.
+        # Nothing the action did is lost. This pass has no GitHub tools, so
+        # the app token it minted and the authenticated git remote it wrote
+        # into the checkout were capability the review never used -- and a
+        # credential in the one directory a stranger's diff can talk the
+        # model into reading. Leaving them out is a narrowing, not a gap. The
+        # `propose` job still uses the action, because that writer does not
+        # wait on a fleet.
         #
-        # a4f54ef is that 2.1.276 commit. The action is still pinned to it, but
-        # its bundled CLI is no longer what runs: `path_to_claude_code_
-        # executable` below hands it the latest CLI, which `Install the Claude
-        # Code CLI` fetched at the start of this job. So the CLI always moves
-        # and only the wrapper stays a known quantity. Move the action forward
-        # only after a run shows it still keeps reading the stream past the
-        # Lead's first `result` -- the woken turn that writes review.md
-        # arrives after it.
-        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1; CLI is latest, see above
+        # Output: stream-json to $RUNNER_TEMP, outside the workspace the model
+        # can Write to, and never to the job log. `Keep the review pass's
+        # execution log` turns it into the JSON array every reader of
+        # exec-pass1.json was written against.
+        #
+        # The step fails exactly when the action's did: a non-zero exit, or a
+        # final `result` flagged `is_error`. `Record failed attempt` keys off
+        # that failure.
         env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          PROMPT: ${{ steps.route.outputs.prompt }}
+          MODEL: ${{ steps.route.outputs.model }}
+          EFFORT: ${{ steps.route.outputs.effort }}
+          TURNS: ${{ steps.route.outputs.turns }}
           # Wait out a usage limit instead of dying on it -- DEEP RUNS ONLY.
           #
           # Read out of the CLI binary: the interactive "continuing
@@ -1382,17 +1417,69 @@ jobs:
           # this job, which is what already bounded it when the Lead waited
           # inside its own turn.
           CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "0"
-        with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          path_to_claude_code_executable: ${{ env.CLAUDE_CLI }}
-          prompt: ${{ steps.route.outputs.prompt }}
-          # Model, turns and prompt all come from the `route` step, which is
-          # the one place the tier is decided. See the reasoning there for
-          # why each tier gets the turn budget it does.
-          claude_args: |
-            --model ${{ steps.route.outputs.model }} ${{ steps.route.outputs.effort_arg }}
-            --max-turns ${{ steps.route.outputs.turns }}
-            --allowedTools "${{ env.ALLOWED_TOOLS }},${{ env.FLEET_EXTRA_TOOLS }}"
+          # Every Bash call the Lead or any agent makes runs in a bubblewrap
+          # sandbox, with secret-shaped variables stripped from its
+          # environment. The CLI always removes its own credentials, this
+          # step's CLAUDE_CODE_OAUTH_TOKEN among them, even with this unset.
+          # What this adds is everything else a runner carries. MEASURED on
+          # 2.1.280 with canary values: without it, a shell the model ran saw
+          # ACTIONS_ID_TOKEN_REQUEST_TOKEN, ACTIONS_RUNTIME_TOKEN, *_API_KEY
+          # and *_CONNECTION_STRING; with it, none of them. The review's own
+          # reads still work inside it: `git log`, `grep`, and a fleet agent's
+          # Bash, measured through a Workflow probe.
+          #
+          # It needs bubblewrap and socat, which `Install the Claude Code CLI`
+          # installs and smoke-tests, and it FAILS CLOSED: without them every
+          # Bash call is refused rather than run unsandboxed. It also forces
+          # permission mode to `default`, which is what this pass runs anyway,
+          # with the allowlist declared explicitly below.
+          #
+          # Not everything is hidden. GITHUB_TOKEN stayed visible under it, so
+          # this step is given no GitHub token at all.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
+        # Model, effort, turns and prompt all come from the `route` step,
+        # which is the one place the tier is decided. See the reasoning there
+        # for why each tier gets the turn budget it does.
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/claude-exec.jsonl"
+          rm -f "$out"
+          echo "execution_file=$out" >> "$GITHUB_OUTPUT"
+          effort=()
+          [ -n "${EFFORT:-}" ] && effort=(--effort "$EFFORT")
+          "$CLAUDE_CLI" -p "$PROMPT" \
+            --model "$MODEL" "${effort[@]}" \
+            --max-turns "$TURNS" \
+            --allowedTools "$ALLOWED_TOOLS,$FLEET_EXTRA_TOOLS" \
+            --output-format stream-json --verbose \
+            < /dev/null > "$out"
+          rc=$?
+          python3 - "$out" <<'PY'
+          import json, sys
+          last = None
+          for line in open(sys.argv[1], errors="replace"):
+              try:
+                  e = json.loads(line)
+              except ValueError:
+                  continue
+              if isinstance(e, dict) and e.get("type") == "result":
+                  last = e
+          if last is None:
+              print("no result record in the execution log")
+          else:
+              print(f"result: turns={last.get('num_turns')} "
+                    f"is_error={last.get('is_error')} "
+                    f"terminal={last.get('terminal_reason')} "
+                    f"cost=${last.get('total_cost_usd')}")
+              if last.get("is_error"):
+                  print(f"error: {str(last.get('result'))[:300]}")
+                  sys.exit(1)
+          PY
+          flagged=$?
+          if [ "$rc" -ne 0 ] || [ "$flagged" -ne 0 ]; then
+            echo "::error::the review pass failed (exit $rc)"
+            exit 1
+          fi
 
       # NB: env.ALLOWED_TOOLS is the list that BINDS, and it is now the single
       # copy in this file -- both passes reference it. The `allowed-tools:`
@@ -1408,22 +1495,38 @@ jobs:
       # with one arm. The refutation pass it used to be withheld from no
       # longer runs at all -- see the block above the telemetry step.
 
-      # Snapshotted rather than read in place. There is one pass now, so
-      # nothing overwrites it mid-job -- but claude-code-action writes to a
-      # fixed path (/home/runner/work/_temp/claude-execution-output.json)
-      # shared by every invocation in a job, and this repo has already been
-      # bitten by that: when a second pass existed it clobbered the first,
-      # `denials` reported "none recorded" for a pass that had denials, and
-      # telemetry summed one pass with itself into "86 turns over 2 passes".
-      # A copy costs nothing and makes the log independent of how many passes
-      # the file grows back to.
+      # Snapshotted rather than read in place, which kept a second pass from
+      # clobbering the first back when claude-code-action wrote every pass to
+      # one fixed path: `denials` reported "none recorded" for a pass that had
+      # denials, and telemetry summed one pass with itself into "86 turns over
+      # 2 passes". A copy costs nothing and makes the log independent of how
+      # many passes the file grows back to.
+      #
+      # The pass writes stream-json, one event per line. It is folded into
+      # the JSON array the action used to write, because that is the shape
+      # every reader of exec-pass1.json was written and tested against. Any
+      # line that does not parse is dropped, so a log cut off by a timeout
+      # still converts, as far as it got.
       - name: Keep the review pass's execution log
         if: always()
         env:
           SRC: ${{ steps.claude.outputs.execution_file }}
         run: |
           if [ -n "${SRC:-}" ] && [ -f "$SRC" ]; then
-            cp "$SRC" exec-pass1.json
+            python3 - "$SRC" exec-pass1.json <<'PY'
+          import json, sys
+          events = []
+          for line in open(sys.argv[1], errors="replace"):
+              line = line.strip()
+              if not line:
+                  continue
+              try:
+                  events.append(json.loads(line))
+              except ValueError:
+                  pass
+          with open(sys.argv[2], "w") as fh:
+              json.dump(events, fh)
+          PY
             echo "PASS1_EXEC=$PWD/exec-pass1.json" >> "$GITHUB_ENV"
             echo "kept $(wc -c < exec-pass1.json) bytes of pass 1's log"
           else
