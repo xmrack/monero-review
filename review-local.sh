@@ -303,14 +303,15 @@ FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),A
 } > "$CACHE/PR_FILES.md"
 
 # One model on both tiers -- deep buys more agents, not a better reader. EFFORT
-# is empty for deep on purpose: its one real measurement (3h13m, $99.79) was
-# taken without the flag and the CLI does not document its default, so naming
-# a level there would be changing a measured pipeline blind. An empty EFFORT
-# omits the argument entirely.
-TIER_MODEL=claude-opus-5
+# was empty for deep while the unnamed default was Opus 5's `high`, which kept
+# it reproducing its one real measurement (3h13m, $99.79). Opus 5.5 defaults to
+# `medium`, so that empty value would now put deep below standard; `high` is
+# the level the measurement is believed to have run at. Mirrors the workflow's
+# router -- change both together.
+TIER_MODEL=claude-opus-5-5
 case "$TIER" in
   standard) PROMPT="/monero-standard-review"; EFFORT=high ;;
-  deep)     PROMPT="/monero-deep-review";     EFFORT= ;;
+  deep)     PROMPT="/monero-deep-review";     EFFORT=high ;;
 esac
 [ "$MODEL" = "auto" ] && MODEL="$TIER_MODEL"
 # Both tiers are the fleet, so the fleet grants are unconditional. They were
