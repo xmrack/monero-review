@@ -181,6 +181,28 @@ env:
   # outright; they are kept because they are the only measured comparison this
   # repo has, not because any tier reaches for them.
   DEFAULT_MODEL: claude-opus-5-5
+  # The Claude Code CLI every `claude` step runs, installed by `Install the
+  # Claude Code CLI` and handed to claude-code-action through
+  # `path_to_claude_code_executable`, so the action's own bundled CLI is never
+  # used. Pinned exactly, and separately from the action, because the two
+  # break in different ways: the action is the wrapper, and this is what
+  # talks to the model.
+  #
+  # 2.1.280 is the FLOOR for DEFAULT_MODEL. Opus 5.5 on the action's bundled
+  # 2.1.276 is refused before a single turn -- `API Error: 400 Claude Code
+  # 2.1.276 does not support this model; version 2.1.280 or newer is
+  # required` (runs 35758244967 and 35762060459, both spared as infra at
+  # 15s, both reviewing nothing). Raising DEFAULT_MODEL can raise this floor.
+  #
+  # 2.1.280 also has no `TaskOutput`. It is deliberately gone, on a list of
+  # retired tool names in the binary, and the recipes no longer need it: the
+  # Lead ends its turn after dispatching the fleet and print mode starts a new
+  # turn with the fleet's `<task-notification>` when the workflow finishes.
+  # MEASURED on 2.1.280 through the Agent SDK before this was adopted. Moving
+  # this forward means re-checking that a finished `Workflow` still re-enters
+  # the session in print mode; scripts/attempt.py refuses to charge a pull
+  # request when it did not.
+  CLAUDE_CODE_VERSION: 2.1.280
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
   # ~42 at 3. Start at 1 so the first drain is survivable, then widen.
@@ -282,27 +304,20 @@ env:
   # why a review pass gets ALLOWED_TOOLS in full and not the shorter list in
   # its skill's frontmatter.
   #
-  # `TaskOutput` is not decoration, it is what makes the deep pass finish at
-  # all. MEASURED on run 469: the Workflow tool ALWAYS backgrounds -- it
-  # returns "Workflow launched in background. Task ID: <id>" the moment the
-  # fleet starts. In an interactive session a completion notification wakes
-  # the model. Headless there is no next turn: the Lead said "I'll wait for
-  # it to finish", ended its turn, and `claude -p` exited `success` after 52
-  # seconds, killing the whole fleet with the process. Nothing was refused
-  # and nothing errored -- the run simply walked away from its own work.
-  # TaskOutput with block:true is the only way to hold the turn open.
+  # NO `TaskOutput`, and nothing in its place. The Workflow tool ALWAYS
+  # backgrounds -- it returns "Workflow launched in background. Task ID:
+  # <id>" the moment the fleet starts -- and the Lead used to hold its turn
+  # open with TaskOutput(block:true), because on the CLI of the day (run
+  # 469) a headless session whose turn ended simply exited and killed the
+  # fleet with it. That tool is gone from CLAUDE_CODE_VERSION, deliberately.
   #
-  # Related lever, deliberately NOT set: print mode does wait for background
-  # work, but with a ceiling -- the CLI carries the string "Background tasks
-  # still running after <n>s; terminating. Set
-  # CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely." That
-  # ceiling is a backstop for a Lead that ends its turn anyway, and it cannot
-  # substitute for the fix above: waiting for the fleet after the turn has
-  # ended still leaves nobody to write review.md. Its default is not
-  # established here, so it is left alone. If a future run shows the fleet
-  # terminated while the Lead was still working, that variable is the first
-  # thing to try.
-  FLEET_EXTRA_TOOLS: "Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-refactor-check),Agent(monero-explore)"
+  # What replaced it is the CLI's own: in print mode a finished `Workflow`
+  # now starts a NEW turn carrying its `<task-notification>`, so the Lead
+  # ends its turn after dispatching and writes review.md from the woken
+  # one. MEASURED on 2.1.280 in `claude -p` and through the Agent SDK. It
+  # depends on CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 on the claude step:
+  # the default ceiling kills background work after ten minutes.
+  FLEET_EXTRA_TOOLS: "Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-refactor-check),Agent(monero-explore)"
 
 # One review at a time, repo-wide. Rapid ticks collapse into a single pending
 # run rather than stacking, and no two runs can pick the same PR concurrently.
@@ -1197,10 +1212,10 @@ jobs:
           #
           # Turns are not billed; tokens are, so headroom is free and running
           # out is not. Both tiers get more than a single reviewer's 200
-          # because the Lead spends turns blocking on TaskOutput while the
-          # fleet works -- whether a subagent's turns are charged to the
-          # parent's budget is not settled here, and 300/400 is insurance
-          # against the answer being yes.
+          # because whether a subagent's turns are charged to the parent's
+          # budget is not settled here, and 300/400 is insurance against the
+          # answer being yes. The Lead no longer spends turns waiting on the
+          # fleet: it ends its turn and is woken by the fleet's notification.
           case "$tier" in
             standard)
               effort=high; turns=300
@@ -1258,6 +1273,32 @@ jobs:
           # take as a step failure on an empty diff.
           echo "$(grep -cve '^#' -e '^$' PR_FILES.md || true) changed file(s)"
 
+      # The CLI the review runs, at CLAUDE_CODE_VERSION -- see that variable for
+      # why it is not the action's bundled one. Into $RUNNER_TEMP and then made
+      # read-only, for the same reason the harness scripts are staged there:
+      # the model can Write anywhere in the workspace, and a binary it could
+      # replace is a binary that runs its code with this job's token.
+      #
+      # Before T0, deliberately: a failed install is infrastructure and must
+      # never be timed as an attempt on the pull request.
+      - name: Install the Claude Code CLI
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/claude-cli"
+          chmod -R u+w "$dir" 2>/dev/null || true
+          rm -rf "$dir"
+          npm install --prefix "$dir" --no-audit --no-fund --loglevel=error \
+            "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          cli="$dir/node_modules/.bin/claude"
+          got=$("$cli" --version | awk '{print $1}')
+          if [ "$got" != "$CLAUDE_CODE_VERSION" ]; then
+            echo "::error::asked for Claude Code $CLAUDE_CODE_VERSION, installed $got"
+            exit 1
+          fi
+          chmod -R a-w "$dir"
+          echo "CLAUDE_CLI=$cli" >> "$GITHUB_ENV"
+          echo "Claude Code $got at $cli"
+
       - run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
       # No GitHub tools, no network: Claude reads the diff and writes review.md.
@@ -1291,13 +1332,15 @@ jobs:
         # which kills every agent it had just started. It exited `success`
         # after 74s having written no review, and the PR was charged for it.
         #
-        # a4f54ef is that 2.1.276 commit: the last version a run is known to
-        # have completed on. Unpin, or move it forward, only after checking
-        # that the session still advertises a tool the recipe can block on --
-        # `.claude/skills/*/jobs/*.md` step 4b names what it needs, and
-        # scripts/attempt.py refuses to charge a pull request when it is
-        # absent.
-        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1 @ CLI 2.1.276
+        # a4f54ef is that 2.1.276 commit. The action is still pinned to it, but
+        # its bundled CLI is no longer what runs: `path_to_claude_code_
+        # executable` below hands it the one `Install the Claude Code CLI`
+        # put at CLAUDE_CODE_VERSION. So the wrapper stays a known quantity and
+        # the CLI moves only when that variable does. Move the action forward
+        # separately, and only after a run shows it still keeps reading the
+        # stream past the Lead's first `result` -- the woken turn that writes
+        # review.md arrives after it.
+        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1; CLI from CLAUDE_CODE_VERSION
         env:
           # Wait out a usage limit instead of dying on it -- DEEP RUNS ONLY.
           #
@@ -1335,8 +1378,22 @@ jobs:
           # if it misbehaves, deleting this env block restores today's
           # fail-fast behaviour exactly.
           CLAUDE_CODE_RETRY_WATCHDOG: ${{ inputs.mode == 'deep' && '1' || '' }}
+          # How the Lead waits for its fleet, and it is not optional. The Lead
+          # dispatches `Workflow`, ends its turn, and print mode keeps the
+          # session open until the fleet's completion notification starts the
+          # turn that writes review.md. But print mode stops waiting on
+          # background work after a ceiling -- 600000ms on 2.1.280, read out
+          # of the binary -- and then KILLS it ("Background tasks still
+          # running after 600s; terminating"). A fleet runs well past ten
+          # minutes, so the default would abandon every review mid-flight.
+          #
+          # 0 waits indefinitely. What bounds a run is `timeout-minutes` on
+          # this job, which is what already bounded it when the Lead waited
+          # inside its own turn.
+          CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "0"
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          path_to_claude_code_executable: ${{ env.CLAUDE_CLI }}
           prompt: ${{ steps.route.outputs.prompt }}
           # Model, turns and prompt all come from the `route` step, which is
           # the one place the tier is decided. See the reasoning there for
@@ -2573,19 +2630,42 @@ jobs:
             | sort -z | xargs -0 -r sha256sum > "$RUNNER_TEMP/gitdir.manifest"
           echo "copied .git/config and fingerprinted $(wc -l < "$RUNNER_TEMP/gitdir.manifest") file(s) under .git/hooks and .git/info"
 
+      # Same CLI as the review job, for the same reason: the writer runs
+      # claude-opus-5-5 too, which the action's bundled 2.1.276 refuses. See
+      # CLAUDE_CODE_VERSION. Outside the workspace and read-only, because this
+      # is the job that pushes with a write token.
+      - name: Install the Claude Code CLI
+        if: steps.check.outputs.any != '0'
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/claude-cli"
+          chmod -R u+w "$dir" 2>/dev/null || true
+          rm -rf "$dir"
+          npm install --prefix "$dir" --no-audit --no-fund --loglevel=error \
+            "@anthropic-ai/claude-code@$CLAUDE_CODE_VERSION"
+          cli="$dir/node_modules/.bin/claude"
+          got=$("$cli" --version | awk '{print $1}')
+          if [ "$got" != "$CLAUDE_CODE_VERSION" ]; then
+            echo "::error::asked for Claude Code $CLAUDE_CODE_VERSION, installed $got"
+            exit 1
+          fi
+          chmod -R a-w "$dir"
+          echo "CLAUDE_CLI=$cli" >> "$GITHUB_ENV"
+          echo "Claude Code $got at $cli"
+
       - name: Write the corrections
         id: writer
         if: steps.check.outputs.any != '0'
         # Same commit as the review job's, and pinned for the same reason --
-        # see the long note on that step. This writer does not block on a
-        # fleet, so it did not fail the way the review did, but it is the step
-        # that edits files and opens a pull request with this job's token, and
-        # leaving one of the two on a moving tag defeats pinning the other:
-        # the next surprise simply arrives through this one instead. Move both
-        # together.
-        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1 @ CLI 2.1.276
+        # see the long note on that step. It is the step that edits files and
+        # opens a pull request with this job's token, and leaving one of the
+        # two on a moving tag defeats pinning the other: the next surprise
+        # simply arrives through this one instead. Move both together. Like
+        # the review's, its CLI comes from CLAUDE_CODE_VERSION, not the action.
+        uses: anthropics/claude-code-action@a4f54ef2c58884867281bd8e2f8d63352ad019a9  # v1; CLI from CLAUDE_CODE_VERSION
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          path_to_claude_code_executable: ${{ env.CLAUDE_CLI }}
           prompt: |
             `proposals.json` in the repository root lists corrections a security
             review found while reading the Monero tree with this repository's

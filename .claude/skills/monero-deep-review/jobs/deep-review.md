@@ -42,28 +42,18 @@ For the report's `Change:` line: `git diff --shortstat origin/base...HEAD`
 
 ## 3. Confirm you can actually run it
 
-Check that BOTH `Workflow` and `TaskOutput` are among the tools available to
-you right now, with their parameters. This skill's frontmatter asking for them
-proves nothing, and neither does the workflow's allowlist: an allowlist says
-what would be PERMITTED, and permitting a tool the CLI no longer ships does not
-bring it back.
+Check that `Workflow` is among the tools available to you right now, with its
+parameters. This skill's frontmatter asking for it proves nothing, and neither
+does the workflow's allowlist: an allowlist says what would be PERMITTED, and
+permitting a tool the CLI does not ship does not bring it back.
 
-`TaskOutput` is as load-bearing as `Workflow` here, and more expensive to
-discover late. `Workflow` returns the moment it is called and leaves the fleet
-running outside your turn, so without something to block on you cannot reach
-your own result -- and ending the turn kills every agent you just started.
-MEASURED on run 35380878405, on the standard tier: the CLI dropped `TaskOutput`
-between two scheduled runs, the Lead dispatched anyway, tried `sleep` (the
-sandbox refuses it), and abandoned the fleet mid-flight. A deep run walks away
-from dozens of agents and hours of work the same way.
+There is no second tool to check for. The fleet's result reaches you as a
+completion notification that starts a new turn (step 4b), not through a tool
+you call. `TaskOutput`, which this step used to require, no longer exists in
+the CLI this harness runs, and nothing replaces it.
 
-**If `TaskOutput` is missing, do not call `Workflow` at all.** Dispatching a
-fleet you cannot wait for is worse than not starting: it spends the whole
-budget and abandons the agents, and the run looks from the outside exactly like
-a diff too hard to review. Stop first and the failure is honest and cheap.
-
-If either is missing, stop with one line naming which one, that this session
-does not have it, so nothing ran. There is no lesser
+If `Workflow` is missing, stop with one line saying this session does not have
+it, so nothing ran. There is no lesser
 reviewer to fall back to -- a single-reviewer fallback existed once and was
 removed, because a report it produced was indistinguishable from one the fleet
 produced. Do not improvise around it. Dispatching the agents
@@ -106,28 +96,29 @@ Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, that this is the deep pass, and that nothing is a finding
 until the verifiers have finished.
 
-## 4b. Wait for it: this is not optional
+## 4b. End your turn, and write nothing until you are woken
 
 The Workflow tool **always returns immediately**. Its result says
 `Workflow launched in background. Task ID: <id>` and the fleet then runs
-outside your turn. If you end your turn there, the run ends with it: measured
-on the first CI deep run, the Lead said "I'll wait for it to finish", stopped,
-and the session exited `success` after 52 seconds having killed every agent it
-had just dispatched. Nothing was refused and nothing errored. It simply walked
-away from three hours of work it had already paid to start.
+outside your turn. Your job now is to end the turn and wait to be woken.
 
-So take the `Task ID` from that result and block on it:
+**End the turn right after the message above.** Call nothing else: no polling,
+no `sleep`, no reading the fleet's transcripts. The harness holds the session
+open while the fleet runs, and when the workflow finishes it starts a new turn
+for you with a `<task-notification>` for that Task ID. MEASURED on CLI 2.1.280
+in print mode, through the Agent SDK: the Lead ended its turn, the fleet ran
+on, and the notification arrived as a fresh user turn carrying the workflow's
+return value. A wide diff takes a few hours to get there. That is expected.
 
-```
-TaskOutput({ task_id: "<the Task ID>", block: true, timeout: 600000 })
-```
+Do not write `review.md`, and do not summarise anything, before that
+notification arrives. A report written ahead of the result has no pipeline
+behind it.
 
-600000ms is the maximum per call, so one call is not enough. If it comes back
-`not_ready` or still running, **call it again**, and keep calling until it
-returns the workflow's result. A wide diff is a few hours, which is a couple
-of dozen calls; that is expected and it is far cheaper than the alternative.
-Do not end your turn, do not start writing `review.md`, and do not summarise
-anything until that result is in your hands.
+The notification's `<status>` should be `completed`, and `<result>` carries the
+workflow's return value. If `<result>` is missing, cut short, or not valid JSON,
+Read the file named in `<output-file>`. If that fails too, Read the journal
+named in `<diagnostics>`, which has one line per agent. Do not rebuild the
+result from memory.
 
 Per-stage progress shows under `/workflows` when a human is watching; do not
 narrate it yourself.
@@ -138,8 +129,9 @@ while `coverage.candidatesUnverified` is only its count (plus any whose panel
 threw, which are a count with no record). When something has to be named, use
 the list.
 
-If the workflow genuinely fails rather than returning (the task dies, or
-`TaskOutput` reports an error rather than a result), say so and write nothing.
+If the workflow genuinely fails rather than returning (the notification's
+status is `failed` or `killed`, or neither `<result>` nor `<output-file>`
+yields a result), say so and write nothing.
 A report with no pipeline behind it is the one thing this skill must never
 produce.
 

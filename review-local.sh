@@ -288,7 +288,7 @@ TOOLS="Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Ba
 # is comma-split and a comma inside parentheses is a parser question nobody
 # has answered. (Agent(monero-explore) appears in both: every tier gets it,
 # because it answers mapping questions and decides nothing.)
-FLEET_TOOLS="Workflow,TaskOutput,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-refactor-check),Agent(monero-explore)"
+FLEET_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero-verifier),Agent(monero-merger),Agent(monero-refactor-check),Agent(monero-explore)"
 
 # The changed-file list, on disk before the review starts. The mapper's
 # partition is compared against it inside the workflow script, and whatever it
@@ -327,10 +327,23 @@ EFFORT_ARG=()
 # macOS still ships 3.2. That would abort the deep tier -- the one case where
 # the array is empty -- with "unbound variable" and nothing else.
 
+# The same floor as CLAUDE_CODE_VERSION in the workflow. Older CLIs refuse
+# Opus 5.5 outright, and the recipes rely on print mode waking the Lead when
+# its fleet finishes, measured on 2.1.280 and not before.
+MIN_CLI=2.1.280
+have_cli=$(claude --version 2>/dev/null | awk '{print $1}')
+if [ "$(printf '%s\n%s\n' "$MIN_CLI" "${have_cli:-0}" | sort -V | head -1)" != "$MIN_CLI" ]; then
+  echo "!! claude CLI ${have_cli:-(not found)} is older than $MIN_CLI; run 'claude update'" >&2
+  exit 1
+fi
+
 rm -f "$CACHE/review.md" "$CACHE/exec.json"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
-( cd "$CACHE" && claude -p "$PROMPT" \
+# The Lead ends its turn after dispatching the fleet and is woken by the
+# fleet's completion notification. Print mode kills background work after a
+# ten-minute ceiling by default, which would abandon every fleet; 0 waits.
+( cd "$CACHE" && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "$PROMPT" \
     --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
     --output-format json --allowedTools "$TOOLS" > exec.json )
 
