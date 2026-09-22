@@ -169,8 +169,10 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     Holds `CRITICAL_REGION_LOCAL(m_incoming_tx_lock)` for its whole duration,
     so no two transactions race into the pool with conflicting key images.
 11. **`core::add_new_tx` → `tx_memory_pool::add_tx`** —
-    `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first
-    (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, key-image conflicts),
+    `src/cryptonote_core/tx_pool.cpp`. First, for a tx not `kept_by_block`,
+    the `m_timed_out_transactions.find(id)` lookup, which rejects with
+    `m_verifivation_failed` (sic) before the `get_tx_fee`/`check_fee` block.
+    Then cheap "no-drop" checks (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, key-image conflicts),
     then `ver_non_input_consensus` and `Blockchain::check_tx_inputs`.
 12. **`levin::notify::send_txs` → Dandelion++** —
     `src/cryptonote_protocol/levin_notify.cpp`. Stem or fluff by epoch.
@@ -186,9 +188,16 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 - **`add_new_tx` returns `true` for a transaction already in the pool or
   already on chain.** The field that means "newly accepted" is
   `tvc.m_added_to_pool`.
-- **`tvc.m_no_drop_offense` decides whether a peer is banned** for a rejected
-  transaction. Any new rejection added before the expensive checks must set it,
-  or a fee-policy disagreement becomes a ban.
+- **`tvc.m_no_drop_offense` decides only whether the connection is dropped**
+  for a rejected transaction, not whether the peer is banned. When
+  `handle_incoming_tx` fails and the flag is false,
+  `handle_notify_new_transactions`
+  (`src/cryptonote_protocol/cryptonote_protocol_handler.inl`) calls
+  `drop_connection(context, false, false)`; with `add_fail` false,
+  `drop_connection_with_score` gets score 0 and calls `m_p2p->add_host_fail`
+  only when `score > 0`, so the peer gets no fail score and no ban either way.
+  Any new rejection added before the expensive checks must still set it, or a
+  fee-policy disagreement becomes a disconnect.
 - **Two `Blockchain::check_tx_inputs` overloads** — the six-argument one takes
   the blockchain lock and handles the per-block-checkpoint fast path; the
   four-argument one does the rule work. Likewise two `create_block_template`
