@@ -131,9 +131,17 @@ is four, not the two that older notes claim.
    `src/cryptonote_core/cryptonote_tx_utils.cpp`.
 4. **`boost::serialization`** — persisted local state, in about two dozen
    headers: the peer list (`src/p2p/net_peerlist_boost_serialization.h`), the
-   wallet cache and keys (`src/wallet/wallet2_basic/wallet2_boost_serialization.h`),
+   wallet cache types (`src/wallet/wallet2_basic/wallet2_boost_serialization.h`),
    the multisig message store, and a second full description of the tx and
    block types in `src/cryptonote_basic/cryptonote_boost_serialization.h`.
+   The wallet *keys* file is not Boost: it is a binary `keys_file_data`
+   envelope around chacha20 (or legacy chacha8) encrypted JSON, whose
+   `key_data` field is an epee portable-storage blob. `wallet2::load_keys_buf`,
+   `verify_password` and `query_device` in `src/wallet/wallet2.cpp` read it
+   with `::serialization::parse_binary(buf, keys_file_data)`, rapidjson
+   `json.Parse` and `epee::serialization::load_t_from_binary`;
+   `wallet2_boost_serialization.h` contains no `keys_file_data` or
+   `load_t_from_binary`.
 
 Two consequences worth carrying:
 
