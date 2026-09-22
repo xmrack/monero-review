@@ -327,15 +327,12 @@ EFFORT_ARG=()
 # macOS still ships 3.2. That would abort the deep tier -- the one case where
 # the array is empty -- with "unbound variable" and nothing else.
 
-# The same floor as CLAUDE_CODE_VERSION in the workflow. Older CLIs refuse
-# Opus 5.5 outright, and the recipes rely on print mode waking the Lead when
-# its fleet finishes, measured on 2.1.280 and not before.
-MIN_CLI=2.1.280
-have_cli=$(claude --version 2>/dev/null | awk '{print $1}')
-if [ "$(printf '%s\n%s\n' "$MIN_CLI" "${have_cli:-0}" | sort -V | head -1)" != "$MIN_CLI" ]; then
-  echo "!! claude CLI ${have_cli:-(not found)} is older than $MIN_CLI; run 'claude update'" >&2
-  exit 1
-fi
+# Always the latest CLI, as in the workflow: a new model needs a new CLI, and
+# older ones refuse Opus 5.5 outright. Best-effort, because a package-managed
+# install may not let `claude update` touch it; the version is printed either
+# way so the run shows which CLI did it.
+claude update >/dev/null 2>&1 || echo "!! 'claude update' failed; reviewing with the installed CLI" >&2
+echo "==> Claude Code $(claude --version 2>/dev/null | awk '{print $1}')"
 
 rm -f "$CACHE/review.md" "$CACHE/exec.json"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
