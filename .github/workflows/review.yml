@@ -563,10 +563,14 @@ jobs:
     # That is the ordinary price of a longer review and this repo already paid
     # it whenever a run passed 30 minutes.
     timeout-minutes: ${{ inputs.mode == 'deep' && 350 || 240 }}
+    # No `id-token`. It was here for claude-code-action's OIDC exchange, and
+    # the review pass no longer runs the action. Granting it anyway puts
+    # ACTIONS_ID_TOKEN_REQUEST_TOKEN and _URL into every step's environment,
+    # which lets any process in the job mint an OIDC token for this repo --
+    # including a shell the model under review is running.
     permissions:
       contents: read
       issues: write
-      id-token: write
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -1276,11 +1280,32 @@ jobs:
       # there: the model can Write anywhere in the workspace, and a binary it
       # could replace is a binary that runs its code with this job's token.
       #
+      # Also the sandbox the model's shell runs in: CLAUDE_CODE_SUBPROCESS_
+      # ENV_SCRUB on the `claude` step puts every Bash call inside bubblewrap
+      # and needs socat beside it. It FAILS CLOSED -- with either missing,
+      # every Bash call returns "Sandbox is required but failed to
+      # initialize", measured on 2.1.280 -- so this step installs both and
+      # proves the sandbox starts. Ubuntu 24.04 blocks the unprivileged user
+      # namespaces bubblewrap needs, through AppArmor, so that is lifted for
+      # this runner first. The runner is a throwaway VM, so the change goes
+      # nowhere.
+      #
       # Before T0, deliberately: a failed install is infrastructure and must
       # never be timed as an attempt on the pull request.
       - name: Install the Claude Code CLI
         run: |
           set -euo pipefail
+          sudo apt-get install -y -qq bubblewrap socat >/dev/null \
+            || { sudo apt-get update -qq && sudo apt-get install -y -qq bubblewrap socat >/dev/null; }
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -q -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          if ! bwrap --ro-bind / / --dev /dev --proc /proc --unshare-all true; then
+            echo "::error::bubblewrap cannot start a sandbox on this runner; the review's shell would be refused"
+            exit 1
+          fi
+          echo "sandbox: $(bwrap --version), $(socat -V 2>/dev/null | sed -n 2p)"
+
           dir="$RUNNER_TEMP/claude-cli"
           chmod -R u+w "$dir" 2>/dev/null || true
           rm -rf "$dir"
@@ -1392,6 +1417,26 @@ jobs:
           # this job, which is what already bounded it when the Lead waited
           # inside its own turn.
           CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS: "0"
+          # Every Bash call the Lead or any agent makes runs in a bubblewrap
+          # sandbox, with secret-shaped variables stripped from its
+          # environment. The CLI always removes its own credentials, this
+          # step's CLAUDE_CODE_OAUTH_TOKEN among them, even with this unset.
+          # What this adds is everything else a runner carries. MEASURED on
+          # 2.1.280 with canary values: without it, a shell the model ran saw
+          # ACTIONS_ID_TOKEN_REQUEST_TOKEN, ACTIONS_RUNTIME_TOKEN, *_API_KEY
+          # and *_CONNECTION_STRING; with it, none of them. The review's own
+          # reads still work inside it: `git log`, `grep`, and a fleet agent's
+          # Bash, measured through a Workflow probe.
+          #
+          # It needs bubblewrap and socat, which `Install the Claude Code CLI`
+          # installs and smoke-tests, and it FAILS CLOSED: without them every
+          # Bash call is refused rather than run unsandboxed. It also forces
+          # permission mode to `default`, which is what this pass runs anyway,
+          # with the allowlist declared explicitly below.
+          #
+          # Not everything is hidden. GITHUB_TOKEN stayed visible under it, so
+          # this step is given no GitHub token at all.
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
         # Model, effort, turns and prompt all come from the `route` step,
         # which is the one place the tier is decided. See the reasoning there
         # for why each tier gets the turn budget it does.
