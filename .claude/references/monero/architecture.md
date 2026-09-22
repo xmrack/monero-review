@@ -33,11 +33,11 @@ only. Read it upward: a change low down is felt everywhere above it.
 
 ```
 easylogging  randomx  liblmdb  rapidjson  supercop  qrcodegen   (external/, vendored)
-polyseed  utf8proc                                              (external/, submodules)
+polyseed  utf8proc  mx25519*                                    (external/, submodules)
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
- cncrypto ....................... src/crypto  (-> epee, randomx)
+ cncrypto ....................... src/crypto  (-> epee, randomx, mx25519*)
      |
   common ........................ src/common  (-> cncrypto, unbound)
      |
@@ -73,6 +73,12 @@ cryptonote_core ................. src/cryptonote_core (-> blockchain_db, ringct,
          |                            cryptonote_basic)
          +-- wallet_api, wallet_rpc_server, simplewallet
 ```
+
+`*` is PR 10965 (head `a53c1f41f4ae`) only, not master `3d3920d7`:
+`src/crypto/CMakeLists.txt` adds `mx25519_static` to the PUBLIC block of
+`target_link_libraries(cncrypto)`, alongside `epee` and `randomx` — so
+`mx25519` sits on the same low tier as `randomx` and is felt by every
+library above `cncrypto`.
 
 Three edges in that graph surprise people, and all three are real:
 
@@ -160,7 +166,17 @@ reach `src/` through one edge only: `target_link_libraries` in
 `src/mnemonics/CMakeLists.txt:42-47` and
 `src/mnemonics/polyseed/CMakeLists.txt:19-26` make `mnemonics` link
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
-`cryptonote_basic`. `contrib/epee/` is Monero's own but
+`cryptonote_basic`.
+
+PR 10965 (head `a53c1f41f4ae`) adds a further one, `mx25519` (X25519 scalar
+multiplication): `external/CMakeLists.txt:33` is `add_subdirectory(mx25519)`,
+which shifts the polyseed and utf8proc lines to 36-37. Unlike those two it
+reaches `src/` through `cncrypto`, and it is added **without
+`EXCLUDE_FROM_ALL`** — `external/mx25519/CMakeLists.txt` declares a SHARED
+`mx25519` library plus `mx25519-tests` and `mx25519-bench` executables, so
+all three build as part of `all`.
+
+`contrib/epee/` is Monero's own but
 predates most of `src/` and follows different conventions — treat it as a
 fifth dialect, not as part of `src/`.
 
