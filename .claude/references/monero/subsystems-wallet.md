@@ -199,7 +199,14 @@ wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
 allowlist, expressed **only as per-handler early returns — there is no central
 table**. There are 38 `if (m_restricted)` returns in
 `src/wallet/wallet_rpc_server.cpp` and two inverted ones (`if (!m_restricted)`,
-at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new handler is unrestricted unless it says otherwise.
+at `:3054` and `:3134`), but grepping for that literal misses 24 more
+handlers: the gate also lives inside the `CHECK_IF_RESTRICTED_BACKGROUND_SYNCING()`
+macro (21 uses, e.g. `on_set_attribute`, `on_tag_accounts`) and the
+`PRE_VALIDATE_BACKGROUND_SYNC()` macro (3 uses), whose shared body
+`CHECK_IF_RESTRICTED_BACKGROUND_SYNCING_BASE` tests `check_restricted && m_restricted`.
+Count all three: `grep -c 'CHECK_IF_RESTRICTED_BACKGROUND_SYNCING();'` (21),
+`grep -c 'PRE_VALIDATE_BACKGROUND_SYNC();'` (3),
+`grep -n 'if (!m_restricted)'` (the inverted pair). A new handler is unrestricted unless it says otherwise.
 
 **Traps.**
 
