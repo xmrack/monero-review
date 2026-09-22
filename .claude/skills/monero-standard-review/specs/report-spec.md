@@ -617,9 +617,11 @@ coverage stamp when there is no workflow-updates stamp:
 - `reason=security-fix`: the pull request is plainly a patch for a critical or
   high severity security bug, and Monero developers made it. Examples are a
   cryptographic flaw, a consensus bug, a double spend, key or amount leakage,
-  or a remote crash of a node or wallet. "Made by Monero developers" means
-  the `Author association:` line in `PR_CONTEXT.md` reads `MEMBER`,
-  `COLLABORATOR` or `OWNER`, or the author is a known core contributor. The
+  or a remote crash of a node or wallet. "Made by Monero developers" means the `Monero developer:` line in
+  `PR_CONTEXT.md` reads `yes`. The harness sets it from the author's login:
+  members of the monero-project organisation, plus a list of developers who
+  are not members but write security fixes (j-berman, jeffro256 and vtnerd
+  among them). Do not decide this from memory or from the description. The
   word "obvious" matters. The diff must fix the bug, not refactor near it,
   and you must be able to say from the code alone what it fixes. A title
   that says "security" is not enough, and neither is a title that hides it.
