@@ -169,7 +169,10 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     Holds `CRITICAL_REGION_LOCAL(m_incoming_tx_lock)` for its whole duration,
     so no two transactions race into the pool with conflicting key images.
 11. **`core::add_new_tx` → `tx_memory_pool::add_tx`** —
-    `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first
+    `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first: the
+    very first rejects a non-block tx whose id is in
+    `m_timed_out_transactions` (the `m_timed_out_transactions.find(id)`
+    branch, before `get_tx_fee`) and sets `m_no_drop_offense`; then
     (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, key-image conflicts),
     then `ver_non_input_consensus` and `Blockchain::check_tx_inputs`.
 12. **`levin::notify::send_txs` → Dandelion++** —
@@ -186,9 +189,14 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 - **`add_new_tx` returns `true` for a transaction already in the pool or
   already on chain.** The field that means "newly accepted" is
   `tvc.m_added_to_pool`.
-- **`tvc.m_no_drop_offense` decides whether a peer is banned** for a rejected
-  transaction. Any new rejection added before the expensive checks must set it,
-  or a fee-policy disagreement becomes a ban.
+- **`tvc.m_no_drop_offense` decides only whether the connection is dropped**
+  for a rejected relayed transaction, not whether the peer is banned.
+  `handle_notify_new_transactions` calls `drop_connection(context, false, false)`,
+  i.e. score 0, and `drop_connection_with_score` calls `m_p2p->add_host_fail`
+  only when `score > 0` — so no fail score and no ban either way
+  (`src/cryptonote_protocol/cryptonote_protocol_handler.inl`). Any new
+  rejection added before the expensive checks must still set it, or a
+  fee-policy disagreement becomes a disconnect.
 - **Two `Blockchain::check_tx_inputs` overloads** — the six-argument one takes
   the blockchain lock and handles the per-block-checkpoint fast path; the
   four-argument one does the rule work. Likewise two `create_block_template`
