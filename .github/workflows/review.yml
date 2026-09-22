@@ -2163,7 +2163,13 @@ jobs:
             echo
             cat review.md
           } >> "$GITHUB_STEP_SUMMARY"
-          gh label create "pr-${{ matrix.pr }}" --force >/dev/null 2>&1 || true
+          # `--repo` on every `gh` call in this job: the working directory is
+          # the Monero checkout, whose `origin` is upstream, so a bare `gh
+          # label create` targets monero-project/monero and fails in silence.
+          # It only worked while claude-code-action rewrote `origin` to this
+          # repository. MEASURED on run 35766295364: a finished review failed to
+          # publish with "could not add label: 'pr-11370' not found".
+          gh label create "pr-${{ matrix.pr }}" --repo "$GITHUB_REPOSITORY" --force >/dev/null 2>&1 || true
           labels="pr-${{ matrix.pr }}"
 
           # Which review this was. Without it a three-hour deep review with a
@@ -2176,7 +2182,7 @@ jobs:
           # things.
           case "${TIER_LABEL:-}" in
             deep-review)
-              gh label create deep-review --color 5319E7 --force \
+              gh label create deep-review --repo "$GITHUB_REPOSITORY" --color 5319E7 --force \
                 --description "Reviewed by the multi-agent deep pipeline" \
                 >/dev/null 2>&1 || true
               labels="$labels,deep-review" ;;
@@ -2201,7 +2207,7 @@ jobs:
               pre-existing) colour=BFD4F2; desc="A finding here predates this pull request" ;;
               *)            continue ;;
             esac
-            gh label create "$sev" --color "$colour" --force \
+            gh label create "$sev" --repo "$GITHUB_REPOSITORY" --color "$colour" --force \
               --description "$desc" \
               >/dev/null 2>&1 || true
             labels="$labels,$sev"
@@ -2264,7 +2270,7 @@ jobs:
           # SHA is what counts against MAX_ATTEMPTS.
           count_it() {
             echo "counting a real attempt after ${elapsed}s: $1"
-            gh label create review-failed --force >/dev/null 2>&1 || true
+            gh label create review-failed --repo "$GITHUB_REPOSITORY" --force >/dev/null 2>&1 || true
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --title "Review FAILED: $UPSTREAM#${{ matrix.pr }} @ $HEAD_SHA" \
               --label review-failed \
