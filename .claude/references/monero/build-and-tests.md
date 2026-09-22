@@ -119,7 +119,7 @@ runners, different assertion vocabularies and different build gates.
 | `unit_tests` | the only large gtest binary — **896** `TEST`/`TEST_F` across 78 translation units |
 | `core_tests` | the chain-generator harness — **165** active `GENERATE_AND_PLAY` tests |
 | `functional_tests` | 19 Python RPC tests driving 5 `monerod` + 7 `monero-wallet-rpc` in regtest, plus two C++ binaries |
-| `fuzz` | **23** executables: 19 file-driven targets + 4 OSS-Fuzz-only RPC/ZMQ ones |
+| `fuzz` | **24** executables: 20 file-driven targets + 4 OSS-Fuzz-only RPC/ZMQ ones |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
 | `difficulty`, `block_weight` | diff C++ output against a **Python reference implementation** |
@@ -154,7 +154,7 @@ be visible through `chaingen_tests_list.h`.
 `check_missing_rpc_methods`, and conditionally `libwallet_api_tests` and
 `trezor_tests`.
 
-**Not covered**: any of the 23 fuzz targets, `performance_tests`,
+**Not covered**: any of the 24 fuzz targets, `performance_tests`,
 `net_load_tests_clt/srv`, and the `functional_tests` C++ binary
 (`transactions_flow_test`). A change to one of those is not exercised by CI's
 test step.
@@ -175,10 +175,20 @@ their CTest entries `hash-target` (`add_test`, lines 90–92) and
 `tests/fuzz/` is the project's own statement of what it treats as
 attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`, `cold-outputs`,
-`cold-transaction`, `http-client`, `levin`, `load_from_binary`,
-`load_from_json`, `network_address`, `parse_url`, `signature`, `transaction`,
+`cold-transaction`, `http-client`, `levin`, `load-from-binary`,
+`load-from-json`, `network-address`, `parse-url`, `signature`, `transaction`,
 `tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
 this list: it is the kind of thing a pull request adds to.
+
+Those are the names `contrib/fuzz_testing/fuzz.sh` accepts and the prefixes
+CMake gives the targets — **not** always the source file names. The trap is
+`load-from-binary`, `load-from-json`, `network-address` and `parse-url`: the
+`load-from-binary_fuzz_tests` target is built from `load_from_binary.cpp`, and
+likewise for the other three. That is 20 file-driven targets;
+`grep -c monero_add_minimal_executable tests/fuzz/CMakeLists.txt` counts 24
+in all, the other four being the OSS-Fuzz-only `fuzz_rpc`, `fuzz_rpc_full`,
+`fuzz_rpc_full_no_exceptions` and `fuzz_zmq` inside the `if(OSSFUZZ)` block at
+`tests/fuzz/CMakeLists.txt` lines 29–98.
 
 Two readings: a PR touching a surface with an existing target is touching
 something known to be reachable, and a PR that **weakens** a harness deserves
@@ -187,8 +197,11 @@ a note even though it ships nothing.
 A new fuzz target is inert unless it is added in **three** places: a
 `monero_add_minimal_executable` in `tests/fuzz/CMakeLists.txt`, a seed corpus
 under `tests/data/fuzz/<name>/`, and the type list in
-`contrib/fuzz_testing/fuzz.sh`. (That script currently accepts 18 names for 19
-file fuzzers — `tx-extra` is missing from it despite having seeds.)
+`contrib/fuzz_testing/fuzz.sh`. (That script currently accepts 19 names for 20
+file fuzzers — `tx-extra` is missing from it despite having seeds:
+`tests/fuzz/CMakeLists.txt:293` registers `tx-extra_fuzz_tests` and
+`tests/data/fuzz/tx-extra` holds its corpus, but no alternative in the `case`
+pattern at `contrib/fuzz_testing/fuzz.sh:17` matches it.)
 
 ## Traps in the test tree
 
