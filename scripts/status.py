@@ -4,7 +4,12 @@
 Reads only public data, so it needs no token:
   ./scripts/status.py
 
-Env: REVIEW_REPO, UPSTREAM, LOG (the cron log), API.
+With DISCLOSURE_TOKEN set it also reads the private disclosure repository, so
+privately filed reviews count as reviewed. It prints how many there are and
+nothing else about them: this dashboard gets pasted into chats.
+
+Env: REVIEW_REPO, UPSTREAM, LOG (the cron log), API, DISCLOSURE_REPO,
+     DISCLOSURE_TOKEN, REVIEW_BOT.
 """
 import collections
 import datetime
@@ -22,18 +27,23 @@ UPSTREAM = os.environ.get("UPSTREAM", "monero-project/monero")
 BASE_BRANCH = os.environ.get("BASE_BRANCH", "master")
 LOG = os.environ.get("LOG", "/tmp/monero-review.log")
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
+DISCLOSURE_REPO = os.environ.get("DISCLOSURE_REPO", "xmrack/monero-review-disclosure")
+DISCLOSURE_TOKEN = os.environ.get("DISCLOSURE_TOKEN", "")
+# Mirrors select_prs.REVIEW_BOT: only the workflow's own issues are the record.
+REVIEW_BOT = os.environ.get("REVIEW_BOT", "github-actions[bot]")
 
 NOW = datetime.datetime.now(datetime.timezone.utc)
 
 
-def get(path, params=None):
+def get(path, params=None, token=None):
     url = f"{API}{path}"
     if params:
         url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+    token = token or TOKEN
     req = urllib.request.Request(url, headers={
         "Accept": "application/vnd.github+json",
         "User-Agent": "monero-review-status",
-        **({"Authorization": f"Bearer {TOKEN}"} if TOKEN else {}),
+        **({"Authorization": f"Bearer {token}"} if token else {}),
     })
     with urllib.request.urlopen(req, timeout=30) as resp:
         return json.load(resp)
@@ -84,8 +94,29 @@ def main():
         if len(batch) < 100:
             break
 
+    # Same rule as select_prs.review_state: issues only, and only the ones the
+    # workflow itself opened. Anyone can open an issue in this repository.
+    issues = [i for i in issues
+              if "pull_request" not in i
+              and (i.get("user") or {}).get("login") == REVIEW_BOT]
     reviews = [i for i in issues if i["title"].startswith("Review:")]
     failures = [i for i in issues if i["title"].startswith("Review FAILED")]
+
+    private = []
+    if DISCLOSURE_TOKEN:
+        for page in range(1, 101):
+            try:
+                batch = get(f"/repos/{DISCLOSURE_REPO}/issues",
+                            {"state": "all", "per_page": 100, "page": page},
+                            token=DISCLOSURE_TOKEN)
+            except urllib.error.HTTPError as exc:
+                print(f"  could not read the disclosure record: HTTP {exc.code}",
+                      file=sys.stderr)
+                break
+            private.extend(i for i in batch if "pull_request" not in i
+                           and i["title"].startswith("Review:"))
+            if len(batch) < 100:
+                break
     # A severity-tagged heading, not the section header: pass 1 sometimes emits
     # "## Findings" followed by "None." even though it is told to omit it.
     FINDING = re.compile(r"^###\s*\[(CRITICAL|HIGH|MEDIUM|LOW)", re.M)
@@ -113,6 +144,9 @@ def main():
         print(f"  {len(failures)} failed attempt(s)"
               + (f", gave up on PR(s) {', '.join(stuck)}" if stuck else ""))
 
+    if DISCLOSURE_TOKEN:
+        print(f"  {len(private)} filed privately")
+
     for i in with_findings:
         print(f"  \033[33m!\033[0m {i['title'][8:]}  -> {i['html_url']}")
 
@@ -130,9 +164,8 @@ def main():
             if len(batch) < 100:
                 break
         done = set()
-        for i in issues:
-            if not i["title"].startswith("Review FAILED"):
-                done.update(re.findall(r"\b[0-9a-f]{12}\b", i["title"]))
+        for i in reviews + private:
+            done.update(re.findall(r"\b[0-9a-f]{12}\b", i["title"]))
         # Same base-branch filter the selector applies, so a backport the
         # sweep deliberately never queues is not counted here as an
         # unreviewed pull request. The caption below warns only about the
