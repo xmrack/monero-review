@@ -2,18 +2,23 @@
 """Decide where a review is published: this public repository, or the private
 disclosure repository.
 
-    python3 scripts/disclosure.py [review.md]
+    python3 scripts/disclosure.py [review.md]          # decide
+    python3 scripts/disclosure.py --strip review.md    # body for the issue
 
-Prints two lines for $GITHUB_OUTPUT and nothing else:
+Deciding prints two lines and nothing else:
 
     route=public|private
     reason=<why, or empty>
 
-NEVER echo this output into the job log. This repository is public, and so are
-its run logs, step summaries and artifacts. A log line reading "route=private
-reason=security-fix" next to a pull request number says exactly what the
-private route exists to keep quiet. The workflow writes it straight to
-$GITHUB_OUTPUT.
+--strip prints the report with every disclosure marker removed, using the same
+pattern that decided the route, so a marker that routed a review private can
+never survive into the issue it files.
+
+NEVER echo the decision into the job log, and never hand it to a later step
+through `env:` or a step output: GitHub prints a step's `env:` block in the
+public log. This repository is public, and so are its run logs, step
+summaries and artifacts. The workflow writes it to a file outside the
+workspace, and each consumer reads that file inside its own `run:`.
 
 A review goes private when any of these holds:
 
@@ -35,31 +40,39 @@ Anything else is public. A finding the pull request introduces, in code that is
 not live yet, is reported normally: that is the whole point of reviewing a pull
 request before it merges.
 
-FAILS CLOSED. A report that exists but cannot be read, or a marker with a
-reason this script does not know, routes private. Filing a harmless review in
-the private repository costs a maintainer a minute; filing a harmful one in
-public cannot be undone.
+FAILS CLOSED. A report that is missing, empty or unreadable, or a marker with
+a reason this script does not know, routes private. Missing is the important
+one: a run that died before writing its report still left a transcript full
+of candidate findings, and "public" would let that reach a public artifact.
+Filing a harmless review in the private repository costs a maintainer a
+minute; filing a harmful one in public cannot be undone.
 """
 import re
 import sys
 
 REFUTED_SECTION = re.compile(r"^##\s+Refuted\b", re.MULTILINE | re.IGNORECASE)
 
-# Same shapes labels.py reads, so the two cannot disagree about what a
-# surviving finding is.
+# The shapes labels.py reads, but looser on purpose. There a paraphrase costs a
+# label; here it publishes a live zero-day. So bold or stray spacing around the
+# bracket still counts as a finding heading.
 HEADING = re.compile(
-    r"^###\s*\[\s*(CRITICAL|HIGH|MEDIUM|LOW)\b([^\]]*)\]",
+    r"^###\s*\**\s*\[\s*(CRITICAL|HIGH|MEDIUM|LOW)\b([^\]]*)\]",
     re.MULTILINE | re.IGNORECASE,
 )
 # Where a finding's block ends: the next finding, or the next section.
 BLOCK_END = re.compile(r"^##", re.MULTILINE)
+# Anywhere in the finding's block, not only on an exact locator line: a
+# trailing full stop or a bolded path must not send a finding public. The
+# `Where it came from.` block opening on "pre-existing" counts too.
 PRE_EXISTING = re.compile(
-    r"^`[^`]+`\s*·.*·\s*not introduced by this pull request\s*$",
-    re.MULTILINE | re.IGNORECASE,
+    r"not\s+introduced\s+by\s+this\s+pull\s+request"
+    r"|\*\*Where it came from\.?\*\*\s*\**\s*pre-?existing",
+    re.IGNORECASE,
 )
 # Searched over the WHOLE file: the marker sits at the foot, below
-# `## Refuted`, beside the other stamps.
-MARKER = re.compile(r"<!--\s*disclosure\b([^>]*)-->", re.IGNORECASE)
+# `## Refuted`, beside the other stamps. Lazy and across lines, so neither a
+# line break nor a `>` inside the comment hides it.
+MARKER = re.compile(r"<!--\s*disclosure\b(.*?)-->", re.IGNORECASE | re.DOTALL)
 MARKER_REASON = re.compile(r"\breason\s*=\s*([a-z-]+)", re.IGNORECASE)
 KNOWN_REASONS = ("security-fix", "live-code")
 
@@ -102,21 +115,35 @@ def route(text):
     return "public", ""
 
 
+def strip(text):
+    """The report with every marker, and the line it sat on when alone, cut."""
+    text = re.sub(r"(?m)^[ \t]*" + MARKER.pattern + r"[ \t]*\n?", "", text,
+                  flags=re.IGNORECASE | re.DOTALL)
+    return MARKER.sub("", text)
+
+
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "review.md"
+    args = sys.argv[1:]
+    if args[:1] == ["--strip"]:
+        path = args[1] if len(args) > 1 else "review.md"
+        with open(path, errors="replace") as fh:
+            sys.stdout.write(strip(fh.read()))
+        return
+    path = args[0] if args else "review.md"
     try:
         with open(path, errors="replace") as fh:
             text = fh.read()
-    except FileNotFoundError:
-        # Nothing to publish anywhere; the publish step returns on its own.
-        where, why = "public", ""
     except OSError:
-        where, why = "private", "unreadable"
+        # Missing included. See FAILS CLOSED above.
+        where, why = "private", "none"
     else:
-        try:
-            where, why = route(text)
-        except Exception:  # noqa: BLE001 -- any parsing failure fails closed
-            where, why = "private", "unreadable"
+        if not text.strip():
+            where, why = "private", "none"
+        else:
+            try:
+                where, why = route(text)
+            except Exception:  # noqa: BLE001 -- any parsing failure fails closed
+                where, why = "private", "unreadable"
     print(f"route={where}")
     print(f"reason={why}")
 

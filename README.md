@@ -53,19 +53,45 @@ artifacts. Some reviews are filed in the private
 - an obvious fix by Monero developers for a critical or high security bug
   (the reviewer marks it)
 
-`scripts/disclosure.py` makes the decision. For a private review, this
-repository gets no issue, no review text in the run summary, no review or
-transcript artifact, and no reference-correction pull request. A finding the
-pull request introduces, in code that is not live yet, is reported here as
-usual.
+`scripts/disclosure.py` makes the decision. A report that is missing or
+unreadable also counts as private. For a private review, this repository gets
+no issue, no review text, and no reference-correction pull request. The run
+behaves the same as a public one in its log, its summary and its artifacts.
+A finding the pull request introduces, in code that is not live yet, is
+reported here as usual.
 
 This needs a `DISCLOSURE_TOKEN` secret: a fine-grained token with Issues
-read/write on the disclosure repository. If the secret is missing, nothing is
-reviewed.
+read/write on the disclosure repository. If the secret is missing, or the
+token can't read that repository, nothing is reviewed.
 
 ```bash
 gh secret set DISCLOSURE_TOKEN --repo xmrack/monero-review
 ```
+
+### Transcripts
+
+A run's report, execution log, agent journals and diagnostics are uploaded as
+one artifact, `transcript-<pr>`, encrypted to an OpenPGP public key. Set the
+key as a repository variable. Without it, no transcript is kept for any run.
+
+```bash
+gpg --armor --export you@example.org | gh variable set TRANSCRIPT_PUBLIC_KEY --repo xmrack/monero-review
+gh run download <run-id> -n transcript-<pr> --repo xmrack/monero-review
+gpg -d transcript.tar.gz.gpg | tar xz
+```
+
+### Records in this repository
+
+Only issues opened by the workflow count as the review record. Titles:
+
+| title | means | limit |
+| --- | --- | --- |
+| `Review: …` | reviewed (here or privately) | |
+| `Review FAILED: …` | the run failed on this pull request | 2, then the head is skipped |
+| `Review INCOMPLETE: …` | unverified, cancelled, timed out, or could not be filed | 3, then the head is skipped |
+
+An unverified report is also filed in the private repository as
+`Unverified review: …`, whichever route it would have taken.
 
 ## Two tiers
 
