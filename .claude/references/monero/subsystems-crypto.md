@@ -184,15 +184,20 @@ CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
 FFI API header 'fcmp++.h' has broken compatibility with C" if the generated
 header stops being C-compatible.
 
-**The live consumers are two**, both reaching
+**The in-tree consumers are two**, both reaching
 `fcmp_pp::get_valid_torsion_cleared_point_vartime`:
 `src/ringct/rctSigs.cpp` (includes `fcmp_pp/fcmp_pp_crypto.h`, calls it at
 `:1606` from `rct::verPointsForTorsion`) and `src/fcmp_pp/curve_trees.cpp`
-(`:87`, `:89`, plus two `assert`-only uses at `:107-108` that compile out in
-release). `rct::verPointsForTorsion` itself has **no production caller** — it
+(two calls in `fcmp_pp::curve_trees::output_to_tuple`, plus two
+`assert`-only uses in its `!NDEBUG` block that compile out in release).
+`rct::verPointsForTorsion` itself has **no production caller** — it
 appears only in `rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp`
-(`:466`, `:543`). The curve-trees path is the one that actually runs, so a
-change to the torsion check is not test-only however it looks.
+(`:466`, `:543`). **Neither does the curve-trees path**: no daemon or wallet
+code calls anything in `src/fcmp_pp/curve_trees.cpp`; only
+`tests/unit_tests/curve_trees.cpp` reaches `output_to_tuple` and
+`get_tree_extension`. So a change to the torsion check is test-only for now
+— check with `git grep -n "fcmp_pp/curve_trees.h\|curve_trees::\|output_to_tuple" -- src ':!src/fcmp_pp'`,
+which returned nothing on master and on PR #10724's head.
 `RCTType` still stops at `RCTTypeBulletproofPlus = 6`.
 
 `fcmp_pp_crypto.h` exports `mul8_is_identity_vartime`,
