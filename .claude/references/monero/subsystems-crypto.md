@@ -165,7 +165,8 @@ reporting one.
 ## `src/fcmp_pp/` — Full-Chain Membership Proofs, as of master
 
 **Staged, not live.** Get this right in both directions: the code is present
-and in the build, and it is not consensus-reachable today.
+and in the build, and it is not consensus-reachable today. A defect in it is still a finding, rated as it will run once live: see
+`refutations.md`, "Not refutations".
 
 What exists: `curve_trees.{h,cpp}`, `fcmp_pp_crypto.{h,cpp}`,
 `fcmp_pp_types.{h,cpp}`, `tower_cycle.{h,cpp}`, `ffi_api_c_compat.c` (a 46-byte
