@@ -113,18 +113,20 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - Change must go to an address the wallet owns — `sanity_check` throws
   otherwise.
 - Multisig nonces are wiped after a single use — `memwipe` under the comment
-  "CRITICAL: a nonce may only be used once!" at
-  `src/wallet/wallet2.cpp:14533`. **There is no wallet-level nonce member.**
+  "CRITICAL: a nonce may only be used once!" in `wallet2::get_multisig_k`
+  (`src/wallet/wallet2.cpp:14676` on the 11264 head; the line drifts, so find
+  it with `grep -n 'wallet2::get_multisig_k\|CRITICAL: a nonce\|wallet2::clear_multisig_k_and_store' src/wallet/wallet2.cpp`).
+  **There is no wallet-level nonce member.**
   The only `m_multisig_k` in the tree is `transfer_details::m_multisig_k`, a
   plain `std::vector<rct::key>` declared at
   `src/wallet/wallet2_basic/wallet2_types.h:154`, carrying no deprecation
   marker, and it is live state: `wallet2::get_multisig_k`
-  (`src/wallet/wallet2.cpp:14518`) walks `m_transfers[idx].m_multisig_k`,
+  (`src/wallet/wallet2.cpp:14661` on the 11264 head) walks `m_transfers[idx].m_multisig_k`,
   matches a nonce by its `L = k*G`, hands it out and wipes it in place.
   Two consequences a diff can break. The wipe **leaves a zero entry in the
   vector rather than erasing it**, so the loop's `if (k == rct::zero())
   continue` is what stops a spent nonce being reused — a rewrite that drops
-  that test reuses nonces. And `clear_multisig_k_and_store` (`:14540`) wipes
+  that test reuses nonces. And `clear_multisig_k_and_store` (`:14683` on the 11264 head) wipes
   the whole set and calls `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
