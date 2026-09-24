@@ -3415,7 +3415,29 @@ jobs:
           # The files that redirect git to another directory are refused
           # outright as well, whether or not they changed: nothing here ever
           # has a reason to carry one.
-          for f in .git/commondir .git/gitdir .git/config.worktree .git/objects/info/alternates .git/objects/info/http-alternates; do
+          #
+          # NOT .git/config.worktree. It reads like the same kind of redirect
+          # file, but it is not one, and checking it here repeats exactly the
+          # mistake the .git/config paragraph below already survived once: a
+          # guard that cannot tell the harness from an attacker, on a file the
+          # harness touches every time, is the same failure as the tool
+          # patterns it replaced. `actions/checkout@v6` runs `git
+          # sparse-checkout disable` on every checkout that does not request
+          # sparse-checkout -- which this job's does not -- and that command
+          # writes this file as a side effect on a stock git 2.55, even
+          # against a repository that never asked for sparse-checkout.
+          # REPRODUCED directly: `git clone` then `git sparse-checkout
+          # disable` on a clean checkout of this repository leaves
+          # `.git/config.worktree` holding `core.sparseCheckout = false` /
+          # `core.sparseCheckoutCone = false` / `index.sparse = false`, and
+          # MEASURED on run 35805827595: the file was already there before the
+          # writer ran, so this test failed every propose job that reached it,
+          # unconditionally, having nothing to do with the writer's diff.
+          # It stays covered anyway: it is a plain file under .git and not
+          # excluded from the manifest below, so the writer changing its
+          # CONTENT still fails the diff, which is the property this file
+          # actually needs.
+          for f in .git/commondir .git/gitdir .git/objects/info/alternates .git/objects/info/http-alternates; do
             if [ -e "$f" ] || [ -L "$f" ]; then
               echo "::error::$f exists; refusing to run any further git command"
               exit 1
