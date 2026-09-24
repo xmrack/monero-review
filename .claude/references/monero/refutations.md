@@ -219,8 +219,9 @@ Two limits, and both matter:
 A remote node can feed a wallet a false chain, and findings that rest on the
 wallet then holding wrong heights, wrong indices or wrong outputs have to say
 what happens next. What happens next is usually `wallet2::detach_blockchain`
-(`src/wallet/wallet2.cpp:4371`), reached from `wallet2::handle_reorg` (`:4470`)
-when the wallet resyncs against an honest daemon. From the fork height upward
+(`src/wallet/wallet2.cpp`), reached from `wallet2::handle_reorg`
+when the wallet resyncs against an honest daemon. Both drift by dozens of
+lines between trees, so find them by symbol: `grep -n 'wallet2::detach_blockchain\|void wallet2::handle_reorg' src/wallet/wallet2.cpp`. From the fork height upward
 it erases the transfers, their key images and public keys, the payments, the
 confirmed transactions and the background-sync records, and crops
 `m_blockchain`. The false view is not corrected in place; it is deleted.
@@ -234,7 +235,7 @@ MEASURED, on 11185: pending multisig rescan state is applied by transfer index
 with no check on which output sits at that index, so a reorg during the rescan
 was proposed as writing a composite key image built from another output. The
 wrong indices only arise from a lying daemon's chain view, and the resync
-erases it (`m_transfers.erase` at `src/wallet/wallet2.cpp:4430`). The code is identical in
+erases it (`m_transfers.erase(it, m_transfers.end())` in `detach_blockchain`). The code is identical in
 `origin/base`.
 
 Three limits:
@@ -249,7 +250,8 @@ Three limits:
   touch it.
 - **`detach_blockchain` is not guaranteed to complete.** It throws
   `wallet_internal_error` on a key image or public key it cannot find
-  (`src/wallet/wallet2.cpp:4414`, `:4421`), and `handle_reorg` throws before
+  (the key-image throw just before the one with message `"public key not found"`,
+  both in `detach_blockchain`), and `handle_reorg` throws before
   calling it at all when the daemon claims a reorg below the last checkpoint.
   A state you can drive into one of those throws is a finding about the detach
   itself, not something the detach refutes.
