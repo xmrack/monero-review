@@ -219,8 +219,8 @@ Two limits, and both matter:
 A remote node can feed a wallet a false chain, and findings that rest on the
 wallet then holding wrong heights, wrong indices or wrong outputs have to say
 what happens next. What happens next is usually `wallet2::detach_blockchain`
-(`src/wallet/wallet2.cpp:4371`), reached from `wallet2::handle_reorg` (`:4470`)
-when the wallet resyncs against an honest daemon. From the fork height upward
+(`src/wallet/wallet2.cpp:4447` on the 11264 head), reached from
+`wallet2::handle_reorg` (`:4546`) when the wallet resyncs against an honest daemon. From the fork height upward
 it erases the transfers, their key images and public keys, the payments, the
 confirmed transactions and the background-sync records, and crops
 `m_blockchain`. The false view is not corrected in place; it is deleted.
@@ -230,12 +230,26 @@ transient, and the finding needs to say what damage is done before the detach
 lands -- a spent key image, a leaked address, funds moved. "The wallet believes
 something wrong for a while" is not by itself an impact.
 
-MEASURED, on 11185: pending multisig rescan state is applied by transfer index
-with no check on which output sits at that index, so a reorg during the rescan
-was proposed as writing a composite key image built from another output. The
-wrong indices only arise from a lying daemon's chain view, and the resync
-erases it (`m_transfers.erase` at `src/wallet/wallet2.cpp:4430`). The code is identical in
+MEASURED, on 11185: pending multisig rescan state is applied by transfer index,
+so a reorg during the rescan was proposed as writing a composite key image
+built from another output. The wrong indices only arise from a lying daemon's
+chain view, and the resync erases it (`m_transfers.erase` at
+`src/wallet/wallet2.cpp:4506` on the 11264 head). The code is identical in
 `origin/base`.
+
+The index is not entirely unchecked (re-read on the 11264 head):
+`wallet2::update_multisig_rescan_info` calls
+`get_multisig_composite_key_image(n, new_info)` before installing anything,
+and `generate_multisig_composite_key_image` in `src/multisig/multisig.cpp`
+throws when the distinct component count (the `used.size()` check) differs
+from `combinations_count(N-M+1, N)`. For M < N that catches a different output
+at the index, because local components shared with importers stop
+deduplicating. For N-of-N no component is shared, the count still matches, and
+a wrong-output key image is installed unchecked -- that case still rests on
+the resync above. And a throw inside `process_new_transaction` (call sites
+guarded by `m_multisig_rescan_info.front().size() >= m_transfers.size()`)
+leaves `m_multisig_rescan_info` installed, because it is cleared only at the
+end of `wallet2::refresh`.
 
 Three limits:
 
@@ -249,7 +263,8 @@ Three limits:
   touch it.
 - **`detach_blockchain` is not guaranteed to complete.** It throws
   `wallet_internal_error` on a key image or public key it cannot find
-  (`src/wallet/wallet2.cpp:4414`, `:4421`), and `handle_reorg` throws before
+  (`src/wallet/wallet2.cpp:4490`, `:4497` on the 11264 head; the lines drift,
+  so find them with `grep -n 'wallet2::detach_blockchain\|wallet2::handle_reorg\|key image not found\|public key not found' src/wallet/wallet2.cpp`), and `handle_reorg` throws before
   calling it at all when the daemon claims a reorg below the last checkpoint.
   A state you can drive into one of those throws is a finding about the detach
   itself, not something the detach refutes.
