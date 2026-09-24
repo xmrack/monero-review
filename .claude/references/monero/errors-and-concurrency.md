@@ -196,6 +196,20 @@ thread is normal and intended here**, so "this takes the lock twice" is not by
 itself a finding. The generated variable name is fixed, so two in one scope is
 a redefinition error.
 
+**`Blockchain::m_blockchain_lock` is not a `critical_section`.** It is
+`tools::recursive_shared_mutex` (`src/cryptonote_core/blockchain.h`:
+`mutable tools::recursive_shared_mutex m_blockchain_lock;`), taken with the
+`RLOCK` / `RWLOCK` macros from `contrib/epee/include/syncobj.h`. A thread may
+re-lock shared-in-shared, exclusive-in-exclusive or shared-in-exclusive, but
+taking the exclusive lock while it holds **only** the shared lock throws
+`std::runtime_error`: `recursive_shared_mutex::lock()` in
+`src/common/recursive_shared_mutex.cpp` does
+`CHECK_AND_ASSERT_THROW_MES(0 == access || (access & write_bit), ...)` with the
+message "upgrading shared to exclusive is not supported". So for this lock a
+shared-then-exclusive nesting — a `blockchain.cpp` read path under `RLOCK`
+reaching an `RWLOCK` function — **is** a finding. (As read at
+monero-project/monero#11143, head `9cce6d94393e`.)
+
 ## Strands, not mutexes, in two places
 
 - **epee networking**: each connection has **two** strands — `m_strand`
