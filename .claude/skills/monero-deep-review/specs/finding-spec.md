@@ -45,6 +45,28 @@ Neither is an exemption from tests 2 and 3. A divergence still needs the rule
 it changes and the absence of the gate; a leak still needs the sink and the
 absence of whatever normally covers it.
 
+**Test 1 sets the severity. It does not decide whether there is a defect.**
+Tests 2 and 3 decide that. If the operation really is wrong and nothing in the
+tree stops it, but you find no attacker path to it today, it is still a
+candidate, rated LOW. Examples: a function with no production caller, or a
+value that today only the operator or a build constant sets. Write in
+`untrustedInput` what would have to reach it, and say that nothing does yet.
+A defect like this dies only on tests 2 or 3: the guard exists, the construction
+constrains it, the behaviour is actually correct, or the code is under `tests/`.
+"Nobody can reach it" moves it to LOW. It does not refute it.
+
+**Staged code is rated as it will run.** FCMP++ is in the build and scheduled
+to activate. That covers `src/fcmp_pp/`, the curve trees, and any code that
+only a future hard fork or a not-yet-added `RCTType` switches on. "Not
+consensus-reachable today" is not a refutation, and it is not a reason to rate
+LOW. Take the untrusted input to be what reaches the code once it is live: a
+transaction or block from a peer carrying an FCMP++ proof, or a daemon feeding
+tree data to a syncing wallet. Rate the severity of that path. Say in
+`rationale` that the code is not live on today's chain, so a maintainer knows
+the deadline. The ways to kill one are the same as for live code. This differs
+from the LOW case above. Staged code has a planned activation; dead code has no
+planned caller at all.
+
 **Whether this diff caused it is not a fourth requirement.** It used to be, and
 it cost a live finding: on PR 11196 the fleet traced an unauthenticated
 cross-site `GET` reaching `/stop_daemon` on a default daemon, cited the line,
@@ -205,8 +227,10 @@ every other issue in this repository's labels mean:
   or a privacy break that deanonymises a user.
 - **MEDIUM**: needs unusual configuration, a non-default option, or a
   significant attacker position; or a privacy leak of limited scope.
-- **LOW**: defence in depth, hardening, or a defect with no
-  attacker-reachable impact you were able to establish.
+- **LOW**: defence in depth, hardening, or a real defect with no attacker
+  path today, such as code with no production caller or code reachable only
+  from trusted configuration. This does not cover staged code a planned fork
+  will activate, such as FCMP++. Rate that as it will run.
 
 Rate the path the code actually creates, not a deployment you are imagining.
 Resource exhaustion counts here, unlike in a general-purpose security review: a
