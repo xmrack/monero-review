@@ -176,9 +176,13 @@ their CTest entries `hash-target` (`add_test`, lines 90–92) and
 attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`, `cold-outputs`,
 `cold-transaction`, `http-client`, `levin`, `load_from_binary`,
-`load_from_json`, `network_address`, `parse_url`, `signature`, `transaction`,
-`tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
-this list: it is the kind of thing a pull request adds to.
+`load_from_json`, `multisig-info`, `multisig-kex`, `multisig-tx`,
+`network_address`, `parse_url`, `signature`, `transaction`, `tx-extra`,
+`utf8`, plus the `fuzz_rpc/` group. (The three `multisig-*` targets are added
+by monero-project/monero PR 11343 — `multisig-kex_fuzz_tests`,
+`multisig-tx_fuzz_tests` and `multisig-info_fuzz_tests` in
+`tests/fuzz/CMakeLists.txt`.) Read `tests/fuzz/` rather than this list: it is
+the kind of thing a pull request adds to.
 
 Two readings: a PR touching a surface with an existing target is touching
 something known to be reachable, and a PR that **weakens** a harness deserves
@@ -187,8 +191,12 @@ a note even though it ships nothing.
 A new fuzz target is inert unless it is added in **three** places: a
 `monero_add_minimal_executable` in `tests/fuzz/CMakeLists.txt`, a seed corpus
 under `tests/data/fuzz/<name>/`, and the type list in
-`contrib/fuzz_testing/fuzz.sh`. (That script currently accepts 18 names for 19
-file fuzzers — `tx-extra` is missing from it despite having seeds.)
+`contrib/fuzz_testing/fuzz.sh`. (Before PR 11343, that script's `case` line
+accepts 19 names, `block` through `network-address`, for 20 file fuzzers —
+`git ls-tree --name-only origin/base tests/fuzz/` shows 20 target `.cpp` files
+besides `fuzzer.cpp` — and `tx-extra` is missing from it despite having seeds.
+After PR 11343 it accepts 22, adding `multisig-kex`, `multisig-tx` and
+`multisig-info`; `tx-extra` is still missing.)
 
 ## Traps in the test tree
 
