@@ -283,8 +283,14 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
 1. **`daemonize::t_rpc::run`** — `src/daemon/rpc.h`. `m_server.run(2, false)`:
    **exactly two io_context worker threads per RPC server.** A handler that
    blocks removes half the capacity.
-2. **`boosted_tcp_server::handle_accept`** → per-IP and total connection caps
-   (`is_host_limit`). No content validation.
+2. **`connection<T>::start_internal`** (reached from
+   `boosted_tcp_server::handle_accept` only via `connection::start`) →
+   per-IP and total connection caps (`is_host_limit`), checked while holding
+   `m_state.lock` and before `after_init_connection`
+   (`contrib/epee/include/net/abstract_tcp_server2.inl`:
+   `if (is_income && limit && limit->is_host_limit(*real_remote))`). The
+   check and the counter increment are separate critical sections on
+   `config.m_lock`, not one atomic step. No content validation.
 3. **`simple_http_connection_handler::handle_recv`** —
    `contrib/epee/include/net/http_protocol_handler.inl`. The one place total
    request size is bounded: `MAX_RPC_CONTENT_LENGTH = 1048576`
