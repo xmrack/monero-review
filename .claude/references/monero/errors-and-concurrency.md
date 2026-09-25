@@ -215,8 +215,12 @@ a redefinition error.
 `getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Two behaviours
 that break the obvious mental model:
 
-- **`submit` runs the task inline on the caller** when depth > 0 or every
-  thread is busy with work already queued.
+- **`submit` runs a non-leaf task inline on the caller** when depth > 0 or
+  every thread is busy with work already queued. A leaf submission
+  (`leaf == true`) is always queued, even at depth > 0 — `threadpool::submit`
+  tests `if (!leaf && ((active == max && !queue.empty()) || depth > 0))`.
+  `threadpool::run` catches only `std::exception` from a job
+  (`catch (const std::exception &ex)`), both in `src/common/threadpool.cpp`.
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking.
 
