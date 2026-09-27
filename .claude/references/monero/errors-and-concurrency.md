@@ -246,8 +246,12 @@ data.
 `NodeRPCProxy` — it protects none of `m_transfers`, `m_blockchain` or the
 subaddress table. Serialization is the front end's job:
 
-- **simplewallet**: `LOCK_IDLE_SCOPE()` around every command and the idle
-  refresh.
+- **simplewallet**: `LOCK_IDLE_SCOPE()` around the idle refresh and most
+  commands — **not every one**. `simple_wallet::show_transfer` calls
+  `m_wallet->get_payments` with no `LOCK_IDLE_SCOPE()` before it, so the
+  idle refresh can run concurrently with that command (see
+  `src/simplewallet/simplewallet.cpp`, `simple_wallet::show_transfer`).
+  Check the handler, don't assume the lock.
 - **wallet-rpc**: one network thread, and five `std::atomic`s for the only
   cross-thread interaction (`stop_refresh`).
 - **`wallet_api`**: `m_refreshMutex2` in `doRefresh` and the `LOCK_REFRESH()`
