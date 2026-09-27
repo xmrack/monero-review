@@ -122,7 +122,13 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   the notable one.
 - Varints must be **canonical**: `tools::read_varint` returns
   `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
-  and `EVARINT_OVERFLOW` (-1) above the target width.
+  and `EVARINT_OVERFLOW` (-1) above the target width. It does **not** reject
+  a varint cut off by the end of input: on master the `first == last` branch
+  does `return read;`, the positive count of bytes consumed, so
+  `binary_archive`'s `serialize_uvarint` (`good_ &= (1 <= tools::read_varint(...))`)
+  accepts a trailing `0x80` as a successful read. Empty input returns 0 and
+  fails. PR #11416 proposes `return read == 0 ? 0 : EVARINT_TRUNCATED;` (-3);
+  check `src/common/varint.h` before relying on either.
 - Every read-side allocation bound is keyed on
   `binary_archive<false>::remaining_bytes()`, and there are only a handful:
   `container.h` (element count ≤ bytes left, then
