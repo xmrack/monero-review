@@ -142,6 +142,13 @@ hash, or weakens a release workflow is worth reporting even though it is not a
 memory-safety bug. Removal of a hardening flag (`-D_FORTIFY_SOURCE`, stack
 protector, RELRO, PIE) is a genuine finding.
 
+Where a root-level `flake.nix` and `flake.lock` exist, they belong to this
+surface too. They pin the nixpkgs revision that supplies the compiler and every
+library to a developer who runs `nix develop` (the README's instruction), so a
+change to the locked `rev` or `narHash` is a dependency-source change. Check
+`inputs.nixpkgs.url` and `devShells.default` in `flake.nix`, and
+`nodes.nixpkgs.locked.rev` / `nodes.nixpkgs.locked.narHash` in `flake.lock`.
+
 ## Severity anchoring by boundary
 
 | Reached from | Typical ceiling |
