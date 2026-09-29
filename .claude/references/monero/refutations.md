@@ -135,6 +135,17 @@ consensus-reachable today" tells a maintainer when the bug starts to matter. It
 does not make the bug go away. See the finding standard in
 `.claude/skills/monero-deep-review/specs/finding-spec.md`.
 
+## Nothing checks the pin, but a maintainer reviewed it
+
+A pinned revision plus content hash -- a `flake.lock` `rev` and `narHash`, or a
+submodule gitlink commit (`git ls-tree HEAD external/`) -- is trusted at
+maintainer review. Nothing in `.github/workflows/` checks any such pin against
+an upstream branch: the workflows check out with `submodules: recursive` and
+run no ancestry check on pinned commits. So "nothing verifies the pinned rev is
+on the named branch" is ordinary review trust, not a defect, unless you show
+the rev is off-branch or malicious. A change to the pin itself is still a
+dependency-source change worth naming (see `trust-boundaries.md` §9).
+
 ## It is test-only code
 
 Changes under `tests/` do not ship. They matter only if they also modify
