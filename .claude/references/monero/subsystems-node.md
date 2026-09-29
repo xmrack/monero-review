@@ -338,8 +338,19 @@ output index returned wrong is a chain split.
 
 **Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
 `migrate_4_5` ladder run from `open()`. 19 sub-databases are opened
-(`maxdbs` 32). The DUPFIXED tables use a dummy 8-byte all-zero key
-(`zerokval`), so the logical key is the first field of the *data*.
+(`maxdbs` 32). **Re-count on the head you are reviewing:** with the FCMP++
+database work (PR 11425), `BlockchainLMDB::open` also opens `locked_outputs`,
+`timelocked_outputs`, `leaves`, `layers`, `tree_edges` and `tree_meta` (25),
+and `migrate_5_6` adds a transient `tmp_last_output` (26), still against
+`mdb_env_set_maxdbs(m_env, 32)`. Most DUPFIXED tables use a dummy 8-byte
+all-zero key (`zerokval`), so the logical key is the first field of the
+*data* — **but not all of them.** `output_amounts` is DUPSORT|DUPFIXED keyed by
+amount, with no dummy key; with PR 11425 so are `locked_outputs` and
+`timelocked_outputs` (keyed by block index; `add_locked_outs` keys by
+`last_locked_block_idx`) and `layers` (keyed by layer index), while `leaves`
+does use `zerokval` (`grow_with_tree_extension`). The schema comment in
+`db_lmdb.cpp` says so: "The output_amounts, locked_outputs, layers, and
+timelocked_outputs tables don't use a dummy key, but use DUPSORT."
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
 `batch_commit` / `batch_stop` / `batch_abort` all re-check it. `do_resize`
