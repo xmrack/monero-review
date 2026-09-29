@@ -21,9 +21,14 @@ remembered line.
 The path a block at the chain tip actually takes. It is the single most
 attacker-exposed sequence in the daemon.
 
-1. **`connection<T>::handle_read`** — `contrib/epee/include/net/abstract_tcp_server2.inl`.
-   ASIO delivers bytes into a fixed-size buffer. No validation; only throttle
-   and timeout accounting.
+1. **`connection<T>::start_read` → `connection<T>::handle_read`** — `contrib/epee/include/net/abstract_tcp_server2.inl`.
+   ASIO delivers bytes into a fixed-size buffer. No validation. The throttle
+   and timeout accounting happen in the `on_read` lambda inside
+   `connection<T>::start_read` — it calls
+   `start_timer(get_timeout_from_bytes_read(...), true)` and the throttle
+   `handle_trafic_exact` — which also holds the RPC write-deadline gate.
+   `connection<T>::handle_read` itself only sets `handle_read = true` and
+   posts `get_protocol_handler().handle_recv` to `connection_basic::strand_`.
 2. **`async_protocol_handler::handle_recv`** — `contrib/epee/include/net/levin_protocol_handler_async.h`.
    Appends to a per-connection cache and runs a head/body state machine.
    Cumulative buffered bytes are bounded by `m_max_packet_size`, which is
