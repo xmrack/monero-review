@@ -254,6 +254,24 @@ Three limits:
   A state you can drive into one of those throws is a finding about the detach
   itself, not something the detach refutes.
 
+## The pruner refuses a database newer than it knows
+
+`monero-blockchain-prune` keeps its own copy of the table schema (see the
+`src/blockchain_db/` traps in `subsystems-node.md`), so a pull request that adds
+an LMDB table without adding it to the pruner's `copy_table` list looks like a
+tool that silently drops that table. It does not, yet: `main` in
+`src/blockchain_utilities/blockchain_prune.cpp` checks
+`if (db_version > MAX_SUPPORTED_DB_VERSION)` and refuses the database before
+it copies a single table, and the constant is
+`static constexpr uint32_t MAX_SUPPORTED_DB_VERSION = 5;` (observed on PR
+11425).
+
+One limit: **this expires the moment the constant is raised.** The pull request
+that bumps `MAX_SUPPORTED_DB_VERSION` is the one that has to bring the
+`copy_table` list up to date, and a missing table there is a finding. Check
+the constant against `VERSION` in `db_lmdb.cpp` on the head you are reviewing
+before citing this.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
