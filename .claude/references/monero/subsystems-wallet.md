@@ -147,8 +147,11 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   from the block header; the contents come from a separate blob.
 - **`should_skip_block` gates scanning on the daemon-supplied block
   timestamp.**
-- **`exit(1)` at `src/wallet/wallet2.cpp:2917`** on the received-amount
+- **`exit(1)` in `wallet2::process_new_transaction`** on the received-amount
   consistency check — a library function that terminates the host process.
+  It ends the `MCLOG_RED` block logging "Consistency failure in amounts
+  received"; find it with `grep -n "Consistency failure in amounts received" src/wallet/wallet2.cpp`
+  rather than by line number, which drifts.
 - Lines 245–1038 of `wallet2.cpp` are a **single anonymous namespace**; a
   helper you cannot find is probably in there.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
