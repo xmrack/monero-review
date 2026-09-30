@@ -51,6 +51,15 @@ chacha20 key; the cache file is monero binary serialization under
 the same key. Both are written to `<name>.new` and then `tools::replace_file`,
 so persistence is atomic. **Neither is authenticated**: chacha20 with a random
 IV and no MAC. Tampering is detected only by the deserializer failing.
+And the cache need not be encrypted at all: when `cache_file_data` parsing
+fails, `tools::wallet2::load_wallet_cache` logs "Failed to load encrypted
+cache, trying unencrypted" and, in the outer `catch(...)` after
+`parse_binary`, feeds the raw `cache_file_buf` to
+`boost::archive::portable_binary_iarchive` and then
+`boost::archive::binary_iarchive` (`src/wallet/wallet2.cpp`). So a party
+without the wallet keys can supply a whole plaintext cache; only the final
+`m_account_public_address` check constrains it, and that needs only the
+public address.
 
 **Background sync makes it four files and two key hierarchies.** Three modes
 live at `src/wallet/wallet2.h:198-207` -- `BackgroundSyncOff`,
