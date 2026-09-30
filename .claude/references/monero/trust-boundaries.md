@@ -59,6 +59,16 @@ It is also where most memory-safety findings die: the layer imposes limits
 before application code runs. See `refutations.md` — trace the field's actual
 constraint before reporting.
 
+Exception: the wallet cache also reaches `boost::serialization`, through the
+legacy fallbacks in `load_wallet_cache` (`src/wallet/wallet2.cpp`). Boost's
+collection loaders size from the stream's count with no remaining-bytes check
+— `t.reserve(count)` in `load()` in `boost/serialization/vector.hpp`,
+`t.resize(count)` in `collection_load_impl` in
+`boost/serialization/collections_load_imp.hpp`. The "serializer already bounds
+it" refutation holds only for `binary_archive`, whose
+`do_serialize_container` checks `remaining_bytes()`
+(`src/serialization/container.h`), not for the boost path.
+
 ## 4. Daemon → wallet — the daemon is NOT trusted
 
 `src/wallet/wallet2.cpp`
