@@ -29,8 +29,7 @@ Run locally, leaves the result in `reviews/`:
 | `-f model=<id>` | pins the model. Default `auto`, the same model on both tiers |
 | `DEEP=1 ./review-local.sh` | deep, locally |
 
-Deep issues carry a `deep-review` label. Standard reviews are unlabelled,
-because unlabelled is what ordinary looks like.
+Deep issues carry a `deep-review` label. Standard reviews are unlabelled.
 
 To stop the scheduled sweeps:
 
@@ -69,8 +68,7 @@ Every PR the sweep picks up gets a **standard** scan. I can manually launch a
 
 Both run `.claude/workflows/monero-deep-scan.js` under different profiles.
 
-Every candidate goes to a panel whose votes are counted in JavaScript rather
-than argued in prose, and the count settles severity at what the panel actually
+Every candidate goes to a panel whose votes, and the count settles severity at what the panel actually
 found, moving a proposer's guess up or down. What survives is checked for duplicates. 
 
 ## Where things are
@@ -90,10 +88,6 @@ found, moving a proposer's guess up or down. What survives is checked for duplic
 
 - `monero-standard-review/` — **the automatic review.** Every PR on the queue gets it.
 - `monero-deep-review/` — A more indepth review which must be manually requested.
-
-There is no third skill. A single-reviewer fallback and its adversarial second
-pass used to sit below these; both tiers are the agent fleet now, so a session
-that cannot dispatch agents stops and says so rather than reviewing worse.
 
 **Agents and orchestration** — `.claude/agents/` and `.claude/workflows/`. One
 workflow script serves both tiers, keyed on `profile`: what they share is the
