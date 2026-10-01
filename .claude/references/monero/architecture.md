@@ -190,6 +190,13 @@ consensus-reachable today is wrong; describing the code as absent is also
 wrong. A defect in it is still a finding, rated as it will run once live: see
 `refutations.md`, "Not refutations".
 
+*Pending, not on master:* once commit 53227770 ("crypto: move torsion
+clearing into crypto", PR 11333) lands, `rctSigs.cpp` no longer includes
+`fcmp_pp/fcmp_pp_crypto.h` and `rct::verPointsForTorsion` calls
+`crypto::get_valid_torsion_cleared_point_vartime` in `src/crypto/crypto.cpp`.
+Torsion clearing is then no longer FCMP++-only: the wallet and the Trezor
+protocol call `crypto::pubkey_clear_torsion` on tx public keys on live paths.
+
 ## Consensus versus everything else
 
 The line that matters for severity is not "which directory" but "does a node
