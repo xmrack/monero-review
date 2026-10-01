@@ -32,8 +32,9 @@ Taken from `target_link_libraries` in each `CMakeLists.txt`, internal edges
 only. Read it upward: a change low down is felt everywhere above it.
 
 ```
-easylogging  randomx  liblmdb  rapidjson  supercop  qrcodegen   (external/, vendored)
-polyseed  utf8proc                                              (external/, submodules)
+easylogging  liblmdb  qrcodegen                                 (external/, vendored)
+randomx  rapidjson  supercop  polyseed  utf8proc                (external/, submodules;
+                                                                 gtest too, see .gitmodules)
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
