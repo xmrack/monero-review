@@ -259,8 +259,10 @@ control. The daemon is untrusted and the keys are in the process.
   is the front end's job — `LOCK_IDLE_SCOPE()` in simplewallet, the handler
   structure in wallet-rpc. The only lock inside `wallet2` on this path is
   `m_daemon_rpc_mutex`.
-- `threadpool::submit` runs the job **inline on the caller's thread** when the
-  pool is saturated, and `waiter::wait()` drains the queue on the waiting
+- `threadpool::submit` runs a non-leaf job **inline on the caller's thread**
+  when the pool is saturated or depth > 0 (a `leaf=true` job is always queued
+  at the front; see `tools::threadpool::submit` in
+  `src/common/threadpool.cpp`), and `waiter::wait()` drains the queue on the waiting
   thread. "This runs on a worker thread" is not guaranteed.
 - `process_parsed_blocks` calls `hwdev.generate_key_derivation` from several
   pool threads **without** holding the `hw::device` lock, unlike
