@@ -215,8 +215,14 @@ a redefinition error.
 `getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Two behaviours
 that break the obvious mental model:
 
-- **`submit` runs the task inline on the caller** when depth > 0 or every
-  thread is busy with work already queued.
+- **`submit` runs a non-leaf task inline on the caller** when depth > 0 or
+  every thread is busy with work already queued. A `leaf=true` submit is never
+  run inline: it is always queued, with `queue.push_front`, whatever the depth
+  or load. A submit made from inside a leaf job throws ("A leaf routine is
+  using a thread pool"). See `tools::threadpool::submit` in
+  `src/common/threadpool.cpp`: `CHECK_AND_ASSERT_THROW_MES(!is_leaf, ...)` and
+  `if (!leaf && ((active == max && !queue.empty()) || depth > 0))`.
+  `rct::batchVerifyFcmpPpProofs` submits with `leaf=true`.
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking.
 

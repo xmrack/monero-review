@@ -572,8 +572,10 @@ varints, `expect<T>`, a password prompt, and `boost::program_options` wrappers.
 
 **`tools::threadpool`** has two process-wide singletons —
 `getInstanceForCompute()` (hardware concurrency) and `getInstanceForIO()` (8
-threads). Two things to internalise: `submit` **runs the task inline on the
-caller** when depth > 0 or every thread is busy, and `waiter::wait()` **drains
+threads). Two things to internalise: `submit` **runs a non-leaf task inline on
+the caller** when depth > 0 or every thread is busy (a `leaf=true` submit is
+always queued at the front, and submitting from inside a leaf job throws — see
+`tools::threadpool::submit` in `src/common/threadpool.cpp`), and `waiter::wait()` **drains
 the queue on the calling thread** before blocking. "This runs on a worker
 thread" is never guaranteed. `create` spawns `max - 1` threads because the
 submitter is expected to contribute.
