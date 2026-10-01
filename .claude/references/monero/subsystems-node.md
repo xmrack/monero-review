@@ -464,7 +464,13 @@ template on the payload handler; `net_node.inl` is 3188 lines and is emitted
 from `src/rpc/instantiations.cpp`.
 
 **Zones.** Public / Tor / I2P, each with its own `boosted_tcp_server`,
-peerlist, peer id and connect function. **All non-public zones borrow the
+peerlist, peer id and connect function. **Only the public zone gets a random
+peer id**: `network_zone::config` defaults to `m_peer_id(1)` (`net_node.h`),
+and `node_server::init_config` (`net_node.inl`) assigns
+`crypto::rand<uint64_t>()` only to `m_network_zones[zone::public_]`. Tor and
+I2P keep the constant 1, which `get_local_node_data` copies from
+`zone.m_config.m_peer_id` into every handshake — that constant is why inbound
+and outbound anonymity connections cannot be linked by peer id. **All non-public zones borrow the
 public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 `COMMAND_TIMED_SYNC` and `NOTIFY_NEW_TRANSACTIONS` are allowed
 (`is_filtered_command`).
