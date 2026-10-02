@@ -177,8 +177,14 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 **Neighbours.** `node_rpc_proxy.cpp` is the caching daemon boundary for scalars
 (height, fees, hard forks) with ~30-second caches. `ringdb.cpp` is a separate
 LMDB store of previously used rings keyed by key image, so re-spending an
-output reuses its ring; note `get_rings` returns false the moment *any*
-requested key image is missing, leaving the output partially populated.
+output reuses its ring. Since PR 11459, `ringdb::get_rings` does not stop at
+a missing key image: its `MDB_NOTFOUND` branch runs
+`all_outs.emplace_back(); continue;` in the same LMDB transaction, so it
+returns true with one entry per key image (empty = not found) and throws on
+LMDB or decode errors. `ringdb::get_ring` treats an empty entry as not found
+(`all_outs.front().empty()`), and `wallet2::get_rings` wraps the call in
+try/catch and returns false on any exception (`src/wallet/ringdb.cpp`,
+`src/wallet/wallet2.cpp`).
 
 ---
 
