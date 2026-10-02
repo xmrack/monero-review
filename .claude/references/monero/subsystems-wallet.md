@@ -128,8 +128,15 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   the whole set and calls `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
-- Daemon error text is not surfaced verbatim when the daemon is untrusted —
-  every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
+- Daemon error text is meant not to be surfaced verbatim when the daemon is
+  untrusted — the convention is to pass
+  `get_rpc_status(m_trusted_daemon, res.status)`, but not every site does.
+  `wallet2::get_num_rct_outputs` passes `resp_t.status` raw
+  (`THROW_ON_RPC_RESPONSE_ERROR(r, {}, resp_t, "get_output_histogram", error::get_histogram_error, resp_t.status);`),
+  and `THROW_ON_RPC_RESPONSE_ERROR_GENERIC` in `src/wallet/wallet_errors.h`
+  forwards `res.status` unfiltered — `import_key_images` uses it for
+  `is_key_image_spent` and `gettransactions`. List the others with
+  `grep -n THROW_ON_RPC_RESPONSE_ERROR_GENERIC src/wallet/wallet2.cpp`.
 
 **Traps.**
 
