@@ -80,20 +80,21 @@ LIMIT_PHRASES = (
 # so it is still found; BUDGET_EXHAUSTED is matched on `subtype` separately.
 METRIC_KEYS = ("total_cost_usd", "duration_ms", "usage", "num_turns")
 
-# The tools a Lead can block on while the agent fleet runs. Both tiers dispatch
-# `Workflow`, which returns a task id IMMEDIATELY and leaves the fleet running
-# outside the turn; without one of these the run cannot wait for its own
-# result, and ending the turn kills every agent it just started.
+# How a Lead gets its fleet's result. Both tiers dispatch `Workflow`, which
+# returns a task id IMMEDIATELY and leaves the fleet running outside the turn.
+# The Lead then ENDS its turn, and print mode starts a new one carrying the
+# fleet's `task_notification` when the workflow finishes. That re-entry is a
+# HARNESS capability the pull request cannot influence, so a run where it
+# never happened is infrastructure however many turns it burned first.
 #
-# This is a HARNESS capability, and the pull request cannot influence it, so a
-# run that never had one is infrastructure however many turns it burned first.
-# MEASURED on run 35380878405: the action's CLI went 2.1.276 -> 2.1.277 between
-# two scheduled runs, `TaskOutput` vanished from the session's tool list, and
-# the Lead spent 14 turns and 472,273 tokens before walking away from a fleet
-# it could not wait for. The old logic read that as "did real work and produced
-# nothing" and charged the PR -- twice more and 11342 would have been retired
-# from the queue for an upstream release.
-WAIT_TOOLS = {"TaskOutput"}
+# The same failure has arrived through the harness before. MEASURED on run
+# 35380878405: the CLI went 2.1.276 -> 2.1.277 between two scheduled runs,
+# `TaskOutput` -- what the Lead blocked on back then -- vanished, and the Lead
+# spent 14 turns and 472,273 tokens before walking away from a fleet it could
+# not wait for. The old logic read that as "did real work and produced
+# nothing" and charged the PR. `TaskOutput` is gone for good now, so this
+# checks the event that replaced it rather than a tool list.
+NOTIFICATION_SUBTYPE = "task_notification"
 
 
 def load(path):
@@ -211,28 +212,50 @@ def stream_totals(data):
     return turns, total
 
 
-def fleet_wait_missing(data):
-    """True when the session was never offered a tool it could wait on.
+def fleet_abandoned(data):
+    """True when the fleet was dispatched and the session exited without it.
 
-    Read from the `init` event's own tool list, which is what the session was
-    actually handed -- not from the workflow's allowlist, which only says what
-    WOULD be permitted. Allowlisting a tool the CLI no longer ships does not
-    bring it back, and that gap is exactly the failure this detects.
+    Three things together, and all three are needed. A `Workflow` was called;
+    no `task_notification` ever reached the session; and the log still ends on
+    a `result` record, so the CLI finished on its own. That is the harness
+    failing to wake the Lead: the fleet was left running and the process
+    exited on top of it.
 
-    Returns None when the log carries no tool list at all, so an older or
-    differently shaped log falls through to the existing tests rather than
-    being spared on a guess.
+    The third condition is what keeps a genuine timeout on the pull request's
+    account. A job killed by `timeout-minutes` while a huge fleet is still
+    working has no notification either, but its log stops mid-stream and ends
+    on no `result`, and the stream fallback in `verdict` charges it. Sparing
+    that case would put a diff too large to review back at the head of the
+    queue on every tick.
     """
-    events = data if isinstance(data, list) else [data]
-    for event in events:
-        if not isinstance(event, dict):
-            continue
-        if event.get("type") != "system" or event.get("subtype") != "init":
-            continue
-        tools = event.get("tools")
-        if isinstance(tools, list):
-            return not (WAIT_TOOLS & set(tools))
-    return None
+    if not isinstance(data, list) or not dispatched_fleet(data):
+        return False
+    for event in data:
+        if (isinstance(event, dict) and event.get("type") == "system"
+                and event.get("subtype") == NOTIFICATION_SUBTYPE):
+            return False
+    last = next((e for e in reversed(data) if isinstance(e, dict)), None)
+    return bool(last) and last.get("type") == "result"
+
+
+def results_in(data):
+    """Every terminal record in one log, oldest first.
+
+    A fleet run has more than one. The Lead's dispatching turn ends with a
+    `result`, and the turn the fleet's notification starts ends with another.
+    `num_turns` and `usage` on each describe only that segment, so they are
+    summed, while `total_cost_usd` and `modelUsage` are running totals for
+    the whole session. Reading only the last record, as this once did,
+    measured a review by the few turns it spent writing review.md.
+    """
+    if isinstance(data, list):
+        found = [e for e in data if isinstance(e, dict)
+                 and e.get("type") == "result"
+                 and any(k in e for k in METRIC_KEYS)]
+        if found:
+            return found
+    hit = find_result(data)
+    return [hit] if hit else []
 
 
 def dispatched_fleet(data):
@@ -291,22 +314,19 @@ def verdict():
         data = load(path)
         if data is None:
             continue
-        if fleet_wait_missing(data):
-            how = ("after dispatching the fleet, so those agents were killed "
-                   "when the turn ended" if dispatched_fleet(data)
-                   else "so it could not run the fleet at all")
-            return "infra", ("the session was offered no tool it could block on "
-                             f"(none of {sorted(WAIT_TOOLS)}) {how}. That is the "
-                             "harness's capability, not this pull request's diff")
+        if fleet_abandoned(data):
+            return "infra", ("the fleet was dispatched but its completion "
+                             "notification never reached the session, and the "
+                             "CLI exited with the agents still running. Waking "
+                             "the Lead is the harness's job, not this pull "
+                             "request's diff")
 
     results = []
     for path in paths:
         data = load(path)
         if data is None:
             continue
-        found = find_result(data)
-        if found:
-            results.append(found)
+        results.extend(results_in(data))
 
     if not results:
         # No terminal record, so read the stream. A run that died mid-flight

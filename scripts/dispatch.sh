@@ -50,7 +50,7 @@ set -euo pipefail
 
 REPO=${REPO:-xmrack/monero-review}
 WORKFLOW=${WORKFLOW:-review.yml}
-# Sweeps run on Opus, matching DEFAULT_MODEL in the workflow. Passed
+# Sweeps run on Opus 5.5, matching DEFAULT_MODEL in the workflow. Passed
 # explicitly anyway: this script's whole job is to be the unattended driver,
 # and it should not silently change model because someone edited a default in
 # the workflow. Set MODEL=claude-sonnet-5 in the environment to run a cheap
@@ -61,7 +61,7 @@ WORKFLOW=${WORKFLOW:-review.yml}
 # observed ~7 PRs/hour that is real money, so watch the telemetry footer on
 # the filed issues, and remember `gh variable set REVIEW_PAUSED --body 1`
 # stops sweeps without editing anything.
-MODEL=${MODEL:-claude-opus-5}
+MODEL=${MODEL:-claude-opus-5-5}
 TOKEN_FILE=${TOKEN_FILE:-$HOME/.config/monero-review.token}
 
 # cron gives you a near-empty PATH.

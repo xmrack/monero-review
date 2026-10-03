@@ -119,7 +119,15 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
 - `serialization::serialize` on a reading archive succeeds only if
   `ar.eof()`. Callers that must tolerate trailing bytes say
   `serialize_noeof` explicitly — `parse_and_validate_tx_prefix_from_blob` is
-  the notable one.
+  one. `parse_and_validate_tx_base_from_blob`
+  (`src/cryptonote_basic/cryptonote_format_utils.cpp`) sidesteps both: it
+  calls `tx.serialize_base(ba)` directly, then
+  `check_stream_state(ba, !require_eof)`, and `require_eof` defaults to
+  `false` (`cryptonote_format_utils.h`), so it **tolerates trailing bytes by
+  default**. Every caller takes the default except the pruned-blob branch of
+  `make_pool_supplement_from_block_entry`
+  (`src/cryptonote_protocol/cryptonote_protocol_handler.inl`), which passes
+  `require_eof=true`.
 - Varints must be **canonical**: `tools::read_varint` returns
   `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
   and `EVARINT_OVERFLOW` (-1) above the target width.
@@ -449,8 +457,12 @@ the comment says so.
 - **Dandelion++ state is strand-confined, not mutex-protected.** Every mutator
   asserts `running_in_this_thread()`.
 - `block_queue` stores spans in a `std::set` ordered by start height;
-  `has_next_span` and `get_next_span` look only at `begin()`, they do not
-  search.
+  `has_next_span` looks only at `begin()`. `get_next_span` does search: it
+  iterates the set and returns the first span with blocks when `filled` is
+  true, its default (loop with `if (!filled || !i->blocks.empty())` in
+  `block_queue::get_next_span`, `src/cryptonote_protocol/block_queue.cpp`).
+  `span::operator<` (`block_queue.h`) compares `start_block_height` alone, so
+  `insert` refuses a second span with the same start height.
 - One `node_server` shares **one** protocol handler across all zones, but each
   zone has its own `levin::notify`.
 

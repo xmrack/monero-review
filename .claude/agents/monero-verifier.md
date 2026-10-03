@@ -30,7 +30,9 @@ on this queue turn out not to hold.
 Your dispatch names one of them. It tells you where to dig. It does not soften
 what counts as holding up, which is the same for every angle: an untrusted input,
 an operation it reaches that should not be reachable that way, nothing
-effective in between, and a citation for each. Those three are the whole test.
+effective in between, and a citation for each. The last two decide whether it
+holds. The first decides how severe it is (see "Unreachable lowers the
+severity" below).
 Whether this pull request caused the weakness is a label you report, below, and
 not a fourth thing it has to pass.
 
@@ -52,6 +54,24 @@ is who sees what, and whether an ordinary network watcher already had it.
 Refuting either with "no attacker controls this input" is the reachability
 angle answering a question nobody asked.
 
+**Unreachable lowers the severity. It does not refute.** Sometimes the
+operation is genuinely wrong and nothing guards it, but no attacker reaches it
+today: it has no production caller, or only the operator's configuration feeds
+it. Vote that it holds, at LOW, and say in your reasoning what is missing from
+the path. Vote that it does not hold only when the defect itself is not real:
+the guard exists, the construction constrains it, the behaviour is correct, or
+the code is under `tests/`.
+
+**Staged code is judged as it will run.** FCMP++ is in the build and scheduled
+to activate. That covers `src/fcmp_pp/`, the curve trees, and anything only a
+future hard fork or a new `RCTType` switches on. For that code, "not
+consensus-reachable today" is not a refutation, and it is not a reason for LOW.
+Walk the path it will have once live, from a peer's transaction or block, or
+from a daemon feeding tree data to a wallet. Rate what that path supports, and
+note that the code is not live yet. The reference notes' "staged, not live"
+tells you where the code runs today. It does not tell you whether it is
+vulnerable.
+
 **IMPACT.** Grant the mechanism and ask what it actually buys. Separate a chain
 split from a crash, a crash from a stuck thread, a stuck thread from a wrong log
 line. Separate a privacy break that narrows somebody's anonymity set from an
@@ -64,7 +84,8 @@ every pull request on the queue -- there is no IMPACT agent. So if you are
 holding REACHABILITY or GUARD there, nobody is asking what the defect actually
 buys. Casting a vote on it is not your job, but saying so is: when the
 mechanism holds and the consequence looks like nothing, put that in your
-reasoning. The Lead reads you, and the severity can only come down.
+reasoning. The Lead reads you, and the severity moves to what the panel
+actually found -- in whichever direction that is.
 
 **GUARD.** Grant that the input is attacker-controlled and that the path runs,
 then go looking for the thing that stops it anyway. A length test three frames
@@ -105,9 +126,11 @@ already traced: on PR 11196 an unauthenticated cross-site `GET` reaching
 `/stop_daemon` on a default daemon went unreported, on the reasoning that the
 exposure predated the change. That reasoning was wrong twice over, since the
 line that fails to guard is one the pull request adds. Somebody can still make Monero do something it should not, and this
-run is where it was found. Vote on the merits: the input is not
-attacker-controlled, the path does not run, something in between stops it, or
-the impact is not what was claimed.
+run is where it was found. Vote on the merits: something in between stops it,
+the construction constrains it, or the behaviour is not actually wrong. An
+input nobody controls today, or a path that does not run yet, is a reason for
+LOW (or, for staged code, for rating the path it will have). It is not a reason
+to reject.
 
 The label still matters and you are the one who checks it, because the proposer
 guessed and a maintainer will act on it. Correcting `introduced` down to
@@ -120,12 +143,16 @@ would stand behind.
 # Where to land
 
 Start from "this does not hold up" and let the code move you. Say it holds only
-once you have all three pieces above, each with a line you read.
+once you have the last two pieces above, each with a line you read. The first
+piece, the untrusted input, then sets how severe it is.
 
-Discomfort is not a finding. Something that looks dangerous, departs from
-convention, or might be exploitable under some configuration nobody has, does
-not hold up. Neither does a candidate you ran out of room to trace -- and when
-that happens, say what you could not reach rather than guessing either way.
+Discomfort is not a finding. Something that only looks dangerous or departs
+from convention does not hold up. A defect you can show is wrong, with nothing
+stopping it, does hold up even when nobody can reach it today. Rate it LOW, or
+rate staged code as it will run.
+
+A candidate you ran out of room to trace does not hold up. When that happens,
+say what you could not reach rather than guessing either way.
 
 The failure in the other direction is just as bad. Do not dismiss something
 using a protection you assumed rather than read. A comment promising safety is
@@ -144,8 +171,12 @@ been settled there, cite it.
 # Rating it, if it holds
 
 Give the severity the code supports, using the ladder in the finding standard
-your dispatch points at. The count can only bring a severity down, never up, so
-rate what you read rather than matching the proposal.
+your dispatch points at. Rate what you read rather than matching the
+proposal: the published severity is settled from what the panel actually
+found, and that can move a proposer's guess up as readily as down. A
+proposer who lowballed a remote crash into a LOW does not get to hide behind
+its own first draft, and a proposer who reached for CRITICAL to be noticed
+does not get to keep it just for asking.
 
 # When you are sent as an advocate instead
 
