@@ -203,8 +203,10 @@ requested key image is missing, leaving the output partially populated.
 
 ## `src/wallet/wallet_rpc_server.*` — `monero-wallet-rpc`
 
-97 method names dispatched by a macro-generated `else if` chain onto 93
-handlers. `main()` is at the bottom of `wallet_rpc_server.cpp`.
+About a hundred method names dispatched by a macro-generated `else if` chain
+onto slightly fewer handlers (a few handlers serve two names); count them with
+`grep -c 'MAP_JON_RPC_WE' src/wallet/wallet_rpc_server.h`. `main()` is at the
+bottom of `wallet_rpc_server.cpp`.
 
 **Threading.** `http_server_impl_base::run(1, true)` — **exactly one network
 thread**, under an explicit comment. The only members touched from another
@@ -216,9 +218,20 @@ wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
 
 **Authorisation** is HTTP digest auth in epee plus a coarse `--restricted-rpc`
 allowlist, expressed **only as per-handler early returns — there is no central
-table**. There are 38 `if (m_restricted)` returns in
-`src/wallet/wallet_rpc_server.cpp` and two inverted ones (`if (!m_restricted)`,
-at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new handler is unrestricted unless it says otherwise.
+table**. In `src/wallet/wallet_rpc_server.cpp` the gate takes three forms,
+and a grep for any one of them misses the others:
+- a literal `if (m_restricted)` return in the handler;
+- `CHECK_IF_RESTRICTED_BACKGROUND_SYNCING()`, which expands to
+  `CHECK_IF_RESTRICTED_BACKGROUND_SYNCING_BASE(true)` and tests
+  `check_restricted && m_restricted` (e.g. `on_set_attribute`,
+  `on_tag_accounts`); `CHECK_IF_BACKGROUND_SYNCING()` is the same macro with
+  the restricted check off;
+- `PRE_VALIDATE_BACKGROUND_SYNC()`, used by the three background-sync
+  handlers, which has its own literal `if (m_restricted)`.
+
+Two handlers, `on_get_transfers` and `on_get_transfer_by_txid`, use the
+inverted `if (!m_restricted)` to skip only the pool refresh in restricted
+mode. A new handler is unrestricted unless it says otherwise.
 
 **Traps.**
 
@@ -252,8 +265,9 @@ at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new han
   `cryptonote`.
 - `tests/fuzz/fuzz_rpc` targets the **daemon's** `core_rpc_server` only. There
   is no wallet-RPC fuzz target.
-- `WALLET_RPC_VERSION_MINOR` (currently 33) must be bumped on **any** change to
-  `wallet_rpc_server_commands_defs.h`; MAJOR bumps reset it.
+- `WALLET_RPC_VERSION_MINOR` (`#define` in
+  `src/wallet/wallet_rpc_server_commands_defs.h`) must be bumped on **any**
+  change to that file; MAJOR bumps reset it.
 - Every dispatch-table method name must have a wrapper in
   `utils/python-rpc/framework/wallet.py` or the `check_missing_rpc_methods`
   test fails.
