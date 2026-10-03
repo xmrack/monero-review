@@ -125,6 +125,16 @@ prime, and point-versus-negation handling, have both repeatedly looked like
 breaks and turned out to be fine once the protocol's own constraints were taken
 into account. Read the construction, not just the function.
 
+## Not refutations: "nobody reaches it" and "it is not live yet"
+
+Neither kills a candidate. If the defect is real and nothing guards it, but no
+attacker path exists today (no production caller, only trusted configuration
+feeds it), it holds at LOW. Staged FCMP++ code, and anything only a future hard
+fork switches on, is rated on the path it will have once live. "Not
+consensus-reachable today" tells a maintainer when the bug starts to matter. It
+does not make the bug go away. See the finding standard in
+`.claude/skills/monero-deep-review/specs/finding-spec.md`.
+
 ## It is test-only code
 
 Changes under `tests/` do not ship. They matter only if they also modify

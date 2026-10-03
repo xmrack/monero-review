@@ -187,7 +187,8 @@ and calls `fcmp_pp::get_valid_torsion_cleared_point_vartime` from
 no production caller: it appears in `rctSigs.h`, `rctSigs.cpp` and
 `tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
 consensus-reachable today is wrong; describing the code as absent is also
-wrong.
+wrong. A defect in it is still a finding, rated as it will run once live: see
+`refutations.md`, "Not refutations".
 
 ## Consensus versus everything else
 
