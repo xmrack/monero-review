@@ -29,8 +29,7 @@ Run locally, leaves the result in `reviews/`:
 | `-f model=<id>` | pins the model. Default `auto`, the same model on both tiers |
 | `DEEP=1 ./review-local.sh` | deep, locally |
 
-Deep issues carry a `deep-review` label. Standard reviews are unlabelled,
-because unlabelled is what ordinary looks like.
+Deep issues carry a `deep-review` label. Standard reviews are unlabelled.
 
 To stop the scheduled sweeps:
 
@@ -40,31 +39,15 @@ gh variable set REVIEW_PAUSED --body 1 --repo xmrack/monero-review
 
 `--body 0` resumes. Reviewing a PR by number still works while paused.
 
-## Private disclosure
+### Transcripts
 
-This repository is public, and so are its run logs, step summaries and
-artifacts. Some reviews are filed in the private
-`xmrack/monero-review-disclosure` repository instead:
-
-- a surviving CRITICAL or HIGH finding that the pull request did not introduce,
-  which means it is already in live code
-- a CRITICAL or HIGH finding the pull request introduced that still affects
-  live code (the reviewer marks it)
-- an obvious fix by Monero developers for a critical or high security bug
-  (the reviewer marks it)
-
-`scripts/disclosure.py` makes the decision. For a private review, this
-repository gets no issue, no review text in the run summary, no review or
-transcript artifact, and no reference-correction pull request. A finding the
-pull request introduces, in code that is not live yet, is reported here as
-usual.
-
-This needs a `DISCLOSURE_TOKEN` secret: a fine-grained token with Issues
-read/write on the disclosure repository. If the secret is missing, nothing is
-reviewed.
+A run's report, execution log, agent journals and diagnostics are uploaded as
+one artifact, `transcript-<pr>`, encrypted to an OpenPGP public key.
 
 ```bash
-gh secret set DISCLOSURE_TOKEN --repo xmrack/monero-review
+gpg --armor --export you@example.org | gh variable set TRANSCRIPT_PUBLIC_KEY --repo xmrack/monero-review
+gh run download <run-id> -n transcript-<pr> --repo xmrack/monero-review
+gpg -d transcript.tar.gz.gpg | tar xz
 ```
 
 ## Two tiers
@@ -85,8 +68,7 @@ Every PR the sweep picks up gets a **standard** scan. I can manually launch a
 
 Both run `.claude/workflows/monero-deep-scan.js` under different profiles.
 
-Every candidate goes to a panel whose votes are counted in JavaScript rather
-than argued in prose, and the count settles severity at what the panel actually
+Every candidate goes to a panel whose votes, and the count settles severity at what the panel actually
 found, moving a proposer's guess up or down. What survives is checked for duplicates. 
 
 ## Where things are
@@ -106,10 +88,6 @@ found, moving a proposer's guess up or down. What survives is checked for duplic
 
 - `monero-standard-review/` — **the automatic review.** Every PR on the queue gets it.
 - `monero-deep-review/` — A more indepth review which must be manually requested.
-
-There is no third skill. A single-reviewer fallback and its adversarial second
-pass used to sit below these; both tiers are the agent fleet now, so a session
-that cannot dispatch agents stops and says so rather than reviewing worse.
 
 **Agents and orchestration** — `.claude/agents/` and `.claude/workflows/`. One
 workflow script serves both tiers, keyed on `profile`: what they share is the

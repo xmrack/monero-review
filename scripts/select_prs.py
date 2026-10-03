@@ -101,6 +101,25 @@ MAX_PROBES = 40
 # everything behind it.
 MAX_ATTEMPTS = 2
 
+# Runs at the same head SHA that finished without a verified review -- the
+# verification gate refused the report, or the job was cancelled (a timeout
+# included) -- before the queue moves on. Separate from MAX_ATTEMPTS and
+# looser, because these are more often the account's fault (a usage limit
+# killing the fleet mid-run) than the PR's. Without any cap, a PR that always
+# times out or always comes back unverified is re-reviewed at full cost on
+# every tick and holds the head of the queue.
+MAX_INCOMPLETE = 3
+
+# Who may write the dedup record in THIS repository. It is public: anyone can
+# open an issue or a pull request here, and any 12-hex string in any title
+# used to count as "reviewed". An author could open a backdoored pull request
+# upstream, then an issue here carrying its head SHA, and the sweep would never
+# look at it -- or two `Review FAILED:` titles would retire it for good. Only
+# the workflow's own issues count. The private disclosure repository is
+# readable and writable only by its collaborators, so its record is trusted
+# whoever filed it.
+REVIEW_BOT = os.environ.get("REVIEW_BOT", "github-actions[bot]")
+
 # Quiet time a pull request must have before it is reviewed A SECOND time.
 #
 # The dedup record is the head SHA, so every push to an already-reviewed pull
@@ -191,12 +210,16 @@ def get(path, params=None, token=None):
         return json.load(resp)
 
 
-def review_state(repo, token=None):
+def review_state(repo, token=None, author=REVIEW_BOT):
     """Read this repo's issue titles as the record of what has been attempted.
 
-    Returns (done, failed, seen): SHAs with a completed review, a count of
-    failed attempts per SHA, and the PR numbers carrying at least one
-    completed review. A SHA is retried after a failure -- but only
+    Returns (done, failed, incomplete, seen): SHAs with a completed review, a
+    count of failed attempts per SHA, a count of unverified or cancelled runs
+    per SHA, and the PR numbers carrying at least one completed review.
+
+    Only issues -- never pull requests -- opened by `author` count, and only
+    titles in the three shapes the workflow writes. `author=None` trusts every
+    issue, for the private repository. A SHA is retried after a failure -- but only
     MAX_ATTEMPTS times, or a PR that reliably fails would be the newest
     unreviewed item on every tick and block the queue forever.
 
@@ -215,6 +238,7 @@ def review_state(repo, token=None):
     be told from a complete one by anyone downstream.
     """
     done, failed, seen = set(), collections.Counter(), set()
+    incomplete = collections.Counter()
     for page in range(1, MAX_ISSUE_PAGES + 1):
         try:
             issues = get(f"/repos/{repo}/issues",
@@ -227,11 +251,17 @@ def review_state(repo, token=None):
                   file=sys.stderr)
             return None
         for issue in issues:
+            if "pull_request" in issue:
+                continue
+            if author and (issue.get("user") or {}).get("login") != author:
+                continue
             title = issue.get("title", "")
             shas = re.findall(r"\b[0-9a-f]{12}\b", title)
             if title.startswith("Review FAILED:"):
                 failed.update(shas)
-            else:
+            elif title.startswith("Review INCOMPLETE:"):
+                incomplete.update(shas)
+            elif title.startswith("Review:"):
                 done.update(shas)
                 number = re.search(r"#(\d+)\b", title)
                 if number:
@@ -239,7 +269,7 @@ def review_state(repo, token=None):
         # A short page is the end of the listing, and an empty one is the end
         # when the count divides exactly by 100.
         if len(issues) < 100:
-            return done, failed, seen
+            return done, failed, incomplete, seen
     print(f"warn: this repository holds more than {MAX_ISSUE_PAGES * 100} "
           "issues and pull requests; the review record cannot be read in full",
           file=sys.stderr)
@@ -375,12 +405,27 @@ def main():
     disclosure_repo = os.environ.get("DISCLOSURE_REPO", "")
     disclosure_token = os.environ.get("DISCLOSURE_TOKEN", "")
     if state is not None and disclosure_repo and disclosure_token:
-        private = review_state(disclosure_repo, token=disclosure_token)
+        private = review_state(disclosure_repo, token=disclosure_token,
+                               author=None)
         if private is None:
-            state = None
-        else:
-            state = (state[0] | private[0], state[1] + private[1],
-                     state[2] | private[2])
+            # LOUD, unlike a failed read of the public record. That one is a
+            # transient blip the next tick recovers from. This one is usually a
+            # token that expired or lost its scope, which recovers never, and a
+            # green run selecting nothing is the failure this queue is worst at
+            # noticing. The step fails, and the annotation names the record
+            # and not the reason, which could only be read off the API error.
+            print("::error::the disclosure record could not be read; check "
+                  "DISCLOSURE_TOKEN and DISCLOSURE_REPO", file=sys.stderr)
+            print("prs=[]")
+            sys.exit(1)
+        # Every field merges except `seen`. A re-review is held, and a
+        # `hold #N: reviewed before` line printed into this public log, only
+        # for pull requests reviewed in PUBLIC: that line beside a PR with no
+        # public issue would say where its review went. A privately reviewed
+        # PR's next head is treated as a first look, which costs at most one
+        # early re-review.
+        state = (state[0] | private[0], state[1] + private[1],
+                 state[2] + private[2], state[3])
     if state is None:
         # Select NOTHING. The record of what has been reviewed is the only
         # thing standing between this queue and re-reading work it has already
@@ -395,7 +440,7 @@ def main():
             print(f"{name}=0")
         print(f"open={len(prs)}")
         return
-    done, failed, reviewed_before = state
+    done, failed, incomplete, reviewed_before = state
 
     # Local runs record themselves as filenames; count those as done too, so a
     # locally driven drip and the CI workflow don't duplicate each other's work.
@@ -412,6 +457,10 @@ def main():
         if failed[sha] >= MAX_ATTEMPTS:
             print(f"  give up on #{p['number']}: {failed[sha]} failed attempts "
                   f"at {sha}", file=sys.stderr)
+            return False
+        if incomplete[sha] >= MAX_INCOMPLETE:
+            print(f"  give up on #{p['number']}: {incomplete[sha]} incomplete "
+                  f"runs at {sha}", file=sys.stderr)
             return False
         return True
 

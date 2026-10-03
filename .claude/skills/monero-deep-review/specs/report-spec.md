@@ -656,11 +656,36 @@ case. A finding that this pull request introduces, in code that is not live
 yet, is reported in public as usual. Catching that before it merges is what
 the review is for.
 
-**Write the report in full when it goes private.** The private repository is
-where the maintainers who will fix it read it. Nothing changes in the report
-itself: same sections, same detail, same stamps. What changes is what you
-leave out everywhere ELSE. On a review that carries the marker, or that the
-harness will route private:
+**The marker is the only place that says why.** It is an HTML comment, the
+harness reads it, and the harness cuts it out before the issue is filed. No
+other line in the report may say or hint that the pull request fixes a
+security bug. That holds even though the report goes to the private
+repository: an issue that calls itself "the review of the critical fix" leaks
+the moment anyone copies, forwards or screenshots it. So on a review that
+carries `reason=security-fix`:
+
+- **Review the patch as a patch.** The title stays `Security review of <PR
+  title>`. `**Result:**` and `## Summary` say what the code changes, in
+  neutral words: "adds a bounds check on the output count in
+  `check_tx_outputs`", never "fixes a critical inflation bug". No
+  "vulnerability", "exploit", "critical fix", "security patch", "CVE",
+  "attacker could previously", or a description of what the old code allowed.
+- **Findings are about the new code.** A defect in the patch is reported like
+  any other: what is wrong with the code at head, what reaches it, the fix.
+  If the patch is incomplete, say which input still reaches the unchanged
+  path, and stop there. Do not explain what the patch was for.
+- **Nothing in `## Checked and clear`, `## Not covered` or `## Coverage`
+  names the bug either.** "Checked that the new check runs before
+  deserialisation" is fine. "Checked that the fix closes the double-spend" is
+  not.
+
+The other two reasons are different. A `pre-existing` or `live-code` finding
+is the whole point of its report, and the maintainers who fix it need it in
+full, so write that finding as usual. Nothing is written about why the report
+is private, on any route.
+
+Whatever the reason, on a review that carries the marker or that the harness
+will route private:
 
 - the `<!-- workflow-updates -->` stamp is dropped by the harness, so do not
   count on it to carry anything;
