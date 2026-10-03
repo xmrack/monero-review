@@ -180,22 +180,16 @@ The C++ side guards the boundary: CMake `try_compile`s
 `"The FCMP++ FFI API header 'fcmp++.h' has broken compatibility with C"` if
 the generated header stops being C-compatible.
 
-**FCMP++ is staged, not live.** The only consumer of `src/fcmp_pp/` outside
-itself is `src/ringct/rctSigs.cpp`, which includes `fcmp_pp/fcmp_pp_crypto.h`
-and calls `fcmp_pp::get_valid_torsion_cleared_point_vartime` from
-`rct::verPointsForTorsion` (`src/ringct/rctSigs.cpp:1592`). That function has
-no production caller: it appears in `rctSigs.h`, `rctSigs.cpp` and
-`tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
+**FCMP++ is staged, not live.** Nothing outside `src/fcmp_pp/` calls into
+it; `src/ringct` links the library but includes none of its headers. Torsion
+clearing is not part of it: `crypto::get_valid_torsion_cleared_point_vartime`
+is in `src/crypto/` and reaches live wallet paths through
+`crypto::pubkey_clear_torsion` (see `subsystems-crypto.md`).
+`rct::verPointsForTorsion` has no production caller: it appears in
+`rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
 consensus-reachable today is wrong; describing the code as absent is also
 wrong. A defect in it is still a finding, rated as it will run once live: see
 `refutations.md`, "Not refutations".
-
-*Pending, not on master:* once commit 53227770 ("crypto: move torsion
-clearing into crypto", PR 11333) lands, `rctSigs.cpp` no longer includes
-`fcmp_pp/fcmp_pp_crypto.h` and `rct::verPointsForTorsion` calls
-`crypto::get_valid_torsion_cleared_point_vartime` in `src/crypto/crypto.cpp`.
-Torsion clearing is then no longer FCMP++-only: the wallet and the Trezor
-protocol call `crypto::pubkey_clear_torsion` on tx public keys on live paths.
 
 ## Consensus versus everything else
 

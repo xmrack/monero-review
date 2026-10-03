@@ -62,6 +62,17 @@ Which macro a key type is registered with decides whether comparing it leaks
 timing. `CRYPTO_DEFINE_HASH_FUNCTIONS` uses SipHash-2-4 keyed by a process
 `crypto_siphash_key`.
 
+**Torsion clearing lives here, and the wallet uses it.**
+`crypto::get_valid_torsion_cleared_point_vartime` (`crypto.cpp`, over
+`ge_clear_torsion_vartime` in `crypto-ops.c`: multiply by `sc_inv_eight`, then
+by 8) returns false for a point that does not decode or clears to the
+identity. `crypto::pubkey_clear_torsion` wraps it and returns `EC_I` instead of
+failing. Its callers are live: `src/wallet/wallet2.cpp` (payment-ID decryption
+in `process_new_transaction`, `get_tx_proof`, `check_tx_proof`,
+`get_reserve_proof`, `check_reserve_proof`) and
+`src/device_trezor/trezor/protocol.cpp`. A change to either function is a
+wallet change, not an FCMP++-only one.
+
 **Recurring questions worth asking of any change here.** Is a point
 deserialized from the wire checked to be on the curve, and for torsion where
 the protocol requires it? Is a scalar reduced, and is reduction *checked*
@@ -200,29 +211,9 @@ wallet code calls anything in `src/fcmp_pp/curve_trees.cpp` — only
 which on master finds only the two CMake lines.
 `RCTType` still stops at `RCTTypeBulletproofPlus = 6`.
 
-*Pending, not on master:* once commit 53227770 ("crypto: move torsion
-clearing into crypto", monero-project/monero PR 11333) lands, `rctSigs.cpp`
-and `curve_trees.cpp` call `crypto::get_valid_torsion_cleared_point_vartime`
-instead, and `rctSigs.cpp` no longer includes `fcmp_pp/fcmp_pp_crypto.h`. The
-same commit adds `crypto::pubkey_clear_torsion`, with live callers in
-`src/wallet/wallet2.cpp` (payment ID decryption, `get_tx_proof`,
-`check_tx_proof`, `get_reserve_proof`, `check_reserve_proof`) and
-`src/device_trezor/trezor/protocol.cpp`, so the consumers are then no longer
-two. Check with
-`git grep -n 'get_valid_torsion_cleared_point_vartime\|pubkey_clear_torsion' -- src`.
-
 `fcmp_pp_crypto.h` exports `mul8_is_identity_vartime`,
-`clear_torsion_vartime`, `get_valid_torsion_cleared_point_vartime`,
 `point_to_ed_derivatives`, `ed_derivatives_to_wei_x_y`, `point_to_wei_x_y` and
 `struct EdDerivatives`.
-
-*Pending, not on master:* once commit 53227770 (PR 11333) lands,
-`clear_torsion_vartime`, `get_valid_torsion_cleared_point_vartime`, `EC_I` and
-`EC_INV_EIGHT` live in namespace `crypto` (`src/crypto/crypto.h`,
-`src/crypto/crypto.cpp`) and `fcmp_pp_crypto.h` no longer declares them. The
-commit also adds `crypto::pubkey_clear_torsion`, and `crypto.h` then includes
-`crypto-ops.h` at global scope, so every includer of `crypto.h` sees the `ge_*`
-and `fe_*` declarations.
 
 Treat FCMP++ as **new code**, not as an extension of `src/ringct/` — it brings
 a curve cycle with its own field implementations, divisor constructions, and a
