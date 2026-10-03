@@ -167,8 +167,11 @@ fifth dialect, not as part of `src/`.
 **Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
 `crate-type = ["staticlib"]` crate that `src/fcmp_pp/CMakeLists.txt` links as
 `libfcmp_pp_rust.a`. Its manifest pulls `ciphersuite 0.4.2` and
-`dalek-ff-group 0.5.0` from crates.io, `helioselene` from a git revision of
-`github.com/monero-oxide/monero-oxide`, and patches `crypto-bigint` to a
+`dalek-ff-group 0.5.0` from crates.io, `helioselene`, `ec-divisors`,
+`full-chain-membership-proofs`, `monero-fcmp-plus-plus` and
+`monero-fcmp-plus-plus-generators` from one pinned git revision of
+`github.com/monero-oxide/monero-oxide` (`[dependencies]` in
+`src/fcmp_pp/fcmp_pp_rust/Cargo.toml`), and patches `crypto-bigint` to a
 branch of a personal fork. CI installs a pinned toolchain
 (`.github/workflows/build.yml` verifies `rustup-init` by SHA-256 and installs
 `1.93`), and `contrib/depends` carries a `rust_host` per cross target. A

@@ -174,9 +174,13 @@ C-compatibility probe), and `fcmp_pp_rust/` — a Rust crate.
 
 **Monero master builds Rust.** `src/fcmp_pp/CMakeLists.txt` links
 `libfcmp_pp_rust.a`, whose manifest pulls `ciphersuite 0.4.2` and
-`dalek-ff-group 0.5.0` from crates.io, `helioselene` from a git revision of
+`dalek-ff-group 0.5.0` from crates.io, `helioselene`, `ec-divisors`,
+`full-chain-membership-proofs`, `monero-fcmp-plus-plus` and
+`monero-fcmp-plus-plus-generators` from one pinned git revision of
 `github.com/monero-oxide/monero-oxide`, and patches `crypto-bigint` to a branch
-of a personal fork. Both profiles set `panic = "abort"` and
+of a personal fork — so the FFI sits on the full FCMP++ prover/verifier stack,
+not only `helioselene` (`[dependencies]` in
+`src/fcmp_pp/fcmp_pp_rust/Cargo.toml`). Both profiles set `panic = "abort"` and
 `overflow-checks = true`. CI pins a rustup toolchain by SHA-256; `contrib/depends`
 carries a `rust_host` per cross target. **A change under `fcmp_pp_rust/` is a
 supply-chain change**, whatever the diff looks like.
