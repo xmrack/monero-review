@@ -532,8 +532,9 @@ against the reviewer's own instructions is a small, typed, quotable claim.
 
 So write the fields to be read by something that cannot see what you saw.
 `evidence` is the load-bearing one: a path, a symbol or a command in the
-MONERO source, never a line number in the reference, which is the thing being
-corrected. `says` must be findable in the file -- a correction nobody can
+MONERO source. Cite the file and the function or symbol, never a line number,
+and give the grep for a count rather than the count -- both drift with every
+commit. `says` must be findable in the file -- a correction nobody can
 locate is a correction nobody lands. And phrase a refutation **about the
 codebase, not about this pull request**: "Nothing in the tree calls
 `WalletImpl::scanTransactions`, so a race there needs the operator" travels;
