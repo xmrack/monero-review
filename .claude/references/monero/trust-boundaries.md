@@ -142,6 +142,23 @@ hash, or weakens a release workflow is worth reporting even though it is not a
 memory-safety bug. Removal of a hardening flag (`-D_FORTIFY_SOURCE`, stack
 protector, RELRO, PIE) is a genuine finding.
 
+## 10. DNS TXT answers — OpenAlias
+
+`src/common/dns_utils.cpp`, `src/cryptonote_basic/cryptonote_basic_impl.cpp`
+
+When the wallet or the daemon console is given a name such as
+`donate@example.org` instead of an address, the destination comes from a DNS
+TXT record: `tools::dns_utils::addresses_from_url` fetches it and
+`address_from_txt_record` parses it, and `get_account_address_from_str_or_url`
+turns the result into a payment destination. Callers include
+`src/simplewallet/simplewallet.cpp`, `src/wallet/wallet_rpc_server.cpp`, and
+`resolveOpenAlias` in `src/wallet/api/wallet_manager.cpp`.
+
+The answer may or may not be DNSSEC-validated, so whoever controls the zone or
+the resolver path chooses these bytes. Treat the record as untrusted input to
+the parser, and a change to how its address ends up as a destination as
+touching where funds are sent.
+
 ## Severity anchoring by boundary
 
 | Reached from | Typical ceiling |
