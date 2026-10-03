@@ -4,9 +4,9 @@ What the `monero-project/monero` tree is, how its parts fit together, and how
 to read it without being misled. **Shared by every skill in this repository** —
 this directory belongs to no one skill.
 
-Written against master `3d3920d7` (2026-09-03). Every path and symbol here was
-confirmed against a checkout; line numbers are used sparingly, because they rot
-first. When something disagrees with the tree in front of you, **the tree
+Written against master `160e21504` (2026-10-02). Every path and symbol here was
+confirmed against a checkout. Cite files and symbols, never line numbers or
+counts that drift; give the grep that finds them instead. When something disagrees with the tree in front of you, **the tree
 wins** — and fix the file.
 
 ## What is here
@@ -43,17 +43,18 @@ suspect of it and what has already been refuted:
 ## The five facts most likely to save you
 
 1. **`.inl` files are implementations.** `src/p2p/net_node.inl` and
-   `src/cryptonote_protocol/cryptonote_protocol_handler.inl` are 3188 and 2917
-   lines of production networking code. A search that skips `*.inl` misses the
+   `src/cryptonote_protocol/cryptonote_protocol_handler.inl` are about 3000
+   lines each of production networking code. A search that skips `*.inl` misses the
    two most attacker-exposed files in the daemon.
 2. **Four serialization systems, not two** — epee `portable_storage` (RPC and
    P2P payloads), `src/serialization` (consensus blobs), the newer epee `wire`
    (write-only on master), and `boost::serialization` (persisted local state).
    A type can be in three of them, and the one nearest its definition is often
    not the one that runs.
-3. **The epee KV serializer never fails.** A missing or malformed RPC request
-   field leaves the member at its default and parsing continues. The
-   consensus serializer is the opposite — it fails closed.
+3. **The epee KV serializer almost never fails.** A missing RPC request
+   field, or a blob field of the wrong size, leaves the member at its default
+   and parsing continues; only a scalar whose type or range does not fit the
+   member throws. The consensus serializer is the opposite — it fails closed.
 4. **Most control flow is macro-generated.** `CHECK_AND_ASSERT_MES` is a
    `return`; `THROW_WALLET_EXCEPTION_IF` is a `throw` — and a bare `if`.
    `grep 'throw '` finds about a quarter of the raise sites.

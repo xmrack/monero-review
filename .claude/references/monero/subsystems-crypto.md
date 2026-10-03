@@ -10,7 +10,7 @@ agree bit for bit. So the highest-value question about a change here is usually
 not "is this instruction correct" but **"do all the paths still produce the
 same bytes"**.
 
-Verified against master `3d3920d7`.
+Verified against master `160e21504`.
 
 ---
 
@@ -18,26 +18,28 @@ Verified against master `3d3920d7`.
 
 `cncrypto` is five things that live together for historical reasons.
 
-1. **Ed25519 group and scalar arithmetic**, plain C: `crypto-ops.c` (4042
-   lines) and `crypto-ops-data.c` (882 lines of precomputed tables, no
-   functions). SUPERCOP `ref10` with Monero-specific additions grafted on —
+1. **Ed25519 group and scalar arithmetic**, plain C: `crypto-ops.c` and
+   `crypto-ops-data.c` (precomputed tables, no functions). SUPERCOP `ref10` with Monero-specific additions grafted on —
    `ge_fromfe_frombytes_vartime` (the legacy hash-to-point),
    `fe_batch_invert`, `ge_p3_is_point_at_infinity_vartime`, and newer
    FCMP++/Carrot helpers at the end of the file.
 2. **The CryptoNote key API**: `crypto.h` / `crypto.cpp`. Key derivation
    (`generate_key_derivation` = `r*A` then mul-by-8), `derive_public_key`,
    `derive_subaddress_public_key`, `derive_view_tag`, Schnorr signatures, tx
-   proofs, key images, the legacy ring signature. Only `crypto::crypto_ops`
-   has the real implementations; the free functions in `crypto.h` are `inline`
-   friend forwarders.
+   proofs, key images, the legacy ring signature. For these, only
+   `crypto::crypto_ops` has the real implementations; the matching free
+   functions in `crypto.h` are `inline` friend forwarders (the torsion
+   helpers below, `hash_to_scalar` and the random-bytes functions are
+   ordinary free functions).
 3. **The hash set**: `hash.c` (`cn_fast_hash` = legacy Keccak-1600),
    `keccak.c`, `blake2b.c` (with a Monero-personalised variant),
    `hmac-keccak.c`, `tree-hash.c` (the block Merkle tree), plus the four
    CryptoNight finalizers (blake256, groestl, jh, skein).
 4. **Randomness and symmetric crypto**: `random.c` is a Keccak-sponge CSPRNG
-   seeded once from `/dev/urandom` by a GCC
-   `__attribute__((constructor(101)))` initializer, wrapped in a Boost mutex
-   in `crypto.cpp`. `chacha.c` provides chacha8/chacha20 for wallet file and
+   seeded once, on first use, from `/dev/urandom` (`CryptGenRandom` on
+   Windows) through a `CTHR_ONCE_CALL` guard in
+   `generate_random_bytes_not_thread_safe`, wrapped in a Boost mutex in
+   `crypto.cpp`. `chacha.c` provides chacha8/chacha20 for wallet file and
    cache encryption.
 5. **Proof-of-work**: `slow-hash.c` (legacy CryptoNight) and `rx-slow-hash.c`
    (the RandomX shim) — see below.
@@ -48,7 +50,9 @@ Verified against master `3d3920d7`.
 ASM-ATT compiler is available on UNIX with an x86_64 processor, and only falls
 back to the in-tree C (`cn`, an alias for `cncrypto`) otherwise. **Exactly two
 functions are swapped**: `monero_crypto_generate_key_derivation` and
-`monero_crypto_derive_subaddress_public_key`. So on a typical Linux release
+`monero_crypto_generate_subaddress_public_key`, reached through
+`crypto::wallet::generate_key_derivation` / `derive_subaddress_public_key`
+(`src/crypto/wallet/crypto.h`, called from `src/device/device_default.cpp`). So on a typical Linux release
 build the wallet's hot derivation path is hand-written assembly from
 `external/supercop`, not `crypto-ops.c` — and the two must agree. Note
 supercop's `generate_key_derivation` performs three doublings after the scalar
@@ -59,8 +63,8 @@ multiplication to clear the cofactor, described in the source as
 `CRYPTO_MAKE_COMPARABLE` is a plain `memcmp`;
 `CRYPTO_MAKE_COMPARABLE_CONSTANT_TIME` uses libsodium's `crypto_verify_32`.
 Which macro a key type is registered with decides whether comparing it leaks
-timing. `CRYPTO_DEFINE_HASH_FUNCTIONS` uses SipHash-2-4 keyed by a process
-`crypto_siphash_key`.
+timing. `CRYPTO_DEFINE_HASH_FUNCTIONS` uses SipHash-2-4 keyed by a per-process
+key from `get_static_siphash_key()` (`random.c`, generated on first use).
 
 **Torsion clearing lives here, and the wallet uses it.**
 `crypto::get_valid_torsion_cleared_point_vartime` (`crypto.cpp`, over
@@ -110,9 +114,12 @@ on one.
 
 **Where dimension validation lives.** `serialize_rctsig_prunable` in
 `rctTypes.h` is the first line of defence, and `n_bulletproof_max_amounts_base`
-/ `n_bulletproof_amounts_base` in `rctTypes.cpp` are the single place the
-L-vector length is bounded: `6 <= L.size() <= 6 + extra_bits`,
-`L.size() == R.size()`, and a `V`/`L` consistency pair. **Bulletproof indexing
+/ `n_bulletproof_amounts_base` in `rctTypes.cpp` (reached from
+`expand_transaction_1`, `get_transaction_weight` and `verRctSemanticsSimple`)
+bound the L-vector length before verification: `6 <= L.size() <= 6 + extra_bits`,
+`L.size() == R.size()`, and a `V`/`L` consistency pair. `bulletproof_VERIFY`
+and `bulletproof_plus_VERIFY` re-check `V.size() <= maxM` and
+`L.size() == 6+logM`. **Bulletproof indexing
 and buffer-sizing bugs are usually fenced by this** — check it before
 reporting one.
 
@@ -163,13 +170,14 @@ reporting one.
   challenge.
 - `bos_coster_heap_conv_robust` in `multiexp.cc` has no production caller — it
   is a reference implementation for tests.
-- `rct::zeroCommitVartime` is fast for ~180 tabulated amounts and
+- `rct::zeroCommitVartime` is fast for 173 tabulated amounts and
   slow-and-data-dependent otherwise; the name is the only warning.
 - `rct::key64` is `typedef key key64[64]` — an array type, so a parameter
   declared `const key64` is a pointer and `cn_fast_hash(const key64)` hashes
   exactly 64×32 bytes with no size argument.
-- `rctOps.cpp` is 749 lines but 58 KB: about 190 of those lines are one static
-  table of precomputed zero commitments. Line count misrepresents it.
+- `rctOps.cpp` is about 750 lines but 58 KB: about 175 of those lines are one
+  static table of precomputed zero commitments (`zero_commitments`). Line
+  count misrepresents it.
 
 ---
 
@@ -185,20 +193,23 @@ C-compatibility probe), and `fcmp_pp_rust/` — a Rust crate.
 
 **Monero master builds Rust.** `src/fcmp_pp/CMakeLists.txt` links
 `libfcmp_pp_rust.a`, whose manifest pulls `ciphersuite 0.4.2` and
-`dalek-ff-group 0.5.0` from crates.io, `helioselene` from a git revision of
-`github.com/monero-oxide/monero-oxide`, and patches `crypto-bigint` to a branch
-of a personal fork. Both profiles set `panic = "abort"` and
-`overflow-checks = true`. CI pins a rustup toolchain by SHA-256; `contrib/depends`
-carries a `rust_host` per cross target. **A change under `fcmp_pp_rust/` is a
+`dalek-ff-group 0.5.0` from crates.io, `helioselene` and the FCMP++ crates
+(`ec-divisors`, `full-chain-membership-proofs`, `monero-fcmp-plus-plus*`) from
+one git revision of `github.com/monero-oxide/monero-oxide`, and patches
+`crypto-bigint` to a branch of a personal fork. Both profiles set
+`panic = "abort"` and `overflow-checks = true`. The Ubuntu CI jobs verify
+`rustup-init` by SHA-256 and installs toolchain `1.93`; `fcmp_pp_rust/CMakeLists.txt` maps each
+build target to a Rust target triple, and the Guix release build vendors the
+crates (`contrib/guix/rust/config.toml`). **A change under `fcmp_pp_rust/` is a
 supply-chain change**, whatever the diff looks like.
 
 CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
-FFI API header 'fcmp++.h' has broken compatibility with C" if the generated
-header stops being C-compatible.
+FFI API header 'fcmp++.h' has broken compatibility with C" if the checked-in,
+hand-written header `fcmp_pp_rust/fcmp++.h` stops being C-compatible.
 
 **Nothing outside `src/fcmp_pp/` calls into it.** `src/ringct` still links
 the `fcmp_pp` library (`src/ringct/CMakeLists.txt`) but includes none of its
-headers. The torsion check now lives in `crypto`:
+headers. The torsion check lives in `crypto`:
 `rct::verPointsForTorsion` (`src/ringct/rctSigs.cpp`) and
 `fcmp_pp::curve_trees::output_to_tuple` (two calls, plus two `assert`-only
 uses in its `!NDEBUG` block that compile out in release) call
@@ -227,9 +238,9 @@ territory, distinct from the proof mathematics.
 
 ## `src/multisig/` — N-of-M key setup and signing
 
-3714 lines, dominated by `multisig_account_kex_impl.cpp` (952 — the key
-exchange rounds) and `multisig_tx_builder_ringct.cpp` (1046 — collaborative
-CLSAG signing). Plus `multisig_account.{h,cpp}`, `multisig_kex_msg.{h,cpp}`
+About 3,700 lines (`wc -l src/multisig/*.{h,cpp}`), dominated by
+`multisig_account_kex_impl.cpp` (~950 — the key exchange rounds) and
+`multisig_tx_builder_ringct.cpp` (~1,050 — collaborative CLSAG signing). Plus `multisig_account.{h,cpp}`, `multisig_kex_msg.{h,cpp}`
 and its serialization, `multisig_clsag_context.{h,cpp}`, and `multisig.{h,cpp}`.
 
 The security question here is usually **authentication of configuration, not
@@ -240,8 +251,9 @@ which wallet consumer is in play (see `subsystems-wallet.md`).
 
 Two structural facts worth carrying: `multisig_clsag_context.cpp` reimplements
 the CLSAG challenge and must match `rct::verRctCLSAGSimple` exactly; and
-multisig nonces are single-use, with `memwipe` sites in `wallet2.cpp` carrying
-the comment "CRITICAL: a nonce may only be used once!".
+multisig nonces are single-use, with the `memwipe` in
+`wallet2::get_multisig_k` carrying the comment "CRITICAL: a nonce may only be
+used once!".
 
 The message transport (`src/wallet/message_store.*`) is in the wallet
 directory, not here.
@@ -250,7 +262,7 @@ directory, not here.
 
 ## Proof-of-work: `src/crypto/rx-slow-hash.c` and `external/randomx`
 
-**`rx-slow-hash.c` (524 lines) is the entire Monero side.** Everything under
+**`rx-slow-hash.c` is the entire Monero side.** Everything under
 `external/randomx` is upstream `tevador/RandomX`, vendored as a submodule and
 held to upstream's standards.
 
@@ -264,8 +276,9 @@ top block.
 **Where the paths could disagree** — the questions that matter:
 
 - **Interpreter vs JIT vs light vs full memory.** `randomx_create_vm` is a
-  24-arm switch on `(FULL_MEM|JIT|HARD_AES|LARGE_PAGES)`. All must produce
-  identical output.
+  16-case switch on `(FULL_MEM|JIT|HARD_AES|LARGE_PAGES)`, each JIT case split
+  again on `RANDOMX_FLAG_SECURE` — 24 VM classes. All must produce identical
+  output.
 - **Rounding mode.** The `CFROUND` instruction must set the same effective
   mode in every backend; `randomx_calculate_hash` brackets the whole
   computation with `_mm_getcsr`/`_mm_setcsr` or `fegetenv`/`fesetenv`, and the

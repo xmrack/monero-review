@@ -12,9 +12,10 @@ definitions, `cscope -d -L3 <fn>` for callers) rather than assuming.
 
 `src/cryptonote_protocol/cryptonote_protocol_handler.inl`
 
-Handlers named `handle_notify_*` and `handle_response_*` receive structures
-that a peer fully controls: new blocks, new transactions, fluffy blocks, and
-responses to our own object requests. Anyone can connect and send these.
+Handlers named `handle_notify_*`, `handle_request_*` and `handle_response_*`
+receive structures that a peer fully controls: new blocks, new transactions,
+fluffy blocks, requests for our objects and chain, and responses to our own
+requests. Anyone can connect and send these.
 
 The response handlers are worth particular attention: code often assumes a
 response corresponds to what was requested, and a malicious peer is under no
@@ -44,9 +45,11 @@ cross-site has not been trusted with anything — it took an interface nobody
 opened for it. Reach of that shape is a finding at the severity its effect
 earns, and the `Unrestricted-RPC-only` row below does not apply.
 
-The case this exists for: an unauthenticated cross-site `GET` reaching
-`/stop_daemon` on a default daemon. Ask which one you have before you lean on
-the paragraph above.
+The case this exists for: an unauthenticated cross-site request reaching
+`/stop_daemon` on a default daemon. It needs a JSON body (e.g. a CORS-simple
+`text/plain` POST of `{}`); a bodiless `GET` fails the JSON parse in
+`MAP_URI_AUTO_JON2_IF` with 400 before `on_stop_daemon` runs. Ask which one
+you have before you lean on the paragraph above.
 
 ## 3. Deserialization — the widest surface
 
@@ -90,12 +93,15 @@ signatures and the nonce commitments they carry, and the unsigned/signed tx
 blobs moved on a USB stick between a view-only wallet and an offline signer.
 
 Most of the enforcement is in `src/wallet/pending_tx_validation.cpp`, not
-`wallet2.cpp`: `check_consistent_ins_outs`, `sanity_check_pending_tx` and
-`sanity_check_pending_tx_set` in namespace `tools::wallet`.
+`wallet2.cpp`: `check_consistent_ins_outs`,
+`sanity_check_tx_construction_data`, `sanity_check_unsigned_tx_set`,
+`sanity_check_pending_tx` and `sanity_check_pending_tx_set` in namespace
+`tools::wallet`.
 `wallet2::sanity_check_pending_tx` and `wallet2::sanity_check_pending_tx_set`
 are thin wrappers that add a key-image resolver (`make_transfer_ki_resolver`
 in `wallet2.cpp`, which does its own key-image checks). The cold-signing
-and multisig paths call them: `sign_tx`, `parse_tx_from_str`,
+and multisig paths call these, directly or through the wrappers:
+`parse_unsigned_tx_from_str`, `sign_tx`, `parse_tx_from_str`,
 `make_multisig_tx_set`, `parse_multisig_tx_from_str`, `load_multisig_tx`,
 `sign_multisig_tx` and `cold_sign_tx`. Read both files before concluding a
 blob goes unchecked.

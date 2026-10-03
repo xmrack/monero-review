@@ -2,7 +2,7 @@
 
 How to find things here, and the specific ways a search misleads you.
 
-Every recipe below was run against master `3d3920d7`. Paths are relative to
+Every recipe below was run against master `160e21504`. Paths are relative to
 the Monero checkout root.
 
 ---
@@ -11,10 +11,10 @@ the Monero checkout root.
 
 Four facts change what a search means in this tree:
 
-1. **`.inl` files are implementations.** `src/p2p/net_node.inl` (3188 lines)
-   and `src/cryptonote_protocol/cryptonote_protocol_handler.inl` (2917) are
-   the whole P2P node and the whole protocol handler. A tool configured for
-   `*.cpp`/`*.h` misses the two most attacker-exposed files in the daemon.
+1. **`.inl` files are implementations.** `src/p2p/net_node.inl` and
+   `src/cryptonote_protocol/cryptonote_protocol_handler.inl` (each about
+   3000 lines) are the whole P2P node and the whole protocol handler. A tool
+   configured for `*.cpp`/`*.h` misses the two most attacker-exposed files in the daemon.
    Include `--include=*.inl` — or with `rg`, `-g '*.inl'` — always.
 2. **Most of the interesting code is macro-generated** and does not exist as
    text. See `macros.md`; the short version is that
@@ -75,7 +75,7 @@ rg -n "^BLOB_SERIALIZER(_FORCED)?\(" src/
 ```
 rg -n "remaining_bytes\(\)" src/                                    # the src/ archive
 rg -n "CHECK_AND_ASSERT_THROW_MES" contrib/epee/include/storages/portable_storage_from_bin.h
-rg -n "PREPARE_CUSTOM_VECTOR_SERIALIZATION" src/                    # the ones with NO bound
+rg -n "PREPARE_CUSTOM_VECTOR_SERIALIZATION" src/                    # bounded only by its min_wire argument (0 = no bound)
 ```
 
 **Which network-reachable call sites parse epee binary, and do they pass
@@ -111,16 +111,16 @@ rg -n 'CRITICAL_REGION_LOCAL1?\(|m_sync_lock|m_incoming_tx_lock|m_blockchain_loc
 ```
 grep -n "^[a-z_:<>, ]*Blockchain::" src/cryptonote_core/blockchain.cpp
 ```
-`db_lmdb.cpp` (5809 lines) and `wallet2.cpp` (15613) respond to the same
-trick with `BlockchainLMDB::` and `wallet2::`.
-`cryptonote_format_utils.cpp` uses a strict `//---` separator between every
-function, so `grep -n '^\s*//---'` enumerates it.
+`db_lmdb.cpp` and `wallet2.cpp` respond to the same trick with
+`BlockchainLMDB::` and `wallet2::`.
+`cryptonote_format_utils.cpp` puts a `//---` separator before most (not all)
+functions, so `grep -n '^\s*//---'` enumerates most of it.
 
 **Where does this unit gate on a hard-fork version?**
 ```
 rg -n 'HF_VERSION_|hf_version|get_current_hard_fork_version|get_ideal_version' <dir>
 ```
-Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-def.h:36`, not in
+Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-def.h`, not in
 `cryptonote_config.h` and not in `hash-ops.h` either. It is a bare `#define`,
 so it does not answer to the `HF_VERSION_` grep above; a RandomX gating change
 is invisible to that pattern.
@@ -136,7 +136,9 @@ rg -n 'MAP_URI_AUTO_JON2_IF|MAP_JON_RPC_WE_IF' src/rpc/core_rpc_server.h
 rg -n 'm_restricted' src/rpc/core_rpc_server.cpp        # the in-handler caps
 ```
 For wallet-rpc there is no table — restriction is a per-handler
-`if (m_restricted)` early return.
+`if (m_restricted)` early return, or the same check inside
+`CHECK_IF_RESTRICTED_BACKGROUND_SYNCING()` / `PRE_VALIDATE_BACKGROUND_SYNC()`
+(`src/wallet/wallet_rpc_server.cpp`).
 
 **What log category does this file write to?**
 ```
@@ -189,8 +191,9 @@ enormous — always pipe through `grep`.
 
 ## Things that look like one thing and are another
 
-- **`m_cur_blocks`** and 17 siblings look like members; they are macros for
-  `m_cursors->m_txc_blocks`.
+- **`m_cur_blocks`** and its siblings (`grep '#define m_cur_'
+  src/blockchain_db/lmdb/db_lmdb.h`) look like members; they are macros for
+  `m_cursors->m_txc_blocks` and the like.
 - **`TXN_PREFIX_RDONLY()`** declares locals named `m_txn` and `m_cursors` that
   shadow the members.
 - **`/get_transaction_pool_hashes.bin`** is a JSON endpoint despite the
@@ -198,8 +201,8 @@ enormous — always pipe through `grep`.
 - **`LOG_PRINT_L0`** is a warning, not level 0.
 - **`DISABLE_VS_WARNINGS(x)`** expands to nothing on every compiler.
 - **`t_core::run()`** returns true and does nothing.
-- **`i18n_translate`** returns its argument unchanged; every `tr()` in the
-  daemon is a no-op (in simplewallet it is real).
+- **`i18n_translate`** (`src/common/i18n.h`) returns its argument unchanged;
+  every `tr()` in the tree, simplewallet's included, is a no-op.
 - **`rx_slow_hash_allocate_state`** is an empty function.
 - **`hashchain::size()`** returns a height, not a count.
 - **`m_expected_heights`** is a vector of hashes.

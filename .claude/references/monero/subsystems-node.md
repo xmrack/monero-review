@@ -8,8 +8,8 @@ Wallet subsystems are in `subsystems-wallet.md`; crypto in
 `subsystems-crypto.md`; the end-to-end paths through all of these are in
 `flows.md`.
 
-Verified against master `3d3920d7`. Symbols confirmed by grep; line numbers
-only where the code is genuinely hard to find without one.
+Verified against master `160e21504`. Symbols confirmed by grep; cited by file
+and enclosing function or symbol, not line number.
 
 ---
 
@@ -20,8 +20,8 @@ is a `boost::variant` DOM with hand-written binary and JSON back ends, driven
 by the `KV_SERIALIZE` macro family.
 
 **Files.** `portable_storage_base.h` is the object model (`section` is just a
-`std::map<std::string, storage_entry>`); `portable_storage_from_bin.h` is the
-binary parser — header-only, ~369 lines, and the primary untrusted-input
+struct around `std::map<std::string, storage_entry> m_entries`); `portable_storage_from_bin.h` is the
+binary parser — header-only, and the primary untrusted-input
 surface; `portable_storage_from_json.h` is a hand-rolled JSON parser (**not**
 rapidjson); `portable_storage_val_converters.h` range-checks every scalar
 conversion; `portable_storage_template_helper.h` is the public façade
@@ -56,7 +56,8 @@ throw rather than return:
   ends `buf_reader.read(m_root); return true;//TODO:`. Trailing bytes after a
   valid message are ignored.
 - **Duplicate keys are rejected on the binary path and accepted on the JSON
-  path** (last one wins). The binary check is a `lower_bound` comparison in
+  path** (a repeated scalar key: last one wins; a repeated object key is
+  merged into the existing section via `open_section`). The binary check is a `lower_bound` comparison in
   `read(section&)`.
 - `ps_min_bytes<T>::strict` is 1 for `section` and `array_entry`, so for those
   the proportional bound permits a count equal to the whole remaining input.
@@ -78,8 +79,8 @@ protocol version. `LEVIN_DEFAULT_MAX_PACKET_SIZE` is 100 MB after the
 handshake; 256 KiB before it. `m_max_packet_size` is a public
 `std::atomic<uint64_t>` that flips at handshake.
 
-**The server** (`abstract_tcp_server2.inl`, 2102 lines — an implementation,
-not a fragment): `boosted_tcp_server` with a boost::asio io_context, per
+**The server** (`abstract_tcp_server2.inl` — an implementation, not a
+fragment): `boosted_tcp_server` with a boost::asio io_context, per
 connection **two strands** — `m_strand` serializing socket reads and writes,
 `connection_basic::strand_` serializing protocol-handler work. `handle_read`
 posts to the second strand specifically so queued writes cannot deadlock
@@ -92,9 +93,11 @@ request line and a 100000-byte header block.
 
 **Traps.** The connection filter (`is_remote_host_allowed`) and connection
 limit (`is_host_limit`) are virtuals called from
-`abstract_tcp_server2.inl` before any bytes are read; the daemon implements
-them in `node_server`, the RPC server in `http_server_impl_base`. Any HTTP 500
-sets `m_want_close`, so a handler that throws also kills the connection.
+`connection<T>::start_internal` (`abstract_tcp_server2.inl`) before any bytes
+are read; the daemon implements both in `node_server`. The RPC server's limit
+is `http_server_impl_base::is_host_limit`; it has no filter of its own —
+`core_rpc_server::init` installs the `node_server`
+(`set_connection_filter(&m_p2p)`). Any HTTP 500 sets `m_want_close`, so a handler that throws also kills the connection.
 
 ---
 
@@ -134,10 +137,15 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
 - Every read-side allocation bound is keyed on
   `binary_archive<false>::remaining_bytes()`, and there are only a handful:
   `container.h` (element count ≤ bytes left, then
-  `reserve(min(N, bytes/sizeof(T) * ratio))`), `string.h`, `crypto.h`.
-- `PREPARE_CUSTOM_VECTOR_SERIALIZATION` **resizes with no bound of its own**.
-  Its ~15 call sites (2 in `cryptonote_basic.h`, 13 in `rctTypes.h`) each
-  supply a count derived from already-parsed data, not from the wire.
+  `reserve(min(N, bytes/sizeof(T) * ratio))`), `string.h`, `crypto.h`,
+  `serialization.h` (`prepare_custom_vector_serialization`) and
+  `transaction_prefix::deserialize_vin` in `cryptonote_basic.h`.
+- `PREPARE_CUSTOM_VECTOR_SERIALIZATION(size, vec, min_wire)` resizes only if
+  `remaining_bytes() / size >= min_wire`, so the bound is only as good as the
+  caller's `min_wire` (`vin.size()` for `signatures` passes 0). Its call sites
+  (`grep -rn 'PREPARE_CUSTOM_VECTOR_SERIALIZATION(' src/cryptonote_basic
+  src/ringct`) each supply a count derived from already-parsed data, not from
+  the wire.
 
 **Traps.**
 
@@ -146,7 +154,7 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   `"serialization/keyvalue_serialization.h"` is epee.
 - `json_archive` is **write-only**: `json_archive<false>` is declared and never
   defined.
-- `src/serialization/json_object.{h,cpp}` (1542 lines) shares *nothing* with
+- `src/serialization/json_object.{h,cpp}` shares *nothing* with
   the archive DSL — it is a hand-written rapidjson mapping for the ZMQ/JSON
   RPC types.
 - `VARIANT_TAG` values legitimately collide across different variants: both
@@ -173,19 +181,26 @@ block hashing, `get_block_longhash`, `get_block_reward`, `check_hash` and
 `generate_key_image_helper`, `is_out_to_acc_precomp`, view-tag matching,
 address encode/decode.
 
-**Node-local, not consensus:** `miner.cpp` (1153 lines — a third of the
-directory's `.cpp` lines; mining is not verification), `print_money`,
+**Node-local, not consensus:** `miner.cpp` (about a quarter of the
+directory's `.cpp` lines — `wc -l src/cryptonote_basic/*.cpp`; mining is not
+verification), `print_money`,
 `connection_context.cpp` (the per-command P2P byte caps).
 
 **Key functions.** `parse_and_validate_tx_from_blob` is the main untrusted
 entry, and the chain is `passes_max_size_check` → `serialization::serialize`
 → `expand_transaction_1` → `invalidate_hashes` + `set_blob_size` →
-`get_transaction_hash` (`src/cryptonote_basic/cryptonote_format_utils.cpp:237-249`).
-Two things follow. `expand_transaction_1` is where the pruned/prunable split
-is reconstructed, so a field it fails to rebuild is absent rather than wrong,
-and the `//TODO: validate tx` two lines later is literal — **this function
-does not validate anything beyond parsing**. There is no key-offset cap in
-the parse path; a cap on that lives in consensus checks, not here.
+`get_transaction_hash` (the `tx_hash` overload in
+`src/cryptonote_basic/cryptonote_format_utils.cpp`). Two things follow.
+`expand_transaction_1` is where fields that are not on the wire are
+reconstructed, so a field it fails to rebuild is absent rather than wrong,
+and the `//TODO: validate tx` just before `get_transaction_hash` is literal —
+**this function does not validate anything beyond parsing**. The parse path
+does carry chain-wide ceilings derived from `CRYPTONOTE_MAX_TX_SIZE`:
+`transaction_prefix::deserialize_vin` caps the input count (`MAX_VIN_COUNT`)
+and total key offsets (`MAX_TOTAL_KEY_OFFSETS`), `txin_to_key` uses
+`CONTAINER_FIELD_CAPPED(key_offsets, …)`, and `vout` is capped by
+`MAX_VOUT_COUNT`. Fork-specific limits (ring size etc.) live in consensus
+checks, not here.
 `calculate_transaction_hash` is v1 = hash of the whole blob, v2 =
 `cn_fast_hash` over three sub-hashes (prefix, base-rct slice, prunable hash).
 `get_block_hashing_blob` is the **PoW preimage** and is distinct from what
@@ -197,7 +212,7 @@ the parse path; a cap on that lives in consensus checks, not here.
   `parse_and_validate_tx_*` function. Only a handful of call sites pass
   `true`.
 - **`parse_and_validate_block_from_blob` has no size parameter at all.** The
-  only structural bound is `CRYPTONOTE_MAX_TX_PER_BLOCK` inside the
+  only block-level structural bound is `CRYPTONOTE_MAX_TX_PER_BLOCK` inside the
   serializer, checked *after* the vector is deserialized.
 - **`get_transaction_unprunable_summary` is a second, hand-rolled byte
   parser** built from local `READ_VARINT`/`READ_BYTE`/`SKIP` macros that are
@@ -253,10 +268,10 @@ are RAM indexes over that table, rebuilt by `tx_memory_pool::init`.
 - **`handle_incoming_txs` (plural) does not exist.** The batching API was
   folded into `core::handle_incoming_tx`. Anything referring to the plural is
   describing an older tree.
-- **`core::handle_incoming_block` has two overloads with different locking
-  contracts.** The 5-arg one takes no lock and opens no DB batch — it assumes
-  the caller bracketed it. `handle_single_incoming_block` is the self-contained
-  one used for fluffy blocks.
+- **`core::handle_incoming_block` takes no lock and opens no DB batch** (both
+  overloads; the one without a `pool_supplement` just forwards to the other)
+  — it assumes the caller bracketed it. `handle_single_incoming_block` is the
+  self-contained one used for fluffy blocks.
 - **`prepare_handle_incoming_blocks` locks and `cleanup_handle_incoming_blocks`
   unlocks, in different functions.** Every path between them must reach the
   cleanup.
@@ -264,7 +279,8 @@ are RAM indexes over that table, rebuilt by `tx_memory_pool::init`.
   chain.** `tvc.m_added_to_pool` is the field that means "newly accepted", and
   it is also `false` when an existing entry merely has its relay method
   upgraded.
-- **`tvc.m_relay` is only set when `meta.fee > 0`**, so a zero-fee transaction
+- **`tvc.m_relay` is only set when `meta.fee > 0`** (and the method is not
+  `forward`; `tx_memory_pool::add_tx`), so a zero-fee transaction
   leaves it `relay_method::none` and is silently not relayed.
 - **`relay_category::legacy` includes `relay_method::none`.**
 - **Two unrelated `check_tx_inputs`:** `tx_memory_pool::check_tx_inputs` is a
@@ -283,7 +299,7 @@ are RAM indexes over that table, rebuilt by `tx_memory_pool::init`.
 
 ## `src/cryptonote_core/blockchain.cpp` — validation and reorganisation
 
-5622 lines, and the only place that decides whether a block extends the main
+The only place that decides whether a block extends the main
 chain, becomes an alternative, or triggers a reorg.
 
 **Entry points.** `add_new_block` (takes txpool then blockchain lock),
@@ -324,8 +340,9 @@ consumes).
 - **`fast_check`** (under `PER_BLOCK_CHECKPOINT`, on by default) skips the PoW
   hash, `ver_non_input_consensus` and per-tx `check_tx_inputs`. Any new
   consensus check placed in the non-fast branch is skipped during sync.
-- **`goto leave`** — eight jump sites, one label sitting inside the first `if`
-  block immediately before `return false`. One of them (the pruned-block
+- **`goto leave`** — several jump sites in `handle_block_to_main_chain`
+  (`grep -c 'goto leave' src/cryptonote_core/blockchain.cpp`), one label
+  sitting inside the first `if` block immediately before `return false`. One of them (the pruned-block
   branch) jumps backwards past declarations.
 - `check_for_double_spend` exists but its only call site is commented out; the
   DB's duplicate-key-image error catches it instead.
@@ -363,18 +380,20 @@ and an atomic counter.
 
 **Traps.**
 
-- **`src/lmdb/` is not this.** It is a separate C++ LMDB wrapper (`lmdb_lib`)
-  used by the ZMQ/`expect<T>` code, not by the block store.
+- **`src/lmdb/` is not this.** It is a separate `expect<T>`-based C++ LMDB
+  wrapper (`lmdb_lib`) linked only by `tests/unit_tests`, not by the block
+  store.
 - **The cursor names do not exist as identifiers.** `m_cur_blocks` is a macro
   for `m_cursors->m_txc_blocks`; `CURSOR(x)` / `RCURSOR(x)` paste the name.
 - `TXN_POSTFIX_RDONLY()` is an **empty macro** — a missing call changes
   nothing.
 - **`block_rtxn_start()` silently returns the *write* transaction** when
-  called on the writer thread with a batch open, so reads on that thread see
+  called on the writer thread with a write txn (e.g. a batch) open, so reads on that thread see
   uncommitted data.
 - `batch_start()` **returns false** rather than throwing when a batch is
   already active; callers spin on that with the locks released.
-- **`LockedTXN`'s destructor calls `abort()`**, not commit. An early `return`
+- **`LockedTXN`'s destructor calls `abort()`**, not commit
+  (`src/blockchain_db/locked_txn.h`). An early `return`
   between the writes and `lock.commit()` silently discards them, and both
   `commit()` and `abort()` swallow exceptions into `MWARNING`.
   But note it only owns a batch it started: the constructor stores
@@ -382,23 +401,24 @@ and an atomic counter.
   already active**, and both `commit()` and `abort()` are gated on `m_batch`.
   Nested inside an existing batch, a `LockedTXN` is a no-op — so "the DB batch
   is rolled back" only holds when that `LockedTXN` opened it.
-- **`txpool_tx_meta_t` is written raw** and pinned by two asserts at
-  `src/blockchain_db/blockchain_db.h:194-195`:
+- **`txpool_tx_meta_t` is written raw** and pinned by two asserts after
+  the struct in `src/blockchain_db/blockchain_db.h`:
   `static_assert(sizeof(txpool_tx_meta_t) == 192)` and
   `static_assert(offsetof(txpool_tx_meta_t, valid_input_verification_id) == 160)`.
   Those two are the invariant, **not the field count**. The struct carries
-  reserve in two places, and they behave differently. `:168-173` is a
+  reserve in two places, and they behave differently. One is a
   bitfield byte — `double_spend_seen:1, pruned:1, is_local:1,
   dandelionpp_stem:1, is_forwarding:1, bf_padding:3` — with only **three
   spare bits left**, so a fourth flag has to come out of `padding` instead.
-  `:175` is `uint8_t padding[44]; // til 160 bytes`, ahead of
-  `crypto::hash valid_input_verification_id` at `:178`. A field carved out of
+  The other is `uint8_t padding[44]; // til 160 bytes`, immediately ahead of
+  `crypto::hash valid_input_verification_id`. A field carved out of
   either reserve needs **no** migration: records written by older daemons read
   back as all-zero there, which every consumer must treat as "absent". Adding
   a field is a DB migration only when it changes the size or moves an existing
   offset — and moving `valid_input_verification_id` trips the `offsetof`
   assert at compile time, which is the point of it. The writers that zero the
-  reserve are `src/cryptonote_core/tx_pool.cpp:247-248` and `:323-324`
+  reserve are the two branches of `tx_memory_pool::add_tx`
+  (`src/cryptonote_core/tx_pool.cpp`) that build a fresh `meta`
   (`meta.bf_padding = 0; memset(meta.padding, 0, sizeof(meta.padding));`); a
   new write path that forgets that pair persists stack garbage into the DB.
 - The table schema is **duplicated** in
@@ -424,22 +444,25 @@ or a transaction", plus the reverse.
 `GET_TXPOOL_COMPLEMENT` 2010. **2005 is unallocated** — counting structs gives
 the wrong id.
 
-**The handler** is `cryptonote_protocol_handler.inl`, 2917 lines, the real
-implementation. `cryptonote_protocol_handler-base.cpp` — the only `.cpp` —
-contains just a vestigial network-throttle base class.
+**The handler** is `cryptonote_protocol_handler.inl`, the real
+implementation. `cryptonote_protocol_handler-base.cpp` contains just a
+vestigial network-throttle base class (the directory's other `.cpp` files are
+`block_queue.cpp` and `levin_notify.cpp`).
 
 **Invariants.** Every `NOTIFY_` id needs an entry in **three** places: the
 struct's `ID`, `cryptonote_connection_context::get_max_bytes`, and the
 `BEGIN_INVOKE_MAP2` table. A missing map entry logs "Unknown command" and
 returns `LEVIN_OK` for notifies — a silent no-op. `m_sync_lock` is **always**
-taken with `try_to_lock`, at all four sites. Nothing under
+taken with `try_to_lock`, at every site (`grep -n m_sync_lock
+cryptonote_protocol_handler.inl`). Nothing under
 `m_check_span_queue_mutex` may call a core path that takes the txpool lock;
 the comment says so.
 
 **Traps.**
 
 - **The nine handlers have no callers grep will find** — they are reached
-  through `HANDLE_NOTIFY_T2`.
+  through `HANDLE_NOTIFY_T2` (the one exception is
+  `handle_notify_new_fluffy_block`, called from `handle_notify_new_block`).
 - **`NOTIFY_NEW_BLOCK` has no independent implementation**: it converts to a
   fluffy request and tail-calls the fluffy handler. The two commands carry
   different size caps.
@@ -472,8 +495,8 @@ the comment says so.
 
 `node_server` implements four interfaces at once: `levin_commands_handler`,
 `i_p2p_endpoint`, `i_connection_filter` and `i_connection_limit`. It is a
-template on the payload handler; `net_node.inl` is 3188 lines and is emitted
-from `src/rpc/instantiations.cpp`.
+template on the payload handler; `net_node.inl` is emitted from
+`src/rpc/instantiations.cpp`.
 
 **Zones.** Public / Tor / I2P, each with its own `boosted_tcp_server`,
 peerlist, peer id and connect function. **All non-public zones borrow the
@@ -543,9 +566,10 @@ two *different* `core_rpc_server` objects on two different ports.
 **ZMQ restriction is a different flag entirely.** The HTTP servers read
 `cryptonote::core_rpc_server::arg_restricted_rpc` (`--restricted-rpc`); the
 ZMQ server reads `daemon_args::arg_restricted_zmq_rpc`
-(`--restricted-zmq-rpc`, `src/daemon/daemon.cpp:139`). One flag does not feed
+(`--restricted-zmq-rpc`, `t_internals` constructor in `src/daemon/daemon.cpp`). One flag does not feed
 both. `--public-node` enables neither — it only advertises the port, and
-throws "restricted RPC mode is required" unless restriction is already on.
+throws "restricted RPC mode is required" unless restriction is already on
+(`parse_public_rpc_port`, `src/daemon/main.cpp`).
 
 **Traps.** `/get_transaction_pool_hashes.bin` is mapped with
 `MAP_URI_AUTO_JON2` — a JSON endpoint despite the suffix. The `.bin` request
@@ -570,30 +594,32 @@ form is a completely separate program flow that never constructs a node.
 
 `src/blockchain_utilities/` holds `blockchain_import`, `_export`, `_prune`,
 `_stats`, `_usage`, `_ancestry`, `_depth`, `_prune_known_spent_data`.
-`src/debug_utilities/` holds `cn_deserialize` and `object_sizes`, both useful
-as reading aids.
+`src/debug_utilities/` holds `cn_deserialize`, `object_sizes` and
+`dns_checks`; the first two are useful as reading aids.
 
 ---
 
 ## `src/common/` and the logging system
 
 `src/common` builds the `common` library nearly everything links: filesystem
-and process helpers (`util.cpp`, 1142 lines), the global thread pool, an HTTP
+and process helpers (`util.cpp`), the global thread pool, an HTTP
 downloader, a libunbound DNSSEC wrapper, the MoneroPulse update check, base58,
 varints, `expect<T>`, a password prompt, and `boost::program_options` wrappers.
 
 **`tools::threadpool`** has two process-wide singletons —
 `getInstanceForCompute()` (hardware concurrency) and `getInstanceForIO()` (8
-threads). Two things to internalise: `submit` **runs the task inline on the
-caller** when depth > 0 or every thread is busy, and `waiter::wait()` **drains
+threads). Two things to internalise: `submit` **runs a non-leaf task inline on
+the caller** when depth > 0 or every thread is busy with work still queued, and `waiter::wait()` **drains
 the queue on the calling thread** before blocking. "This runs on a worker
 thread" is never guaranteed. `create` spawns `max - 1` threads because the
 submitter is expected to contribute.
 
-**`expect<T>`** (`src/common/expect.h`, 449 lines) is the modern alternative to
+**`expect<T>`** (`src/common/expect.h`) is the modern alternative to
 exceptions, used in `src/net`, `src/lmdb` and `src/rpc/zmq_*` — with
-`MONERO_PRECOND`, `MONERO_CHECK`, `MONERO_UNWRAP` and `MONERO_THROW`. Nothing
-in the older tree uses it.
+`MONERO_PRECOND`, `MONERO_CHECK`, `MONERO_UNWRAP` and `MONERO_THROW` — and
+where `src/p2p`, `levin_notify.cpp` and the daemon command parser call into
+`src/net`. The consensus code (`cryptonote_basic`, `cryptonote_core`,
+`blockchain_db`) does not use it.
 
 **Logging.** `MERROR` / `MWARNING` / `MINFO` / `MDEBUG` / `MTRACE` expand
 through `MCERROR` → `MCLOG` → `MCLOG_TYPE`, gated by a category string that is
@@ -607,7 +633,8 @@ a **per-translation-unit macro**: every `.cpp` does
 - **`LOG_PRINT_L0` does not mean level 0.** `L0 → MWARNING`, `L1 → MINFO`,
   `L2 → MDEBUG`, `L3 → MTRACE`.
 - **`MGINFO` and friends hardcode the category `"global"`**, ignoring the
-  file's own, and `global:INFO` is in every preset — so they always print.
+  file's own, and every preset enables `global` at INFO or finer — so they
+  always print.
 - **Category matching is last-match-wins, not most-specific-wins** — the
   registry iterates `m_categories` with a `const_reverse_iterator`.
 - `external/easylogging++` is vendored **and locally patched**: the whole

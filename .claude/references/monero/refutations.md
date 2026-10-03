@@ -97,8 +97,10 @@ the library-level guard before assuming application code is the only defence.
 Look for `CHECK_AND_ASSERT_MES`, `CHECK_AND_ASSERT_THROW_MES`,
 `THROW_WALLET_EXCEPTION_IF`, and plain `if (...) return false` in the call
 chain. A macro two frames up often makes the local-looking bug unreachable.
-Note that some of these compile out or only log depending on build flags — if
-your refutation depends on an assertion, say which kind it is.
+Note that they differ in kind: `CHECK_AND_ASSERT_MES` logs and returns, the
+`THROW` forms throw, and a plain `assert` compiles out of release builds
+(`-DNDEBUG` in `CMakeLists.txt`) — if your refutation depends on an assertion,
+say which kind it is.
 
 ## The caller already validated it
 
@@ -176,17 +178,19 @@ it, and all three have to go your way:
 MEASURED, on 11185: `PendingTransactionImpl::commit` was proposed as reporting
 success after broadcasting nothing. It died on all three questions at once:
 nothing is broadcast so no state moves, the header documents the `status()`
-check that catches it (`src/wallet/api/wallet2_api.h:862`, `:881`, `:893` all
-say "caller is responsible to check PendingTransaction::status()"), and the
-only in-tree caller, `WalletImpl::submitTransaction` at
-`src/wallet/api/wallet.cpp:1155`, builds its own pending transaction through
+check that catches it (in `src/wallet/api/wallet2_api.h` the doc comments on
+`createTransactionMultDest`, `createTransaction` and
+`createSweepUnmixableTransaction` all say "caller is responsible to check
+PendingTransaction::status()"), and the only in-tree caller,
+`WalletImpl::submitTransaction` in `src/wallet/api/wallet.cpp`, builds its own pending transaction through
 `load_tx` and never holds an errored empty object.
 
 **The mechanism has since been rewritten and the old line numbers are gone**,
-which is the lesson as much as the verdict. `pending_transaction.cpp` is 266
-lines; the only `m_status = Status_Ok` assignments left are the constructor at
-`:55` and the save-to-file success at `:102`. The broadcast branch
-(`:105-136`) sets `m_status` only from its `catch` blocks, so an empty
+which is the lesson as much as the verdict. In `pending_transaction.cpp` the
+only `m_status = Status_Ok` assignments left are in the
+`PendingTransactionImpl` constructor and the save-to-file success branch of
+`commit`. The broadcast branch of `commit` sets `m_status` only from its
+`catch` blocks, so an empty
 `m_pending_tx` now returns `true` off the constructor's optimistic initial
 value rather than off an overwrite. Same shape, different line. Re-read the
 function on the head you are reviewing before citing any anchor in this file.
@@ -213,9 +217,9 @@ which calls `scan_tx` outside the refresh lock so that `detach_blockchain` can
 erase `m_transfers` while the refresh thread holds a reference into it. The
 mechanism holds. The reach does not: `grep -rn scanTransactions src tests
 utils` on master returns four lines and every one is a declaration or the
-definition -- `src/wallet/api/wallet.cpp:1293`, `src/wallet/api/wallet.h:176`,
-and the pure virtual with its doc comment at
-`src/wallet/api/wallet2_api.h:957` and `:961`. No caller exists.
+definition -- the definition in `src/wallet/api/wallet.cpp`, the override in
+`src/wallet/api/wallet.h`, and the pure virtual with its doc comment in
+`src/wallet/api/wallet2_api.h`. No caller exists.
 
 Two limits, and both matter:
 

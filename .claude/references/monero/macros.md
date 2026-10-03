@@ -7,9 +7,9 @@ found by grepping for their names.
 **Read this before believing a grep result**, and before saying "nothing calls
 this" or "this field is unvalidated".
 
-Counts below were measured over `src/`, `contrib/` and `tests/` at master
-`3d3920d7` with `grep -rhoP "(?<![A-Za-z_])NAME\("`, which includes each
-macro's own definition line.
+To count uses of a macro, run
+`grep -rhoP "(?<![A-Za-z_])NAME\(" src contrib tests | wc -l`; the count
+includes the macro's own definition line.
 
 ---
 
@@ -24,22 +24,24 @@ definition is often not the one that runs**.
 
 | macro | generates |
 |---|---|
-| `BEGIN_SERIALIZE_OBJECT()` :175 | `member_do_serialize()` (calls `begin_object` / `do_serialize_object` / `end_object`) **and then opens** `do_serialize_object()` |
-| `BEGIN_SERIALIZE()` :155 | only `member_do_serialize()` — no object framing |
-| `BEGIN_SERIALIZE_OBJECT_FN(stype)` :194 | a **free** `do_serialize_object(Archive<W>&, stype& v)` |
-| `BEGIN_SERIALIZE_FN(stype)` :166 | a free `do_serialize(Archive<W>&, stype& v)` |
-| `END_SERIALIZE()` :206 | `return ar.good(); }` |
+| `BEGIN_SERIALIZE_OBJECT()` | `member_do_serialize()` (calls `begin_object` / `do_serialize_object` / `end_object`) **and then opens** `do_serialize_object()` |
+| `BEGIN_SERIALIZE()` | only `member_do_serialize()` — no object framing |
+| `BEGIN_SERIALIZE_OBJECT_FN(stype)` | a **free** `do_serialize_object(Archive<W>&, stype& v)` |
+| `BEGIN_SERIALIZE_FN(stype)` | a free `do_serialize(Archive<W>&, stype& v)` |
+| `END_SERIALIZE()` | `return ar.good(); }` |
 
-Field macros: `FIELD(f)` (236 uses), `FIELD_N(t,f)`, `FIELD_F(f)` = `FIELD_N(#f, v.f)`
-(for the `_FN` forms), `FIELDS(f)` (no tag), `VARINT_FIELD(f)` (61),
-`VARINT_FIELD_N`, `VARINT_FIELD_F`, `MAGIC_FIELD(m)`, `VERSION_FIELD(v)` (23),
-`PREPARE_CUSTOM_VECTOR_SERIALIZATION(size, vec)`.
+Field macros: `FIELD(f)`, `FIELD_N(t,f)`, `FIELD_F(f)` = `FIELD_N(#f, v.f)`
+(for the `_FN` forms), `FIELDS(f)` (no tag), `VARINT_FIELD(f)`,
+`VARINT_FIELD_N`, `VARINT_FIELD_F`, `MAGIC_FIELD(m)`, `VERSION_FIELD(v)`,
+`CONTAINER_FIELD_CAPPED(f, c)`,
+`PREPARE_CUSTOM_VECTOR_SERIALIZATION(size, vec, min_wire)`.
 
 Trait macros: `BLOB_SERIALIZER(T)` / `BLOB_SERIALIZER_FORCED(T)` route `T`
-onto the raw `memcpy` overload; `VARIANT_TAG(Archive, Type, Tag)` (109 uses)
+onto the raw `memcpy` overload; `VARIANT_TAG(Archive, Type, Tag)`
 binds a wire byte to a C++ type.
 
-- **51** `BEGIN_SERIALIZE_OBJECT()` / **15** `BEGIN_SERIALIZE()`.
+- `BEGIN_SERIALIZE_OBJECT()` blocks outnumber `BEGIN_SERIALIZE()` blocks
+  several to one.
 - **The field name is decorative here.** `binary_archive_base::tag(const char*)`
   is `{ }` (`src/serialization/binary_archive.h`), as are `begin_object` and
   `end_object`. So `FIELD(x)` and `FIELD_N("y", x)` produce identical bytes,
@@ -54,14 +56,14 @@ binds a wire byte to a C++ type.
 
 ### 2. `contrib/epee/…/keyvalue_serialization.h` — RPC and P2P
 
-`BEGIN_KV_SERIALIZE_MAP()` (:43, **423** blocks) injects `public:` and
+`BEGIN_KV_SERIALIZE_MAP()` (several hundred blocks) injects `public:` and
 generates **four** members: `store()` (declared `const`, and `const_cast`s
 `*this`), `_load()`, `load()` (same as `_load` but wrapped in
 try/catch logging "Exception on unserializing"), and
 `serialize_map<bool is_store, class t_storage>`.
 
-Field macros and counts: `KV_SERIALIZE` **922**, `KV_SERIALIZE_OPT` 135,
-`KV_SERIALIZE_PARENT` 124, `KV_SERIALIZE_VAL_POD_AS_BLOB`,
+Field macros, most-used first: `KV_SERIALIZE`, `KV_SERIALIZE_OPT`,
+`KV_SERIALIZE_PARENT`, `KV_SERIALIZE_VAL_POD_AS_BLOB`,
 `KV_SERIALIZE_CONTAINER_POD_AS_BLOB`, and the `_N` and `_FORCE` variants.
 `KV_SERIALIZE(v)` → `KV_SERIALIZE_N(v, "v")` →
 `epee::serialization::selector<is_store>::serialize(this_ref.v, stg, hparent_section, "v")`.
@@ -80,10 +82,13 @@ Field macros and counts: `KV_SERIALIZE` **922**, `KV_SERIALIZE_OPT` 135,
   short-circuit, so the two "OPT" families are **not symmetric**.
 - **`typedef epee::misc_utils::struct_init<request_t> request;`** means
   `COMMAND_RPC_X::request` and `::request_t` are *different types*, and the
-  zero-initialisation of every field comes from that typedef, not from member
-  initialisers. There are **326** `struct_init<` wrappers against 423 KV
-  blocks — nested payload structs held in containers are **not** covered, so
-  their scalars really are uninitialised.
+  zero-initialisation of every field comes from that typedef (and from the
+  `boost::value_initialized` the dispatch macros wrap around requests), not
+  from member initialisers. Not every KV block has a `struct_init<` wrapper.
+  Container elements loaded by epee are value-initialised
+  (`unserialize_stl_container_t_obj` constructs `value_type()`), but a payload
+  struct declared as a plain local (`T x;`) in handler code is not, so its
+  scalars really are uninitialised.
 
 ### 3. `contrib/epee/…/serialization/wire/` — the newest, and write-only
 
@@ -98,9 +103,9 @@ forward-declared and never defined** — the read side does not exist on master.
 
 ### 4. `boost::serialization` — persisted local state
 
-Hand-written `serialize()` free functions plus `BOOST_CLASS_VERSION` (~24
-lines: `tools::wallet2` = 31, `wallet2_basic::transfer_details` = 12,
-`address_book_row` = 18, `peerlist_entry` = 3, …). This is the **third**
+Hand-written `serialize()` free functions plus `BOOST_CLASS_VERSION` (about
+two dozen lines, `grep -rn BOOST_CLASS_VERSION src`: `tools::wallet2` = 31,
+`wallet2_basic::transfer_details` = 12, `address_book_row` = 18, `peerlist_entry` = 3, …). This is the **third**
 serializer for several of the same types.
 
 > **The multi-serializer trap, concretely.** `rct::rctSigBase` has a
@@ -108,7 +113,7 @@ serializer for several of the same types.
 > `serialize_rctsig_base`. The consensus path uses only the latter. A `FIELD()`
 > added to the former changes nothing on the wire.
 > Likewise `transfer_details` carries both a `BEGIN_SERIALIZE_OBJECT_FN` block
-> (in `wallet2_serialization.h`, not next to the type) and a Boost hook.
+> (in `src/wallet/wallet2_basic/wallet2_serialization.h`, not next to the type) and a Boost hook.
 > **Before judging a change to any type that crosses a wire or a disk,
 > enumerate all of its serializers.**
 
@@ -119,7 +124,7 @@ serializer for several of the same types.
 | macro family | defined in | generates |
 |---|---|---|
 | `BEGIN_URI_MAP2` / `MAP_URI_AUTO_JON2[_IF]` / `MAP_URI_AUTO_BIN2` | `contrib/epee/include/net/http_server_handlers_map2.h` | `handle_http_request_map()` — a chain of `else if` |
-| `BEGIN_JSON_RPC_MAP` / `MAP_JON_RPC[_WE][_IF]` | same | another `else if` chain on the method name |
+| `BEGIN_JSON_RPC_MAP` / `MAP_JON_RPC` / `MAP_JON_RPC_WE[_IF]` | same | another `else if` chain on the method name |
 | `CHAIN_HTTP_TO_MAP2` | same | `handle_http_request()` |
 | `BEGIN_INVOKE_MAP2` / `HANDLE_INVOKE_T2` / `HANDLE_NOTIFY_T2` | `contrib/epee/include/storages/levin_abstract_invoke2.h` | `handle_invoke_map()`, dispatching on `CMD::ID == command` |
 | `BEGIN_RPC_MESSAGE_CLASS` / `_REQUEST` / `_RESPONSE` | `src/rpc/daemon_messages.h` | the ZMQ `Request` / `Response` classes |
@@ -129,31 +134,34 @@ Consequences:
 - **A URI string or JSON-RPC method name appears exactly once**, in the table.
   Grepping for the handler finds its declaration and definition but not the
   URI.
-- **The whole restricted-mode access-control policy is the `_IF` suffix.**
+- **The method-level restricted-mode gate is the `_IF` suffix.**
   `MAP_URI_AUTO_JON2_IF(..., !m_restricted)` versus `MAP_URI_AUTO_JON2(...)`.
-  Dropping four characters from a table line silently exposes a method.
+  Dropping the `_IF` and its condition from a table line silently exposes a
+  method. (Handlers additionally trim output and cap request sizes in their
+  bodies via `const bool restricted = m_restricted && ctx;`.)
 - **The chains are opened by `if (false) return true;` and order matters.** An
   entry added after a matching one is dead code that compiles cleanly.
 - A Levin command with no `HANDLE_NOTIFY_T2` entry logs "Unknown command" and
   returns `LEVIN_OK` for notifies — a silent no-op.
-- `class Request` / `class Response` never appear as searchable text in
-  `daemon_messages.h`.
+- `class Request` / `class Response` appear in `daemon_messages.h` only
+  inside the `BEGIN_RPC_MESSAGE_REQUEST` / `_RESPONSE` macro bodies, never at
+  a message class.
 
 ---
 
 ## Failure macros — function exits with no `return` or `throw` token
 
-Measured counts:
+Most-used first:
 
-| macro | uses | behaviour |
-|---|---:|---|
-| `CHECK_AND_ASSERT_MES(expr, ret, msg)` | 603 | `LOG_ERROR` then **`return ret`** |
-| `CHECK_AND_ASSERT_THROW_MES(expr, msg)` | 570 | log then **throw `std::runtime_error`** |
-| `THROW_WALLET_EXCEPTION_IF(cond, type, …)` | 537 | throw a typed `tools::error` with `__FILE__:__LINE__` |
-| `CHECK_AND_ASSERT(expr, ret)` | 11 | **silent** return, no log |
-| `CHECK_AND_NO_ASSERT_MES*` | ~17 | logs at `LOG_PRINT_L0/L1` instead, still returns |
-| `CHECK_AND_ASSERT_MES2` | 2 | logs and does **not** return |
-| `MONERO_PRECOND` / `MONERO_CHECK` / `MONERO_THROW` / `MONERO_UNWRAP` | 16/13/14/30 | `expect<T>` dialect |
+| macro | behaviour |
+|---|---|
+| `CHECK_AND_ASSERT_THROW_MES(expr, msg)` | log then **throw `std::runtime_error`** |
+| `CHECK_AND_ASSERT_MES(expr, ret, msg)` | `LOG_ERROR` then **`return ret`** |
+| `THROW_WALLET_EXCEPTION_IF(cond, type, …)` | throw a typed `tools::error` with `__FILE__:__LINE__` |
+| `CHECK_AND_NO_ASSERT_MES*` | logs at `LOG_PRINT_L0/L1` instead, still returns |
+| `CHECK_AND_ASSERT(expr, ret)` | **silent** return, no log |
+| `CHECK_AND_ASSERT_MES2` | logs and does **not** return (defined, no callers) |
+| `MONERO_PRECOND` / `MONERO_CHECK` / `MONERO_THROW` / `MONERO_UNWRAP` | `expect<T>` dialect |
 
 **Read every one of these lines as a `return` or a `throw`.** A grep for
 `return false` in a validation function misses most of its failure paths. When
@@ -166,13 +174,19 @@ Putting the `_IF` form before an `else` rebinds that `else` to the macro's
 hidden `if`. Insist on braces.
 
 **The dialects are geographic**, and suggesting the wrong one is against the
-grain. Roughly, by subtree
-(`CHECK_AND_ASSERT_MES` / `CHECK_AND_ASSERT_THROW_MES` / `THROW_WALLET_EXCEPTION_IF`):
-`cryptonote_core` 81/9/0, `cryptonote_basic` 63/20/0, `ringct` 62/47/0,
-`wallet` 35/59/531, `blockchain_db` 0/0/0 (it uses `throw0`/`throw1`).
-**`src/crypto` uses none of them** — zero epee macros, ~112 raw `assert(`.
+grain. Roughly, by subtree: `cryptonote_core` and `cryptonote_basic` are
+mostly `CHECK_AND_ASSERT_MES`; `ringct` mixes it with
+`CHECK_AND_ASSERT_THROW_MES`; `multisig` and `fcmp_pp` are almost entirely
+`CHECK_AND_ASSERT_THROW_MES`; `wallet` is dominated by
+`THROW_WALLET_EXCEPTION_IF`; `blockchain_db` uses none of the three (it uses
+`throw0`/`throw1`). Per-subtree counts:
+`grep -rhoP "(?<![A-Za-z_])CHECK_AND_ASSERT_MES\(" src/<dir> | wc -l`.
+**`src/crypto` uses none of them** — no epee check or log macros, dozens of
+raw `assert(`.
 The `expect<T>` dialect lives only in `src/common`, `src/net`, `src/lmdb`,
-`src/rpc/zmq*` and `src/p2p/net_node.cpp`.
+`src/rpc/zmq*`, and the address parsing in `src/p2p` (`net_node.cpp`,
+`net_node.inl`, `net_peerlist_boost_serialization.h`) and
+`src/daemon/command_parser_executor.cpp` that consumes `src/net`.
 
 `TRY_ENTRY()` / `CATCH_ENTRY(location, ret)` / `CATCH_ENTRY_L0..L4` /
 `CATCH_ENTRY_SWALLOW_EX` are an **unbalanced brace pair split across two
@@ -183,7 +197,7 @@ macros** — a diff hunk showing only one looks syntactically broken. The
 
 ## Locking, logging and timing
 
-**`CRITICAL_REGION_LOCAL(x)`** (`contrib/epee/include/syncobj.h:81`, 204 uses)
+**`CRITICAL_REGION_LOCAL(x)`** (`contrib/epee/include/syncobj.h`, about 200 uses)
 → `boost::unique_lock critical_region_var(x)`. Note:
 
 - The `#define` has **two spaces** after it, so `grep '^#define CRITICAL_REGION_LOCAL'`
@@ -202,16 +216,17 @@ everything in `if (el::Loggers::allowed(level, cat))`.
 - **Arguments are only evaluated if the category and level pass.** Never put a
   needed side effect in a log statement.
 - **The category comes from a per-file `#define`, not the call site.** There
-  are ~126 definition sites, 122 of them immediately preceded by `#undef`.
-  39 are in *headers*, so including one changes the category for the includer.
+  are over a hundred definition sites, each immediately preceded by `#undef`,
+  and dozens are in *headers*, so including one changes the category for the
+  includer (`grep -rn "#define MONERO_DEFAULT_LOG_CATEGORY" src contrib/epee`).
 - **`LOG_PRINT_L0` is `MWARNING`.** `L1` → `MINFO`, `L2` → `MDEBUG`, `L3`/`L4`
   → `MTRACE`. Reading a change from `L0` to `L1` as "made it noisier" is
   backwards.
 - `MGINFO` and friends hardcode `"global"`, ignoring the file's category.
-- Counts, `src/` + `contrib/epee`: `MERROR` 421, `MDEBUG` 393, `LOG_ERROR`
-  271, `MINFO` 251, `LOG_PRINT_L3` 241, `LOG_PRINT_L0` 208. The modern M\*
-  family leads (`src/`: 1122 M\* vs 711 `LOG_PRINT_L*`), and `contrib/epee` is
-  essentially fully converted.
+- Most-used over `src/` + `contrib/epee`: `MERROR`, `MDEBUG`, `LOG_ERROR`,
+  `MINFO`, `LOG_PRINT_L3`, `LOG_PRINT_L0`. The modern M\* family leads (in
+  `src/` by well under two to one over `LOG_PRINT_L*`), and `contrib/epee` is
+  mostly converted.
 - The M\* macros are **not variadic**, so a top-level comma in the logged
   expression is a compile error.
 
@@ -224,36 +239,40 @@ one scope collide.
 ## Small families that mislead
 
 - **`DISABLE_VS_WARNINGS(w)` expands to nothing, on every compiler**
-  (`contrib/epee/include/warnings.h:7`). Adding or removing one changes
+  (`contrib/epee/include/warnings.h`). Adding or removing one changes
   nothing. `DISABLE_GCC_WARNING` is a no-op under clang.
   `PUSH_WARNINGS` / `POP_WARNINGS` are real `_Pragma`s.
 - **`POD_CLASS` is gone**, and so is `src/common/pod-class.h`. Older notes
   and older review comments still reach for it. The key types it used to
-  declare are now plain `struct`s inside `#pragma pack(push, 1)` at
-  `src/crypto/crypto.h:50-91` — `ec_point`, `ec_scalar`, `ec_coord`,
+  declare are now plain `struct`s inside `#pragma pack(push, 1)` in
+  `src/crypto/crypto.h` — `ec_point`, `ec_scalar`, `ec_coord`,
   `public_key`, `key_derivation`, `key_image`, `signature`, `view_tag`. The
   packing is what makes them wire-shaped, so a field added inside that region,
   or a `pop` moved, changes serialized layout with nothing warning about it.
 - **`CRYPTO_MAKE_COMPARABLE` / `_CONSTANT_TIME` / `CRYPTO_MAKE_HASHABLE` /
   `CRYPTO_DEFINE_HASH_FUNCTIONS`** (`src/crypto/generic-ops.h`) generate the
-  `operator==`, `std::hash` and `boost::hash_value` for the key types. **None
-  of those exist as text anywhere.** The plain form is `memcmp`; the
+  `operator==`, `std::hash` and `hash_value` (for `boost::hash`) for the key
+  types. **None of those exist as text anywhere.** The plain form is `memcmp`; the
   `_CONSTANT_TIME` form is libsodium's `crypto_verify_32`.
 - **`INITIALIZER` / `FINALIZER`** (`src/crypto/initializer.h`) → GCC
-  `__attribute__((constructor))`. Used in exactly one place:
-  `src/crypto/random.c` seeds the RNG **before `main`**. `init_random` has no
-  caller anywhere; grepping for "who seeds the RNG" finds nothing.
+  `__attribute__((constructor))` / `((destructor))`. `INITIALIZER` has no
+  user; `src/crypto/random.c` uses `FINALIZER(deinit_random)` and
+  `FINALIZER(deinit_sip)` to wipe RNG state at exit. The RNG is seeded lazily:
+  `init_random` has no direct caller and runs only as the callback in
+  `CTHR_ONCE_CALL(&init_random_once, init_random)` on the first
+  `generate_random_bytes_not_thread_safe` / `add_extra_entropy_not_thread_safe`.
 - **`CHECKED_GET_SPECIFIC_VARIANT(v, T, name, ret)`** both returns from the
   function on a type mismatch **and declares `name`**. Grepping the enclosing
   function for that variable's declaration finds nothing.
 - **LMDB member-renaming macros**: `src/blockchain_db/lmdb/db_lmdb.h` defines
   18 of the form `#define m_cur_blocks m_cursors->m_txc_blocks`, plus
-  `CURSOR(name)` / `RCURSOR(name)` (102 call sites) and `TXN_PREFIX*` (57).
+  `CURSOR(name)` / `RCURSOR(name)` (about a hundred call sites) and
+  `TXN_PREFIX*` (over fifty), all in `db_lmdb.cpp`.
   `m_cur_blocks` looks like a member and is a macro; the real member
-  `m_txc_blocks` never appears at a use site. `CURSOR` declares a local
-  `result`.
+  `m_txc_blocks` never appears at a use site. `CURSOR` declares a `result`
+  local inside its own `if` block.
 - **`AUTO_VAL_INIT(v)`** is an *expression* producing a value-initialised
-  temporary — `T x = AUTO_VAL_INIT(x);` (84 uses).
+  temporary — `T x = AUTO_VAL_INIT(x);`.
 - **`tests/core_tests/chaingen.h`**: the macro argument **is** the declared
   variable name. `MAKE_NEXT_BLOCK(events, blk_2, blk_1, miner)` declares
   `blk_2`. `MK_COINS(amount)` only compiles with a literal.
@@ -265,7 +284,7 @@ one scope collide.
 Before saying **"nothing calls this"** or **"this is unused"**, search for the
 macro that would generate it: `BEGIN_KV_SERIALIZE_MAP`,
 `BEGIN_SERIALIZE_OBJECT`, `CRYPTO_MAKE_HASHABLE`, `HANDLE_NOTIFY_T2`,
-`BEGIN_URI_MAP2`, `INITIALIZER`, `VARIANT_TAG`.
+`BEGIN_URI_MAP2`, `CTHR_ONCE_CALL`, `VARIANT_TAG`.
 
 Before saying **"this field is validated"**, check which serializer runs and
 whether its macro discards the result.
