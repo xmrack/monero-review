@@ -40,9 +40,10 @@ failed, however good the run behind it was.
 # The counting is not yours to do
 
 The run happens as the `monero-deep-scan` workflow. Its script adds up the
-verifiers' answers, brings severity down where they rated something lower than
-its proposer did, caps a confidence it uses internally, and checks the mapper's
-placement of files against the real changed-file list. Those results are what
+verifiers' answers, settles severity at what they actually rated -- moving a
+proposer's guess up or down as the evidence supports -- caps a confidence it
+uses internally, and checks the mapper's placement of files against the real
+changed-file list. Those results are what
 you report.
 
 Do not stand in for it. Do not dispatch researchers or verifiers yourself, do

@@ -113,23 +113,42 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - Change must go to an address the wallet owns — `sanity_check` throws
   otherwise.
 - Multisig nonces are wiped after a single use — `memwipe` under the comment
-  "CRITICAL: a nonce may only be used once!" at
-  `src/wallet/wallet2.cpp:14533`. **There is no wallet-level nonce member.**
+  "CRITICAL: a nonce may only be used once!" in `wallet2::get_multisig_k`.
+  **There is no wallet-level nonce member.**
   The only `m_multisig_k` in the tree is `transfer_details::m_multisig_k`, a
-  plain `std::vector<rct::key>` declared at
-  `src/wallet/wallet2_basic/wallet2_types.h:154`, carrying no deprecation
-  marker, and it is live state: `wallet2::get_multisig_k`
-  (`src/wallet/wallet2.cpp:14518`) walks `m_transfers[idx].m_multisig_k`,
+  plain `std::vector<rct::key>` declared in
+  `src/wallet/wallet2_basic/wallet2_types.h`, carrying no deprecation
+  marker, and it is live state: `wallet2::get_multisig_k` walks
+  `m_transfers[idx].m_multisig_k`,
   matches a nonce by its `L = k*G`, hands it out and wipes it in place.
   Two consequences a diff can break. The wipe **leaves a zero entry in the
   vector rather than erasing it**, so the loop's `if (k == rct::zero())
   continue` is what stops a spent nonce being reused — a rewrite that drops
-  that test reuses nonces. And `clear_multisig_k_and_store` (`:14540`) wipes
+  that test reuses nonces. And `clear_multisig_k_and_store` wipes
   the whole set and calls `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
-- Daemon error text is not surfaced verbatim when the daemon is untrusted —
-  every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
+- Daemon error text is mostly not surfaced verbatim when the daemon is
+  untrusted — most RPC error sites pass
+  `get_rpc_status(m_trusted_daemon, res.status)`. **Not every site does.** In
+  `src/wallet/wallet2.cpp`:
+  - `wallet2::import_key_images` (its `is_key_image_spent` and
+    `gettransactions` calls) uses `THROW_ON_RPC_RESPONSE_ERROR_GENERIC`
+    (`src/wallet/wallet_errors.h`), which puts raw `res.status` into
+    `wallet_generic_rpc_error::what()`. Not reachable from an untrusted
+    daemon; see "Every key-image import with `check_spent` needs a trusted
+    daemon" in `refutations.md`.
+  - The `get_outs.bin` sites in `get_spend_proof` and `check_spend_proof`
+    pass raw `res.status` to `error::get_outs_error`, and
+    `get_num_rct_outputs` (`get_output_histogram`) passes raw
+    `resp_t.status` to `error::get_histogram_error`. Both types keep the
+    status out of `what()`; it appears only in `to_string()`, which
+    `throw_wallet_ex` logs.
+
+  Outside `wallet2.cpp`, `src/wallet/node_rpc_proxy.cpp` returns raw
+  `res.status` as its error string. Find candidates with
+  `grep -n 'THROW_ON_RPC_RESPONSE_ERROR' src/wallet/wallet2.cpp | grep -v get_rpc_status`;
+  a new site that copies one of these inherits the leak.
 
 **Traps.**
 
@@ -209,9 +228,18 @@ returns 39, the newest being in `on_wallet_exists` — and two inverted ones
 - **A missing request field is not an error.** `KV_SERIALIZE` discards the
   serializer's return, so an absent JSON key leaves the value-initialised
   default. Every field needs a validity check in the handler.
-- **A JSON string of digits is accepted where a `uint64_t` is declared**, and
-  an ISO-8601 string is converted to a unix time, by
-  `convert_to_integral<std::string, uint64_t, false>`.
+- **A JSON string is no longer accepted where a `uint64_t` is declared.** The
+  `convert_to_integral<std::string, uint64_t, false>` specialization that used
+  to coerce a string of digits — and an ISO-8601 string to a unix time — is
+  gone from `contrib/epee/include/storages/portable_storage_val_converters.h`,
+  so string-to-integer coercion is out of epee entirely. Such a field now hits
+  the generic `convert_to_integral<from, to, false>` at line 130 of that
+  header, which calls `ASSERT_AND_THROW_WRONG_CONVERSION()`; the throw is
+  caught by the plain `try`/`catch` in `BEGIN_KV_SERIALIZE_MAP`'s `load()`
+  (`contrib/epee/include/serialization/keyvalue_serialization.h:58`, reached
+  via `PREPARE_OBJECTS_FROM_JSON` in
+  `contrib/epee/include/net/http_server_handlers_map2.h`) and the request is
+  rejected.
 - A handler that returns false without setting `er.code` produces
   `{"error":{"code":0,…}}`; an escaping exception produces
   `{"error":{"code":0,"message":""}}`.
@@ -299,7 +327,19 @@ nothing itself.
 `src/mnemonics/` is the electrum-style seed: one header per language (each
 ~1700 lines of word list), plus `electrum-words.cpp` for the checksum and
 language detection. The word lists dominate the directory's line count and are
-data, not logic.
+data, not logic — but they are no longer all of it.
+
+**`src/mnemonics/polyseed/` is a second, independent seed scheme with its own
+key derivation**, and it is logic: a C++ wrapper over libpolyseed
+(`polyseed.cpp`, `data::generate_secret_key` and `data::keygen`), a
+PBKDF2-HMAC-SHA256 implementation injected as the polyseed KDF (`pbkdf2.c`,
+`crypto_pbkdf2_sha256`), and utf8proc normalisation of user phrases and
+passphrases. `src/mnemonics/CMakeLists.txt` adds the `polyseed` subdirectory.
+`electrum-words.cpp` also gained `words_to_bytes_ex`
+(`src/mnemonics/electrum-words.cpp:399`), which decides polyseed versus legacy
+from an arbitrary phrase, and `normalize_mnemonic`. A reviewer who reads this
+directory as word lists and a checksum will walk straight past a live
+key-derivation path.
 
 ---
 

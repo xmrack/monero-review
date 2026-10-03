@@ -92,10 +92,21 @@ const PROVENANCES = ['introduced', 'newly-reachable', 'pre-existing']
 const ALL_ANGLES = ['REACHABILITY', 'IMPACT', 'GUARD']
 
 const sevRank = (s) => { const i = SEVERITIES.indexOf(s); return i < 0 ? SEVERITIES.length - 1 : i }
-// Two distinct uses, and they pull opposite ways -- keeping them as separate
-// named functions is what stops the merge from quietly downgrading a finding.
+// worseSeverity keeps a duplicate candidate at the worst severity any of its
+// proposers gave it -- a merge must never quietly downgrade a finding. The
+// panel's own correction is a separate question, answered by medianSeverity
+// below: verifiers who actually read the code can move a severity either way.
 const worseSeverity = (a, b) => (sevRank(a) <= sevRank(b) ? a : b)
-const lessSevere = (a, b) => (sevRank(a) >= sevRank(b) ? a : b)
+// What the panel rated, from the agreeing verifiers who read the code -- not
+// the proposer's guess and not a one-directional ratchet. The median is a
+// tie-break as much as an average: with one vote it is that vote; with two
+// that disagree it takes the more conservative of the pair, so a single
+// verifier cannot swing a published severity to an extreme nobody else
+// supported; with three it is the middle rating.
+const medianSeverity = (sevs) => {
+  const ranks = sevs.map(sevRank).sort((a, b) => a - b)
+  return SEVERITIES[ranks[Math.floor(ranks.length / 2)]]
+}
 const capConfidence = (want, cap) => {
   const i = CONFIDENCES.indexOf(want) < 0 ? 2 : CONFIDENCES.indexOf(want)
   const j = CONFIDENCES.indexOf(cap) < 0 ? 2 : CONFIDENCES.indexOf(cap)
@@ -663,6 +674,13 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'the node you connect to, a peer, somebody reading a log. Name who sees what,',
    'and say what an ordinary network watcher already had. Neither is exempt from',
    'tests 2 and 3.',
+   'NO ATTACKER PATH TODAY MEANS LOW, NOT SILENCE. If the operation is wrong and',
+   'nothing guards it but nothing reaches it yet (no production caller, only',
+   'trusted configuration feeds it), propose it at LOW and say what the path lacks.',
+   'STAGED CODE IS RATED AS IT WILL RUN. FCMP++ (src/fcmp_pp, the curve trees)',
+   'and anything a future hard fork or new RCTType switches on is scheduled to go',
+   'live: rate it on the path it will have then (a peer\'s transaction or block,',
+   'a daemon feeding a wallet) and note it is not live on today\'s chain.',
    '',
    'WHETHER THIS DIFF CAUSED IT IS NOT PART OF THAT TEST. A weakness identical on',
    'origin/base is still a weakness, and you are the one who found it: propose it.',
@@ -848,7 +866,8 @@ const DEFER_HINT = new RegExp([
 // Same file, same symbol, same line AND same category is one defect seen twice.
 // Category is in the key on purpose: an overflow and a privacy leak can share a
 // sink line and are not the same defect. On a real duplicate keep the WORSE
-// severity -- the panel can only bring it down later.
+// severity -- the panel corrects it from there, in whichever direction the
+// verifiers who read the code support.
 const defectKey = (c) => [c.file || '', c.symbol || '', c.line || 0, c.category || ''].join('#')
 const byDefect = new Map()
 
@@ -1342,7 +1361,7 @@ if (!candidates.length) {
     findings: [], refuted: [], unverified: [], refactorDrift: driftPublished,
     commentDiscrepancy,
     referenceUpdates,
-    coverage: { ...coverageBase, candidatesUnverified: 0, severityLowered: [],
+    coverage: { ...coverageBase, candidatesUnverified: 0, severityChanged: [],
                 reLookApplicable: !BOUNDED,
                 marginalReLooked: 0, rescuedOnReLook: [], reLookFailed: [], anchorDoubted: [],
                 // Present and zero rather than absent: the stamp asks for all
@@ -1419,8 +1438,12 @@ const judged = await parallel(candidates.map((c) => () => parallel(
      'No other angle is covering what yours does not' +
        (ANGLES.includes('IMPACT') ? '.' : ', and no angle on this panel is asking what the impact buys.'),
      'Start from "this does not hold up" and let the code move you. Say it holds',
-     'only with a line you read for each of: an untrusted input, what it reaches,',
-     'and nothing effective in between.',
+     'only with a line you read for each of: what it reaches, and nothing',
+     'effective in between. The untrusted input sets the severity, not the verdict:',
+     'a real, unguarded defect that nothing reaches today HOLDS at LOW. Staged code',
+     '(FCMP++, src/fcmp_pp, the curve trees, anything a future hard fork or new',
+     'RCTType switches on) is judged on the path it will have once live, from a',
+     'peer or a daemon; "not live yet" is neither a refutation nor a reason for LOW.',
      '',
      'Candidate ' + c.id + ': ' + c.title,
      '  where:            ' + c.file + ':' + c.line + ' in ' + c.symbol,
@@ -1434,8 +1457,9 @@ const judged = await parallel(candidates.map((c) => () => parallel(
      '  reasoning:        ' + c.rationale,
      '',
      'Read that path and line and set anchorMatches to whether the quoted line is',
-     'really there. If it holds, give the severity the code supports; the count can',
-     'only bring a severity down, so rate what you read.',
+     'really there. If it holds, give the severity the code supports -- the count',
+     'settles the published severity from what the panel actually reads, in either',
+     'direction, so rate what you read rather than matching the proposal.',
      '',
      'WHETHER THIS DIFF CAUSED IT IS NOT A REASON TO REJECT IT. A weakness that',
      'reads the same on origin/base still lets somebody do something they should',
@@ -1450,10 +1474,10 @@ const judged = await parallel(candidates.map((c) => () => parallel(
      '  newly-reachable  the code is outside the changes and the diff exposes it;',
      '  pre-existing     the code is outside the changes, and the diff neither',
      '                   wrote it nor made it reachable.',
-     'Reject on the merits only: the input is not attacker-controlled, the path',
-     'does not run, something in between stops it, or the impact is not what was',
-     'claimed. "It was already broken" is a fact about the finding, not a fault',
-     'in it.',
+     'Reject on the merits only: something in between stops it, the construction',
+     'constrains it, the behaviour is not actually wrong, or the code is under',
+     'tests/. No attacker today means LOW, not a rejection. "It was already',
+     'broken" is a fact about the finding, not a fault in it.',
     ].join('\n'),
     { label: 'verify:' + c.id + '/' + angle, phase: 'Verify', ...EFFORT,
       schema: VERDICT_SCHEMA, agentType: 'monero-verifier' },
@@ -1494,8 +1518,8 @@ const judged = await parallel(candidates.map((c) => () => parallel(
         : c.provenance)
   const provenanceDisputed = provVotes.length > 1 && !provAgreed
     ? { proposed: c.provenance, votes: provVotes, settled: provenance } : null
-  let severity = c.severity
-  for (const v of agreeing) if (v.severity) severity = lessSevere(severity, v.severity)
+  const ratedSeverities = agreeing.map((v) => v.severity).filter(Boolean)
+  const severity = ratedSeverities.length ? medianSeverity(ratedSeverities) : c.severity
   const rejecting = cast.filter((v) => v.holds === false).length
   return {
     candidate: c,
@@ -1539,7 +1563,7 @@ const judged = await parallel(candidates.map((c) => () => parallel(
     // away: two angles agreeing is genuinely weaker evidence than three.
     confidence: capConfidence(c.confidence, agreeing.length >= 3 ? 'high' : 'medium'),
     anchorDoubted: cast.filter((v) => v.anchorMatches === false).length,
-    severityLowered: severity !== c.severity ? { from: c.severity, to: severity } : null,
+    severityChanged: severity !== c.severity ? { from: c.severity, to: severity } : null,
   }
 })))
 
@@ -1812,8 +1836,8 @@ const findings = assembled.map((entry) => {
     y.agreeing - x.agreeing ||
     String(x.candidate.id).localeCompare(String(y.candidate.id), undefined, { numeric: true }))[0]
   // Worst severity in the group, computed here. A merge must never be able to
-  // downgrade: the panel is the only thing allowed to lower a severity, and it
-  // has already had its say on each member separately.
+  // downgrade: the panel is the only thing allowed to correct a severity, and
+  // it has already had its say on each member separately.
   const severity = members.reduce((s, m) => worseSeverity(s, m.severity), members[0].severity)
   // Confidence goes the other way: the LEAST confident member. A merge is one
   // agent's assertion that these are one defect, and a group is only as sound
@@ -1852,10 +1876,10 @@ const findings = assembled.map((entry) => {
     // published at the group's worst severity, so the primary's own from-to
     // can contradict the heading a reader is looking at -- "HIGH lowered to
     // MEDIUM" beside an entry published as HIGH because another member
-    // carried it. Where that happens the member's lowering is still on its
-    // own site below, and not asserted about the entry.
-    severityLowered: (primary.severityLowered && severity === primary.severity)
-      ? primary.severityLowered : undefined,
+    // carried it. Where that happens the member's own correction is still on
+    // its own site below, and not asserted about the entry.
+    severityChanged: (primary.severityChanged && severity === primary.severity)
+      ? primary.severityChanged : undefined,
     merged: {
       title: entry.title || primary.candidate.title,
       sameDefectBecause: entry.sameDefectBecause,
@@ -1875,7 +1899,7 @@ const findings = assembled.map((entry) => {
         votes: m.votes,
         // Per site, so a member's own correction is not lost behind the
         // entry-level answer above.
-        severityLowered: m.severityLowered || undefined,
+        severityChanged: m.severityChanged || undefined,
         anchorDoubted: m.anchorDoubted || undefined,
       })),
     },
@@ -1920,7 +1944,7 @@ return {
     // the panel did reject them, but nothing re-examined that rejection and
     // the report must not imply otherwise.
     reLookFailed,
-    // From what actually PUBLISHES, for the same reason `severityLowered`
+    // From what actually PUBLISHES, for the same reason `severityChanged`
     // below is: the Lead is told to re-anchor an id named here or drop the
     // finding, and built from `results` this named refuted and unverified
     // candidates too -- sending the Lead to correct an entry no reader can
@@ -1968,8 +1992,8 @@ return {
     // Built from what actually publishes, and after the re-look promotions and
     // the merge -- otherwise a refuted candidate turns up here and the Lead is
     // told to annotate a finding that is not in the report.
-    severityLowered: findings.filter((r) => r.severityLowered)
-      .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityLowered })),
+    severityChanged: findings.filter((r) => r.severityChanged)
+      .map((r) => ({ id: r.candidate.id, title: r.candidate.title, ...r.severityChanged })),
   },
   // Read the REPORT SPEC as the shape and this as the mapping onto it: which
   // returned field answers which line of the template, and the four places a
@@ -2007,7 +2031,7 @@ return {
     'so. Never replace it with a restatement of the defect.',
     '',
     'SEVERITY is already settled by the count -- publish it as returned, and note any',
-    'entry in coverage.severityLowered on the Coverage **Corrections.** line. Publish',
+    'entry in coverage.severityChanged on the Coverage **Corrections.** line. Publish',
     'NO confidence word: the heading is `### [SEVERITY] Title` and the vote on the',
     'locator line is what stands in for it.',
     '',

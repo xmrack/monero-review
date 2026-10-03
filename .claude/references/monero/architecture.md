@@ -33,6 +33,7 @@ only. Read it upward: a change low down is felt everywhere above it.
 
 ```
 easylogging  randomx  liblmdb  rapidjson  supercop  qrcodegen   (external/, vendored)
+polyseed  utf8proc                                              (external/, submodules)
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
@@ -67,6 +68,9 @@ cryptonote_core ................. src/cryptonote_core (-> blockchain_db, ringct,
   |
   +---- wallet ................... src/wallet (-> rpc_base, multisig,
          |                            cryptonote_core, mnemonics, device_trezor, net)
+         +-- mnemonics ............ src/mnemonics (-> polyseed_wrapper, which links
+         |                            polyseed_static, utf8proc, sodium,
+         |                            cryptonote_basic)
          +-- wallet_api, wallet_rpc_server, simplewallet
 ```
 
@@ -150,7 +154,13 @@ their bounds.
 `external/` is other people's code held to a different standard than `src/`:
 `randomx` (proof-of-work), `supercop` (assembly Ed25519 for the wallet),
 `db_drivers/liblmdb` (a *patched* LMDB, not upstream), `easylogging++`,
-`rapidjson`, `gtest`, `qrcodegen`. `contrib/epee/` is Monero's own but
+`rapidjson`, `gtest`, `qrcodegen`, and — added for the polyseed seed scheme,
+`external/CMakeLists.txt:35-36` — `polyseed` and `utf8proc`. Those last two
+reach `src/` through one edge only: `target_link_libraries` in
+`src/mnemonics/CMakeLists.txt:42-47` and
+`src/mnemonics/polyseed/CMakeLists.txt:19-26` make `mnemonics` link
+`polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
+`cryptonote_basic`. `contrib/epee/` is Monero's own but
 predates most of `src/` and follows different conventions — treat it as a
 fifth dialect, not as part of `src/`.
 
@@ -170,14 +180,16 @@ The C++ side guards the boundary: CMake `try_compile`s
 `"The FCMP++ FFI API header 'fcmp++.h' has broken compatibility with C"` if
 the generated header stops being C-compatible.
 
-**FCMP++ is staged, not live.** The only consumer of `src/fcmp_pp/` outside
-itself is `src/ringct/rctSigs.cpp`, which includes `fcmp_pp/fcmp_pp_crypto.h`
-and calls `fcmp_pp::get_valid_torsion_cleared_point_vartime` from
-`rct::verPointsForTorsion` (`src/ringct/rctSigs.cpp:1592`). That function has
-no production caller: it appears in `rctSigs.h`, `rctSigs.cpp` and
-`tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
+**FCMP++ is staged, not live.** Nothing outside `src/fcmp_pp/` calls into
+it; `src/ringct` links the library but includes none of its headers. Torsion
+clearing is not part of it: `crypto::get_valid_torsion_cleared_point_vartime`
+is in `src/crypto/` and reaches live wallet paths through
+`crypto::pubkey_clear_torsion` (see `subsystems-crypto.md`).
+`rct::verPointsForTorsion` has no production caller: it appears in
+`rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
 consensus-reachable today is wrong; describing the code as absent is also
-wrong.
+wrong. A defect in it is still a finding, rated as it will run once live: see
+`refutations.md`, "Not refutations".
 
 ## Consensus versus everything else
 
