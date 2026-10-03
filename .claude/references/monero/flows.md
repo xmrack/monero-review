@@ -72,9 +72,17 @@ attacker-exposed sequence in the daemon.
    `min(cnt, remaining/ratio)`. `tx_hashes.size() <= CRYPTONOTE_MAX_TX_PER_BLOCK`
    is checked **after** the vector is deserialized — it is a consensus bound,
    not the memory bound.
-8. **`make_pool_supplement_from_block_entry`** — rejects duplicate txids, and
-   every bundled blob must parse and hash to a txid the block itself names.
-   No stowaways.
+8. **`make_pool_supplement_from_block_entry`** —
+   `src/cryptonote_protocol/block_entry_utils.h` (not the handler `.inl`).
+   Every bundled blob must parse and hash to a txid the block itself names.
+   No stowaways. A txid repeated *among the bundled blobs* is rejected only
+   through the result of `pool_supplement::add_tx`
+   (`if (!pool_supplement.add_tx(tx_hash, std::move(tx), tx_entry.blob)) return false`);
+   before monero-project/monero#11354 that result was ignored and the first
+   blob kept. Duplicates in the block's own `tx_hashes` are **not** caught
+   here: the caller `handle_notify_new_fluffy_block` rejects them
+   (`blk_txids_set.size() != new_block.tx_hashes.size()`), as does
+   `make_full_pool_supplement_from_block_entry`.
 9. **`core::handle_single_incoming_block` → `core::handle_incoming_block`** —
    `src/cryptonote_core/cryptonote_core.cpp`. Opens the LMDB write batch,
    records `m_writer` as this thread id, re-checks the blob size.
