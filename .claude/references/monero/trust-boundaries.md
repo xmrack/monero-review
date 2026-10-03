@@ -89,14 +89,16 @@ key-exchange rounds (`multisig_kex_msg.cpp`, `parse_and_validate_msg`), partial
 signatures and the nonce commitments they carry, and the unsigned/signed tx
 blobs moved on a USB stick between a view-only wallet and an offline signer.
 
-The enforcement is no longer in `wallet2.cpp`. `pending_tx_validation.h`
-declares `sanity_check_pending_tx`, `sanity_check_pending_tx_set` and
-`check_consistent_ins_outs`, and the `wallet2.cpp` multisig paths a reviewer
-would go to are thin wrappers around them. Callers, at line numbers as of
-`3c9eab1559a8`: `sign_tx` (7892), `parse_tx_from_str` (8173),
-`make_multisig_tx_set` (8273), `parse_multisig_tx_from_str` (8340),
-`load_multisig_tx` (8386), `sign_multisig_tx` (8429) and `cold_sign_tx` (11535,
-11570). Read the validation file before concluding a blob goes unchecked.
+Most of the enforcement is in `src/wallet/pending_tx_validation.cpp`, not
+`wallet2.cpp`: `check_consistent_ins_outs`, `sanity_check_pending_tx` and
+`sanity_check_pending_tx_set` in namespace `tools::wallet`.
+`wallet2::sanity_check_pending_tx` and `wallet2::sanity_check_pending_tx_set`
+are thin wrappers that add a key-image resolver (`make_transfer_ki_resolver`
+in `wallet2.cpp`, which does its own key-image checks). The cold-signing
+and multisig paths call them: `sign_tx`, `parse_tx_from_str`,
+`make_multisig_tx_set`, `parse_multisig_tx_from_str`, `load_multisig_tx`,
+`sign_multisig_tx` and `cold_sign_tx`. Read both files before concluding a
+blob goes unchecked.
 
 What makes this a boundary rather than a detail: the wallet holds a key share
 and is being asked to combine it with something a stranger chose. A message
