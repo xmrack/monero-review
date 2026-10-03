@@ -269,6 +269,30 @@ Three limits:
   A state you can drive into one of those throws is a finding about the detach
   itself, not something the detach refutes.
 
+## Every key-image import with `check_spent` needs a trusted daemon
+
+`wallet2::import_key_images` passes raw daemon `res.status` through
+`THROW_ON_RPC_RESPONSE_ERROR_GENERIC` rather than `get_rpc_status`, which
+looks like untrusted daemon text reaching the user. It is not reachable from
+an untrusted daemon: the RPCs run only when `check_spent` is set, and every
+entry point either refuses to run unless the daemon is trusted or clears
+`check_spent` when it is not:
+
+- `simple_wallet::import_key_images` in `src/simplewallet/simplewallet.cpp`
+  (`if (!m_wallet->is_trusted_daemon())`);
+- `on_import_key_images` in `src/wallet/wallet_rpc_server.cpp`
+  (`if (!m_wallet->is_trusted_daemon())`);
+- `WalletImpl::importKeyImages` in `src/wallet/api/wallet.cpp`
+  (`if (!trustedDaemon())`);
+- `wallet2::cold_key_image_sync` in `src/wallet/wallet2.cpp`, reached from
+  simplewallet and `wallet_api`, which runs with any daemon but passes
+  `is_trusted_daemon()` as `check_spent`.
+
+And `get_rpc_status` (`src/rpc/core_rpc_server_commands_defs.h`) returns a
+trusted daemon's status unchanged, so routing those sites through it changes
+nothing. Re-check these four on the head you are reviewing; a new entry point
+that sets `check_spent` without a trusted daemon reopens this.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you

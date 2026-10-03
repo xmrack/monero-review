@@ -130,8 +130,27 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   the whole set and calls `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
-- Daemon error text is not surfaced verbatim when the daemon is untrusted —
-  every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
+- Daemon error text is mostly not surfaced verbatim when the daemon is
+  untrusted — most RPC error sites pass
+  `get_rpc_status(m_trusted_daemon, res.status)`. **Not every site does.** In
+  `src/wallet/wallet2.cpp`:
+  - `wallet2::import_key_images` (its `is_key_image_spent` and
+    `gettransactions` calls) uses `THROW_ON_RPC_RESPONSE_ERROR_GENERIC`
+    (`src/wallet/wallet_errors.h`), which puts raw `res.status` into
+    `wallet_generic_rpc_error::what()`. Not reachable from an untrusted
+    daemon; see "Every key-image import with `check_spent` needs a trusted
+    daemon" in `refutations.md`.
+  - The `get_outs.bin` sites in `get_spend_proof` and `check_spend_proof`
+    pass raw `res.status` to `error::get_outs_error`, and
+    `get_num_rct_outputs` (`get_output_histogram`) passes raw
+    `resp_t.status` to `error::get_histogram_error`. Both types keep the
+    status out of `what()`; it appears only in `to_string()`, which
+    `throw_wallet_ex` logs.
+
+  Outside `wallet2.cpp`, `src/wallet/node_rpc_proxy.cpp` returns raw
+  `res.status` as its error string. Find candidates with
+  `grep -n 'THROW_ON_RPC_RESPONSE_ERROR' src/wallet/wallet2.cpp | grep -v get_rpc_status`;
+  a new site that copies one of these inherits the leak.
 
 **Traps.**
 
@@ -208,9 +227,18 @@ at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new han
 - **A missing request field is not an error.** `KV_SERIALIZE` discards the
   serializer's return, so an absent JSON key leaves the value-initialised
   default. Every field needs a validity check in the handler.
-- **A JSON string of digits is accepted where a `uint64_t` is declared**, and
-  an ISO-8601 string is converted to a unix time, by
-  `convert_to_integral<std::string, uint64_t, false>`.
+- **A JSON string is no longer accepted where a `uint64_t` is declared.** The
+  `convert_to_integral<std::string, uint64_t, false>` specialization that used
+  to coerce a string of digits — and an ISO-8601 string to a unix time — is
+  gone from `contrib/epee/include/storages/portable_storage_val_converters.h`,
+  so string-to-integer coercion is out of epee entirely. Such a field now hits
+  the generic `convert_to_integral<from, to, false>` at line 130 of that
+  header, which calls `ASSERT_AND_THROW_WRONG_CONVERSION()`; the throw is
+  caught by the plain `try`/`catch` in `BEGIN_KV_SERIALIZE_MAP`'s `load()`
+  (`contrib/epee/include/serialization/keyvalue_serialization.h:58`, reached
+  via `PREPARE_OBJECTS_FROM_JSON` in
+  `contrib/epee/include/net/http_server_handlers_map2.h`) and the request is
+  rejected.
 - A handler that returns false without setting `er.code` produces
   `{"error":{"code":0,…}}`; an escaping exception produces
   `{"error":{"code":0,"message":""}}`.
