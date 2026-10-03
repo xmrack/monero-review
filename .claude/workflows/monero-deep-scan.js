@@ -334,8 +334,8 @@ const CANDIDATES_SCHEMA = {
           // wins, so this is the half that decides.
           correction: { type: 'string' },
           // The path, symbol or command that settles it, read in THIS
-          // checkout. Not a line number in the reference -- a citation in the
-          // Monero source, which is the evidence the reference lacked.
+          // checkout: a file and function or symbol in the Monero source,
+          // never a line number in either tree.
           evidence: { type: 'string' },
         },
         required: ['file', 'says', 'correction', 'evidence'],
@@ -773,8 +773,10 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'Where one of those files disagrees with the code you just read, say so:',
    '`file` (which reference), `says` (what it claims now, quoted, or the word',
    'missing), `correction` (what the tree shows), `evidence` (the path, symbol',
-   'or command in the MONERO source that settles it -- never a line number in',
-   'the reference, which is the thing being corrected).',
+   'or command in the MONERO source that settles it). Cite a file and the',
+   'function or symbol, never a line number, and give the grep for a count',
+   'rather than the count: both drift with every commit and are the',
+   'commonest way these files go stale.',
    'You are the only reader who can catch these. You hold the claim and the',
    'code at the same time; nobody downstream holds both, and a stale reference',
    'is worse than none because every skill here trusts it -- a wrong sentence',

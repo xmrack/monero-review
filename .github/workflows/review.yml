@@ -3257,9 +3257,13 @@ jobs:
                breaks and spacing included. Where `says` is `missing`, work
                out where the claim belongs.
             2. Edit it to match `correction`, carrying `evidence` into the text
-               so the next reader can check it without trusting us. Keep the
-               file's voice and structure: other agents read these and the
-               format is load-bearing.
+               so the next reader can check it without trusting us. Cite the
+               file and the function or symbol, NEVER a line number: drop any
+               `file.cpp:123`, `:45` or "line 130" from `evidence` and name the
+               enclosing function instead. Do not write counts that drift
+               (methods, call sites, "currently 35"); give the grep that
+               produces them. Keep the file's voice and structure: other
+               agents read these and the format is load-bearing.
             3. Where you cannot find what `says` describes ANYWHERE in the
                file after searching by content rather than by literal string,
                or the correction contradicts something the file says
