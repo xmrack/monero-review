@@ -71,14 +71,16 @@ opened the admin interface on purpose, or a request that arrived without one.
 ## No Monero client sends an empty request body
 
 An empty HTTP request body never comes from Monero's own clients. epee's
-client helper serialises the request struct before sending, so the body is at
-least `{}`: `invoke_http_json` calls `store_t_to_json` on the request and only
-then hands the result to `net_utils::invoke_http_bin`/`invoke_http_json`
-(`contrib/epee/include/storages/http_abstract_invoke.h:42`).
+client helpers serialise the request struct before sending:
+`invoke_http_json` (`contrib/epee/include/storages/http_abstract_invoke.h`)
+calls `store_t_to_json`, so the body is at least `{}`, and passes it to
+`transport.invoke`; `invoke_http_json_rpc` wraps it, and `invoke_http_bin`
+sends `store_t_to_binary` output. The wallet's daemon calls all go through
+these.
 
 So a change to how the daemon treats an empty body affects third-party tooling
-only — not wallet-to-daemon traffic and not bootstrap-daemon traffic. Say which
-population a finding of that shape reaches before assigning severity.
+only, not wallet-to-daemon traffic. Say which population a finding of that
+shape reaches before assigning severity.
 
 ## Boost already throws
 
