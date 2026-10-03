@@ -139,8 +139,14 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 3. **`wallet2::transfer_selected_rct`** — assembles `tx_source_entry` records,
    overwriting the ring entry that matches the real global output index.
 4. **`wallet2::get_rct_distribution`** — asks the daemon for the RCT output
-   distribution over `/get_output_distribution.bin`. **The wallet checks only
-   that it is monotonic, long enough, and covers its own max output index.**
+   distribution over `/get_output_distribution.bin`. **It checks only that the
+   daemon returned a single result for amount 0, then prefix-sums it.** The
+   size, monotonicity and coverage checks live in the
+   `THROW_WALLET_EXCEPTION_IF` block of `wallet2::get_outs` (the overload
+   taking `rct_offsets`), not here. As of monero-project/monero PR 11451,
+   coverage means `rct_offsets[size - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE] > max_rct_index`
+   -- the unlocked range `gamma_picker` draws from (its constructor sets
+   `num_rct_outputs = *(end - 1)`) -- rather than `rct_offsets.back()`.
    There is no cross-source or cryptographic check. A hostile distribution
    biases decoy selection.
 5. **`wallet2::get_outs` → `tools::gamma_picker::pick`** — decoys drawn from a
