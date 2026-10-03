@@ -449,8 +449,12 @@ the comment says so.
 - **Dandelion++ state is strand-confined, not mutex-protected.** Every mutator
   asserts `running_in_this_thread()`.
 - `block_queue` stores spans in a `std::set` ordered by start height;
-  `has_next_span` and `get_next_span` look only at `begin()`, they do not
-  search.
+  `has_next_span` looks only at `begin()`. `get_next_span` does search: it
+  iterates the set and returns the first span with blocks when `filled` is
+  true, its default (loop with `if (!filled || !i->blocks.empty())` in
+  `block_queue::get_next_span`, `src/cryptonote_protocol/block_queue.cpp`).
+  `span::operator<` (`block_queue.h`) compares `start_block_height` alone, so
+  `insert` refuses a second span with the same start height.
 - One `node_server` shares **one** protocol handler across all zones, but each
   zone has its own `levin::notify`.
 
