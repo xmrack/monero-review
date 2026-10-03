@@ -270,3 +270,9 @@ proposed candidate in five has historically survived scrutiny, and each one
 that does not spends three verifiers and then some of a maintainer's attention.
 Propose what you can defend with a citation for the untrusted input, for the
 operation it reaches, and for the absence of anything in between.
+
+Do not withhold a real defect because nothing reaches it yet. If the operation
+is wrong and nothing guards it, but it has no attacker path today, propose it at
+LOW and say what is missing from the path. Staged FCMP++ code, and anything only
+a future hard fork switches on, is proposed as it will run once live, with a
+note that it is not live yet. `finding-spec.md` has both rules.

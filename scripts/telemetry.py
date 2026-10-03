@@ -68,6 +68,38 @@ def find_result(node, depth=0):
     return None
 
 
+def session_result(data):
+    """One record for one session, however many turns it was woken for.
+
+    A fleet run writes a `result` for the Lead's dispatching turn and another
+    for the turn the fleet's notification starts. `num_turns`, `duration_ms`
+    and `usage` on each cover that segment only, so they are summed.
+    `total_cost_usd` and `modelUsage` are running totals, so they come from
+    the last record -- summing them would count the dispatching turn twice.
+    """
+    if not isinstance(data, list):
+        return find_result(data)
+    segments = [e for e in data if isinstance(e, dict)
+                and e.get("type") == "result"
+                and any(k in e for k in ("total_cost_usd", "duration_ms", "usage"))]
+    if len(segments) < 2:
+        return find_result(data)
+    out = dict(segments[-1])
+    for key in ("num_turns", "duration_ms"):
+        vals = [s.get(key) for s in segments if isinstance(s.get(key), (int, float))]
+        if vals:
+            out[key] = sum(vals)
+    usage = {}
+    for key in USAGE_KEYS:
+        vals = [(s.get("usage") or {}).get(key) for s in segments]
+        vals = [v for v in vals if isinstance(v, (int, float))]
+        if vals:
+            usage[key] = sum(vals)
+    if usage:
+        out["usage"] = usage
+    return out
+
+
 def load(path):
     with open(path) as fh:
         text = fh.read().strip()
@@ -272,7 +304,7 @@ def main():
         if not os.path.exists(path):
             continue
         try:
-            found = find_result(load(path))
+            found = session_result(load(path))
         except Exception as exc:                      # noqa: BLE001
             print(f"telemetry: could not parse {path}: {exc}", file=sys.stderr)
             continue

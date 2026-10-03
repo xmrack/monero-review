@@ -68,6 +68,20 @@ that shape of candidate has cited the wrong section.
 So before refuting on this basis, say which of the two it is: an operator who
 opened the admin interface on purpose, or a request that arrived without one.
 
+## No Monero client sends an empty request body
+
+An empty HTTP request body never comes from Monero's own clients. epee's
+client helpers serialise the request struct before sending:
+`invoke_http_json` (`contrib/epee/include/storages/http_abstract_invoke.h`)
+calls `store_t_to_json`, so the body is at least `{}`, and passes it to
+`transport.invoke`; `invoke_http_json_rpc` wraps it, and `invoke_http_bin`
+sends `store_t_to_binary` output. The wallet's daemon calls all go through
+these.
+
+So a change to how the daemon treats an empty body affects third-party tooling
+only, not wallet-to-daemon traffic. Say which population a finding of that
+shape reaches before assigning severity.
+
 ## Boost already throws
 
 `boost::regex` has a complexity limit and throws when a match exceeds it, and
@@ -124,6 +138,16 @@ constrained by the surrounding protocol. Divisor arithmetic modulo the field
 prime, and point-versus-negation handling, have both repeatedly looked like
 breaks and turned out to be fine once the protocol's own constraints were taken
 into account. Read the construction, not just the function.
+
+## Not refutations: "nobody reaches it" and "it is not live yet"
+
+Neither kills a candidate. If the defect is real and nothing guards it, but no
+attacker path exists today (no production caller, only trusted configuration
+feeds it), it holds at LOW. Staged FCMP++ code, and anything only a future hard
+fork switches on, is rated on the path it will have once live. "Not
+consensus-reachable today" tells a maintainer when the bug starts to matter. It
+does not make the bug go away. See the finding standard in
+`.claude/skills/monero-deep-review/specs/finding-spec.md`.
 
 ## It is test-only code
 
@@ -209,8 +233,8 @@ Two limits, and both matter:
 A remote node can feed a wallet a false chain, and findings that rest on the
 wallet then holding wrong heights, wrong indices or wrong outputs have to say
 what happens next. What happens next is usually `wallet2::detach_blockchain`
-(`src/wallet/wallet2.cpp:4371`), reached from `wallet2::handle_reorg` (`:4470`)
-when the wallet resyncs against an honest daemon. From the fork height upward
+(`src/wallet/wallet2.cpp`), reached from `wallet2::handle_reorg` when the
+wallet resyncs against an honest daemon. From the fork height upward
 it erases the transfers, their key images and public keys, the payments, the
 confirmed transactions and the background-sync records, and crops
 `m_blockchain`. The false view is not corrected in place; it is deleted.
@@ -220,12 +244,26 @@ transient, and the finding needs to say what damage is done before the detach
 lands -- a spent key image, a leaked address, funds moved. "The wallet believes
 something wrong for a while" is not by itself an impact.
 
-MEASURED, on 11185: pending multisig rescan state is applied by transfer index
-with no check on which output sits at that index, so a reorg during the rescan
-was proposed as writing a composite key image built from another output. The
-wrong indices only arise from a lying daemon's chain view, and the resync
-erases it (`m_transfers.erase` at `src/wallet/wallet2.cpp:4430`). The code is identical in
-`origin/base`.
+MEASURED, on 11185: pending multisig rescan state is applied by transfer index,
+so a reorg during the rescan was proposed as writing a composite key image
+built from another output. The wrong indices only arise from a lying daemon's
+chain view, and the resync erases it (`m_transfers.erase` in
+`detach_blockchain`). The code is identical in `origin/base`.
+
+The index is not entirely unchecked. `wallet2::update_multisig_rescan_info`
+calls `get_multisig_composite_key_image(n, new_info)` before changing the
+transfer, and `multisig::generate_multisig_composite_key_image`
+(`src/multisig/multisig.cpp`) returns false when the distinct component count
+(`used.size()`) differs from `combinations_count(N-M+1, N)`; the wallet
+wrapper turns that into a `wallet_internal_error`. For M < N that catches a
+different output at the index, because local components shared with
+importers stop deduplicating. For N-of-N no component is shared, the count
+still matches, and a wrong-output key image is installed unchecked -- that
+case still rests on the resync above. And a throw inside
+`process_new_transaction` (call sites guarded by
+`m_multisig_rescan_info.front().size() >= m_transfers.size()`) leaves
+`m_multisig_rescan_info` installed, because it is cleared only at the end of
+`wallet2::refresh`.
 
 Three limits:
 
@@ -239,10 +277,34 @@ Three limits:
   touch it.
 - **`detach_blockchain` is not guaranteed to complete.** It throws
   `wallet_internal_error` on a key image or public key it cannot find
-  (`src/wallet/wallet2.cpp:4414`, `:4421`), and `handle_reorg` throws before
+  ("key image not found", "public key not found"), and `handle_reorg` throws before
   calling it at all when the daemon claims a reorg below the last checkpoint.
   A state you can drive into one of those throws is a finding about the detach
   itself, not something the detach refutes.
+
+## Every key-image import with `check_spent` needs a trusted daemon
+
+`wallet2::import_key_images` passes raw daemon `res.status` through
+`THROW_ON_RPC_RESPONSE_ERROR_GENERIC` rather than `get_rpc_status`, which
+looks like untrusted daemon text reaching the user. It is not reachable from
+an untrusted daemon: the RPCs run only when `check_spent` is set, and every
+entry point either refuses to run unless the daemon is trusted or clears
+`check_spent` when it is not:
+
+- `simple_wallet::import_key_images` in `src/simplewallet/simplewallet.cpp`
+  (`if (!m_wallet->is_trusted_daemon())`);
+- `on_import_key_images` in `src/wallet/wallet_rpc_server.cpp`
+  (`if (!m_wallet->is_trusted_daemon())`);
+- `WalletImpl::importKeyImages` in `src/wallet/api/wallet.cpp`
+  (`if (!trustedDaemon())`);
+- `wallet2::cold_key_image_sync` in `src/wallet/wallet2.cpp`, reached from
+  simplewallet and `wallet_api`, which runs with any daemon but passes
+  `is_trusted_daemon()` as `check_spent`.
+
+And `get_rpc_status` (`src/rpc/core_rpc_server_commands_defs.h`) returns a
+trusted daemon's status unchanged, so routing those sites through it changes
+nothing. Re-check these four on the head you are reviewing; a new entry point
+that sets `check_spent` without a trusted daemon reopens this.
 
 ---
 
