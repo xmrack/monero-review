@@ -224,8 +224,11 @@ at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new han
   `cryptonote`.
 - `tests/fuzz/fuzz_rpc` targets the **daemon's** `core_rpc_server` only. There
   is no wallet-RPC fuzz target.
-- `WALLET_RPC_VERSION_MINOR` (currently 33) must be bumped on **any** change to
-  `wallet_rpc_server_commands_defs.h`; MAJOR bumps reset it.
+- `WALLET_RPC_VERSION_MINOR` must be bumped on **any** change to
+  `wallet_rpc_server_commands_defs.h`; MAJOR bumps reset it. Don't trust a
+  remembered value: read the `#define` in
+  `src/wallet/wallet_rpc_server_commands_defs.h` on the base branch and check
+  the PR's diff raises it (it was 35 on master as of PR 11452, not 33).
 - Every dispatch-table method name must have a wrapper in
   `utils/python-rpc/framework/wallet.py` or the `check_missing_rpc_methods`
   test fails.
