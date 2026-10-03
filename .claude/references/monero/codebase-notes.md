@@ -54,8 +54,8 @@ The question here is never only "does it crash". It is **"would a node running
 this code reach a different accept/reject verdict than the rest of the network
 on some input"**. That reframing catches changes that look like refactors.
 
-Fork gating lives in `src/hardforks/hardforks.cpp` with `HF_VERSION_*`
-constants. Any behaviour change must be gated to the correct version. Ask
+Fork heights live in `src/hardforks/hardforks.cpp`; the `HF_VERSION_*`
+constants that gate behaviour are in `src/cryptonote_config.h`. Any behaviour change must be gated to the correct version. Ask
 explicitly: if this node and an unpatched node both see the same block, do they
 agree? An ungated change to validation is a consensus split even when the new
 behaviour is more correct.
@@ -173,9 +173,13 @@ host-supplied values do damage.
 ## FCMP++ work
 
 `src/fcmp_pp/` is on master and in the build, and it is **not
-consensus-reachable**. Get that right in both directions: the only consumer
-outside the directory is `rct::verPointsForTorsion` in `src/ringct/rctSigs.cpp`,
-and that function has no production caller at all — only
+consensus-reachable**. Get that right in both directions: `ringct` links the
+`fcmp_pp` target (`src/ringct/CMakeLists.txt`), but no code in `src/` outside
+the directory calls into it; its only callers are tests
+(`tests/unit_tests/curve_trees.cpp`, `tests/unit_tests/crypto.cpp`,
+`tests/crypto/main.cpp`). The related torsion check `rct::verPointsForTorsion`
+in `src/ringct/rctSigs.cpp` (built on `crypto::get_valid_torsion_cleared_point_vartime`,
+not on `fcmp_pp`) likewise has no production caller — only
 `tests/unit_tests/crypto.cpp`. `RCTType` still stops at
 `RCTTypeBulletproofPlus = 6`. A defect in it is still a finding, rated as it will run once live: see
 `refutations.md`, "Not refutations".

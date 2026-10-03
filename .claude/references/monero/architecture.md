@@ -4,18 +4,19 @@ How the Monero tree fits together: the layers, what depends on what, and the
 handful of structural facts that explain most of what looks strange when you
 open a file here.
 
-Measured against `monero-project/monero` master at `3d3920d7`, 2026-09-03.
+Measured against `monero-project/monero` master at `160e21504`, 2026-10-02.
 Line counts and link edges move; the shape does not. Re-check anything you are
 about to put in a finding.
 
 ## What ships
 
-Two executables and one library are the whole point of the tree:
+Three executables and one library are the whole point of the tree:
 
 - **`monerod`** — the node. `src/daemon/`, linking essentially everything.
 - **`monero-wallet-cli`** — the CLI wallet. Built from `src/simplewallet/`;
-  note the target is named `simplewallet` and only the installed binary is
-  called `monero-wallet-cli` (`src/simplewallet/CMakeLists.txt`).
+  note the target is named `simplewallet` and only the output binary
+  (`OUTPUT_NAME`) is called `monero-wallet-cli`
+  (`src/simplewallet/CMakeLists.txt`).
 - **`monero-wallet-rpc`** — `src/wallet/wallet_rpc_server.cpp`, a second
   front end over the same `wallet2`.
 - **`wallet_api`** — `src/wallet/api/`, the library the GUI and the mobile
@@ -32,8 +33,8 @@ Taken from `target_link_libraries` in each `CMakeLists.txt`, internal edges
 only. Read it upward: a change low down is felt everywhere above it.
 
 ```
-easylogging  randomx  liblmdb  rapidjson  supercop  qrcodegen   (external/, vendored)
-polyseed  utf8proc                                              (external/, submodules)
+easylogging  liblmdb  qrcodegen                                 (external/, in tree)
+randomx  rapidjson  supercop  polyseed  utf8proc                (external/, submodules)
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
@@ -45,16 +46,16 @@ polyseed  utf8proc                                              (external/, subm
   |               |             |
 checkpoints   ringct_basic   fcmp_pp ......... src/fcmp_pp (-> cncrypto, common,
   |               |             |                            epee, libfcmp_pp_rust.a)
-  |            device <---------+   src/device (-> cryptonote_format_utils_basic,
-  |               |                             ringct_basic, wallet-crypto)
-  |            ringct .......... src/ringct (-> common, cncrypto, device, fcmp_pp)
-  |               |
-cryptonote_basic .+ ............ src/cryptonote_basic (-> common, cncrypto,
-  |                                checkpoints, cryptonote_format_utils_basic,
-  |                                device, ringct_basic)
-blockchain_db ................... src/blockchain_db (-> cryptonote_basic, ringct_basic)
-  |
-cryptonote_core ................. src/cryptonote_core (-> blockchain_db, ringct,
+  |            device           |   src/device (-> cryptonote_format_utils_basic,
+  |               |             |               ringct_basic, wallet-crypto)
+  |               +-- ringct <--+   src/ringct (-> common, cncrypto, device, fcmp_pp)
+  |               |     |
+cryptonote_basic .+     | ...... src/cryptonote_basic (-> common, cncrypto,
+  |                     |          checkpoints, cryptonote_format_utils_basic,
+  |                     |          device, ringct_basic)
+blockchain_db           | ...... src/blockchain_db (-> cryptonote_basic, ringct_basic)
+  |                     |
+cryptonote_core <-------+ ...... src/cryptonote_core (-> blockchain_db, ringct,
   |                                device, hardforks, version, wire)
   +---- net ...................... src/net (-> common, epee, cncrypto, libzmq)
   |      |
@@ -86,28 +87,29 @@ Three edges in that graph surprise people, and all three are real:
 
 `serialization` is the odd one out: `src/serialization/CMakeLists.txt` links
 `cryptonote_basic`, `cryptonote_core` and `cryptonote_protocol` — backwards
-from what the name suggests. That target exists to instantiate templates, not
-to be depended on; the archive machinery itself is header-only and every user
-just includes it.
+from what the name suggests. That target builds only `json_object.cpp`, the
+rapidjson `toJsonValue`/`fromJsonValue` layer of the ZMQ RPC, and is linked by
+`rpc_pub`, `daemon_messages`, `daemon_rpc_server` and `daemon`; the archive
+machinery itself is header-only and every user just includes it.
 
 ## Where the weight is
 
-Nine files carry a disproportionate share of the risk, and eight of them are
-over 2,000 lines:
+Nine files carry a disproportionate share of the risk, and all of them are
+over 2,000 lines (approximate counts; `wc -l` for current ones):
 
 | lines | file | why it matters |
 |------:|------|----------------|
-| 15450 | `src/wallet/wallet2.cpp` | the entire wallet, one translation unit |
-| 11450 | `src/simplewallet/simplewallet.cpp` | the CLI command table and prompts |
-|  5769 | `src/blockchain_db/lmdb/db_lmdb.cpp` | the only shipped `BlockchainDB` |
-|  5595 | `src/cryptonote_core/blockchain.cpp` | validation and reorganisation |
-|  5211 | `src/wallet/wallet_rpc_server.cpp` | the unattended wallet surface |
-|  4042 | `src/crypto/crypto-ops.c` | Ed25519 arithmetic, C, `ref10`-derived |
-|  3188 | `src/p2p/net_node.inl` | the node; a `.inl`, not a `.cpp` |
-|  3132 | `src/rpc/core_rpc_server.cpp` | the daemon's HTTP surface |
-|  2917 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
+| ~16000 | `src/wallet/wallet2.cpp` | the entire wallet, one translation unit |
+| ~11700 | `src/simplewallet/simplewallet.cpp` | the CLI command table and prompts |
+|  ~5800 | `src/blockchain_db/lmdb/db_lmdb.cpp` | the only shipped `BlockchainDB` |
+|  ~5600 | `src/cryptonote_core/blockchain.cpp` | validation and reorganisation |
+|  ~5400 | `src/wallet/wallet_rpc_server.cpp` | the unattended wallet surface |
+|  ~4100 | `src/crypto/crypto-ops.c` | Ed25519 arithmetic, C, `ref10`-derived |
+|  ~3200 | `src/p2p/net_node.inl` | the node; a `.inl`, not a `.cpp` |
+|  ~3200 | `src/rpc/core_rpc_server.cpp` | the daemon's HTTP surface |
+|  ~2900 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
 
-The last two `.inl` files are implementations, not inline helpers. Grep that
+The two `.inl` files are implementations, not inline helpers. Grep that
 skips `*.inl` misses the two most attacker-exposed files in the daemon.
 
 ## Four serialization systems, not two
@@ -125,12 +127,13 @@ is four, not the two that older notes claim.
 3. **`contrib/epee/include/serialization/wire/`** plus the `wire` and
    `wire-json` targets — the newest system, a typed writer built around
    `wire::object` and `WIRE_FIELD`. **Write-only on master**: `json_reader` is
-   forward-declared in `wire/json/fwd.h:38` and never defined, and
-   `contrib/epee/src/wire/` ships `write.cpp` and `error.cpp` with no reader.
+   forward-declared in `wire/json/fwd.h` and never defined, and
+   `contrib/epee/src/wire/` ships `write.cpp`, `json/write.cpp` and
+   `error.cpp` with no reader.
    Used today by `src/rpc/zmq_pub.cpp` and
    `src/cryptonote_core/cryptonote_tx_utils.cpp`.
-4. **`boost::serialization`** — persisted local state, in about two dozen
-   headers: the peer list (`src/p2p/net_peerlist_boost_serialization.h`), the
+4. **`boost::serialization`** — persisted local state, in a dozen-plus
+   headers (`git grep -lE 'boost/serialization|boost::serialization|BOOST_CLASS_VERSION' -- src`): the peer list (`src/p2p/net_peerlist_boost_serialization.h`), the
    wallet cache types (`src/wallet/wallet2_basic/wallet2_boost_serialization.h`),
    the multisig message store, and a second full description of the tx and
    block types in `src/cryptonote_basic/cryptonote_boost_serialization.h`.
@@ -164,10 +167,10 @@ their bounds.
 `randomx` (proof-of-work), `supercop` (assembly Ed25519 for the wallet),
 `db_drivers/liblmdb` (a *patched* LMDB, not upstream), `easylogging++`,
 `rapidjson`, `gtest`, `qrcodegen`, and — added for the polyseed seed scheme,
-`external/CMakeLists.txt:35-36` — `polyseed` and `utf8proc`. Those last two
+in `external/CMakeLists.txt` — `polyseed` and `utf8proc`. Those last two
 reach `src/` through one edge only: `target_link_libraries` in
-`src/mnemonics/CMakeLists.txt:42-47` and
-`src/mnemonics/polyseed/CMakeLists.txt:19-26` make `mnemonics` link
+`src/mnemonics/CMakeLists.txt` and
+`src/mnemonics/polyseed/CMakeLists.txt` make `mnemonics` link
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
 `cryptonote_basic`. `contrib/epee/` is Monero's own but
 predates most of `src/` and follows different conventions — treat it as a
@@ -176,18 +179,22 @@ fifth dialect, not as part of `src/`.
 **Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
 `crate-type = ["staticlib"]` crate that `src/fcmp_pp/CMakeLists.txt` links as
 `libfcmp_pp_rust.a`. Its manifest pulls `ciphersuite 0.4.2` and
-`dalek-ff-group 0.5.0` from crates.io, `helioselene` from a git revision of
-`github.com/monero-oxide/monero-oxide`, and patches `crypto-bigint` to a
-branch of a personal fork. CI installs a pinned toolchain
-(`.github/workflows/build.yml` verifies `rustup-init` by SHA-256 and installs
-`1.93`), and `contrib/depends` carries a `rust_host` per cross target. A
+`dalek-ff-group 0.5.0` from crates.io, `helioselene` and the FCMP++ crates
+(`ec-divisors`, `full-chain-membership-proofs`, `monero-fcmp-plus-plus*`) from
+one git revision of `github.com/monero-oxide/monero-oxide`, and patches
+`crypto-bigint` to a branch of a personal fork. The Ubuntu CI jobs install a
+pinned toolchain (`.github/workflows/build.yml` verifies `rustup-init` by SHA-256 and installs
+`1.93`); `src/fcmp_pp/fcmp_pp_rust/CMakeLists.txt` maps each build target to a
+Rust target triple, and the Guix release build vendors the crates
+(`contrib/guix/rust/config.toml`). A
 change under `fcmp_pp_rust/` is a supply-chain change even when the diff looks
 like arithmetic.
 
 The C++ side guards the boundary: CMake `try_compile`s
 `src/fcmp_pp/ffi_api_c_compat.c` and fails the build with
 `"The FCMP++ FFI API header 'fcmp++.h' has broken compatibility with C"` if
-the generated header stops being C-compatible.
+the checked-in, hand-written header `src/fcmp_pp/fcmp_pp_rust/fcmp++.h` stops
+being C-compatible.
 
 **FCMP++ is staged, not live.** Nothing outside `src/fcmp_pp/` calls into
 it; `src/ringct` links the library but includes none of its headers. Torsion
@@ -218,7 +225,7 @@ verification — and all of `tests/`.
 
 Every behaviour change inside the fence has to be gated on a hard-fork
 version. The gates are the `HF_VERSION_*` names in `src/cryptonote_config.h`
-(lines 175-196) and the tables in `src/hardforks/hardforks.cpp`. Mainnet is
+and the tables in `src/hardforks/hardforks.cpp`. Mainnet is
 at v16 from block 2689608; there are separate tables for testnet and
 stagenet, and they do not agree with mainnet.
 

@@ -9,10 +9,9 @@ Read the flow that covers whatever a diff touches before forming a theory. A
 change that looks local usually sits somewhere in one of these six, and its
 blast radius is whatever comes after it in the list.
 
-Traced against master `3d3920d7`. Symbols were confirmed by grep; line numbers
-were not carried over except where the code is hard to find without one,
-because they rot fastest. Find a symbol with `git grep -n`, not with a
-remembered line.
+Traced against master `160e21504`. Symbols were confirmed by reading the code;
+line numbers are not given because they rot fastest. Find a symbol with
+`git grep -n`, not with a remembered line.
 
 ---
 
@@ -28,10 +27,10 @@ attacker-exposed sequence in the daemon.
    Appends to a per-connection cache and runs a head/body state machine.
    Cumulative buffered bytes are bounded by `m_max_packet_size`, which is
    256 KiB before the handshake and `LEVIN_DEFAULT_MAX_PACKET_SIZE`
-   (100 MB, `contrib/epee/include/net/levin_base.h:64`) after it.
+   (100 MB, `contrib/epee/include/net/levin_base.h`) after it.
    `LEVIN_SIGNATURE` is checked at 8 bytes and again on the full header.
 3. **Header parsed → per-command cap.** `bucket_head2`
-   (`levin_base.h:49`) carries `m_cb`, a `uint64_t` body length **read straight
+   (`levin_base.h`) carries `m_cb`, a `uint64_t` body length **read straight
    off the wire — the first attacker-controlled length in the daemon**. It is
    checked against `min(max_packet_size, get_max_bytes(command))`.
    `cryptonote_connection_context::get_max_bytes`
@@ -55,7 +54,7 @@ attacker-exposed sequence in the daemon.
    `contrib/epee/include/storages/levin_abstract_invoke2.h`. First allocation
    proportional to attacker input. On this path the count caps
    `default_levin_limits = {8192 objects, 16384 fields, 16384 strings}`
-   (`levin_abstract_invoke2.h:47`) **are** passed. See §"Three limit regimes"
+   (`levin_abstract_invoke2.h`) **are** passed. See §"Three limit regimes"
    below — they are not universal.
 6. **`handle_notify_new_fluffy_block`** —
    `src/cryptonote_protocol/cryptonote_protocol_handler.inl`. Returns
@@ -69,12 +68,13 @@ attacker-exposed sequence in the daemon.
 7. **`parse_and_validate_block_from_blob`** —
    `src/cryptonote_basic/cryptonote_format_utils.cpp`. The binary archive
    refuses a container count greater than the remaining bytes and reserves only
-   `min(cnt, remaining/ratio)`. `tx_hashes.size() <= CRYPTONOTE_MAX_TX_PER_BLOCK`
+   `min(cnt, remaining/sizeof(T) * ratio)` (`do_reserve`,
+   `src/serialization/container.h`). `tx_hashes.size() <= CRYPTONOTE_MAX_TX_PER_BLOCK`
    is checked **after** the vector is deserialized — it is a consensus bound,
    not the memory bound.
-8. **`make_pool_supplement_from_block_entry`** — rejects duplicate txids, and
-   every bundled blob must parse and hash to a txid the block itself names.
-   No stowaways.
+8. **`make_pool_supplement_from_block_entry`** — after the handler has
+   rejected duplicate txids in the block, every bundled blob must be unpruned,
+   parse, and hash to a txid the block itself names. No stowaways.
 9. **`core::handle_single_incoming_block` → `core::handle_incoming_block`** —
    `src/cryptonote_core/cryptonote_core.cpp`. Opens the LMDB write batch,
    records `m_writer` as this thread id, re-checks the blob size.
@@ -115,15 +115,16 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
   `src/cryptonote_core/tx_verification_utils.cpp`), which is what makes the
   cache sound; anything that widens the key's inputs without widening the hash
   breaks it.
-- **`goto leave`.** `handle_block_to_main_chain` has eight `goto leave;` sites
+- **`goto leave`.** `handle_block_to_main_chain` has several `goto leave;`
+  sites (count with `sed -n '/^bool Blockchain::handle_block_to_main_chain(const block& bl, const crypto::hash& id,/,/^}/p' src/cryptonote_core/blockchain.cpp | grep -c 'goto leave;'`)
   jumping to a `leave:` label that sits *inside* the first `if` block,
   immediately before `return false`. Adding cleanup between the label and the
-  return changes every one of those eight paths.
+  return changes every one of those paths.
 - **Notifications fire before commit.** A ZMQ listener can observe a block that
   a later abort removes.
 - Everything from the socket read to the LMDB commit runs on one of the
-  **ten** epee ASIO worker threads (`int thrds_count = 10;`,
-  `src/p2p/net_node.inl:1172`). RandomX hashing and ring verification happen
+  **ten** epee ASIO worker threads (`int thrds_count = 10;` in
+  `node_server::run`, `src/p2p/net_node.inl`). RandomX hashing and ring verification happen
   inline on a network thread.
 
 ---
@@ -135,7 +136,7 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
    payment ids are refused.
 2. **`wallet2::create_transactions_2`** — takes
    `boost::unique_lock<hw::device>` plus `hw::reset_mode`, buckets unlocked
-   outputs per subaddress, aims for 2-in/2-out.
+   outputs per subaddress, aims for 1- or 2-in/2-out.
 3. **`wallet2::transfer_selected_rct`** — assembles `tx_source_entry` records,
    overwriting the ring entry that matches the real global output index.
 4. **`wallet2::get_rct_distribution`** — asks the daemon for the RCT output
@@ -148,14 +149,15 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
    in chunks of 1000. Offsets are **sorted ascending per ring before the
    request** so the daemon cannot see which member is real.
    For the wallet's own real output the daemon must return the correct key,
-   correct mask and `unlocked == true`, or construction fails. Decoys are taken
-   as-is.
+   correct mask and `unlocked == true`, or construction fails. Decoys are not
+   checked against the chain; `tx_add_fake_output` only drops locked,
+   duplicate, or non-main-subgroup key/commitment entries.
 6. **`cryptonote::construct_tx_with_tx_key`** —
    `src/cryptonote_core/cryptonote_tx_utils.cpp`. Key images via the
    `hw::device` abstraction; **inputs sorted strictly descending by key image**
    (a consensus rule from HF 7); ring offsets converted to *relative* form;
-   outputs shuffled; all `vin[i].amount` and `vout[i].amount` zeroed before
-   hashing.
+   outputs shuffled; `vin[i].amount` of RCT sources and every `vout[i].amount`
+   zeroed before hashing.
 7. **`rct::genRctSimple` → `rct::proveRctCLSAGSimple`** — `src/ringct/rctSigs.cpp`.
    The last pseudo-out mask is derived as `sumout - sumpouts`, so commitment
    balance is a construction invariant on the sending side.
@@ -170,16 +172,19 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     so no two transactions race into the pool with conflicting key images.
 11. **`core::add_new_tx` → `tx_memory_pool::add_tx`** —
     `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first
-    (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, key-image conflicts),
-    then `ver_non_input_consensus` and `Blockchain::check_tx_inputs`.
+    (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, non-zero
+    `unlock_time`, key-image conflicts), then `ver_non_input_consensus` and
+    `Blockchain::check_tx_inputs`.
 12. **`levin::notify::send_txs` → Dandelion++** —
     `src/cryptonote_protocol/levin_notify.cpp`. Stem or fluff by epoch.
 13. **`tx_memory_pool::fill_block_template`** — walks
     `m_txs_by_fee_and_receive_time`. **A tx is skipped unless
-    `meta.matches(relay_category::legacy)`**, i.e. it must already be
-    broadcast; a stem-phase transaction is not mined unless the operator set
-    `--mine-stem-txes`.
-14. **`miner::worker_thread` → `core::handle_block_found`** → flow 1, step 11.
+    `meta.matches(category)`**, where `category` is `relay_category::legacy`
+    (block, fluff or `none`), or `relay_category::broadcasted` (block or fluff)
+    when `include_sensitive` is false (restricted RPC `getblocktemplate`). A
+    stem-phase transaction is mined only when `m_mine_stem_txes` is set, which
+    `core::init` does only for `FAKECHAIN`; there is no command-line option.
+14. **`miner::worker_thread` → `core::handle_block_found`** → flow 1, step 10.
 
 **Traps.**
 
@@ -217,7 +222,7 @@ control. The daemon is untrusted and the keys are in the process.
 2. **`wallet2::pull_blocks`** → `/getblocks.bin`. Held under
    `m_daemon_rpc_mutex`. The response is parsed with the wallet-side caps
    `default_http_bin_limits = 65536*3` each
-   (`contrib/epee/include/storages/http_abstract_invoke.h:98`).
+   (`invoke_http_bin`, `contrib/epee/include/storages/http_abstract_invoke.h`).
 3. **`wallet2::parse_block_round`** → `parse_and_validate_block_from_blob`.
    The wallet **recomputes each block id from the blob** and chains `prev_id`.
    **There is no proof-of-work check anywhere in the wallet.** `prev_id`
@@ -259,13 +264,14 @@ control. The daemon is untrusted and the keys are in the process.
   is the front end's job — `LOCK_IDLE_SCOPE()` in simplewallet, the handler
   structure in wallet-rpc. The only lock inside `wallet2` on this path is
   `m_daemon_rpc_mutex`.
-- `threadpool::submit` runs the job **inline on the caller's thread** when the
-  pool is saturated, and `waiter::wait()` drains the queue on the waiting
+- `threadpool::submit` runs a non-leaf job **inline on the caller's thread**
+  when the pool is saturated, and `waiter::wait()` drains the queue on the waiting
   thread. "This runs on a worker thread" is not guaranteed.
 - `process_parsed_blocks` calls `hwdev.generate_key_derivation` from several
   pool threads **without** holding the `hw::device` lock, unlike
-  `scan_output`, which does.
-- **`exit(1)`** at `src/wallet/wallet2.cpp:2917` on the received-amount
+  `process_new_transaction`, which holds it around its own derivations and
+  each `scan_output` call.
+- **`exit(1)`** in `wallet2::process_new_transaction` on the received-amount
   consistency check — the process dies mid-scan rather than throwing. A defect
   reachable there is a denial of service.
 - The view tag is an optimisation whose failure mode is a **false negative**
@@ -288,7 +294,7 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
 3. **`simple_http_connection_handler::handle_recv`** —
    `contrib/epee/include/net/http_protocol_handler.inl`. The one place total
    request size is bounded: `MAX_RPC_CONTENT_LENGTH = 1048576`
-   (`src/cryptonote_config.h:136`). Request line ≤ 9000 bytes, header block
+   (`src/cryptonote_config.h`). Request line ≤ 9000 bytes, header block
    ≤ 100000 bytes.
 4. **`http_custom_handler::handle_request`** → optional HTTP digest auth.
    **If `--rpc-login` is not set — the default — this boundary does not
@@ -332,7 +338,9 @@ are two *different* `core_rpc_server` objects on two different ports.
 - `/get_transaction_pool_hashes.bin` is mapped with `MAP_URI_AUTO_JON2` — it is
   a **JSON** endpoint despite the `.bin` suffix.
 - The HTTP restricted set and the ZMQ restricted set are unrelated. ZMQ blocks
-  exactly ten method names (`src/rpc/zmq_restricted_methods.cpp`).
+  only the method names in `blocked_in_restricted_mode`
+  (`src/rpc/zmq_restricted_methods.cpp`; count with
+  `grep -c '^      "' src/rpc/zmq_restricted_methods.cpp`).
 - Any HTTP 500 closes the connection, and a handler that throws or returns
   false produces a 500.
 - The ZMQ `handlers[]` table and the restricted blocklist must stay
@@ -362,12 +370,13 @@ Before those, the protocol handler points at `m_p2p_stub` and core at
 
 Inside `t_core`: `new_db()` always returns a `BlockchainLMDB` (there is no
 runtime DB choice) → `BlockchainLMDB::open` → `Blockchain::init` →
-`load_compiled_in_block_hashes` → `tx_memory_pool::init` (re-parses and
-re-validates every stored pool tx against the current fork) →
+`load_compiled_in_block_hashes` → `tx_memory_pool::init` (re-parses each
+stored pool tx's prefix and rebuilds the key-image and fee indices; no
+consensus re-validation) →
 `core::update_checkpoints` → `miner::init` (parses flags; **does not start
 mining**).
 
-`t_daemon::run` then starts a watchdog thread, `core.run()`, each `rpc->run()`,
+`t_daemon::run` then starts a stop-flag polling thread, `core.run()`, each `rpc->run()`,
 the ZMQ server, and finally `p2p.run()`, **which blocks until the node stops**.
 
 **Down:** every path funnels into `node_server::send_stop_signal`, which stops
@@ -410,8 +419,9 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 
 1. **Peer selection** — `node_server::connections_maker` on the 1-second idle
    handler. Chooses *who* to talk to; validates nothing about honesty.
-2. **`process_payload_sync_data`** — the peer's claimed height and cumulative
-   difficulty are **taken at face value as the sync target**. Only the hard-fork
+2. **`process_payload_sync_data`** — the peer's claimed height is **taken at
+   face value as the sync target**; its claimed cumulative difficulty is not
+   read. Only the hard-fork
    version, the pruning seed shape and a downward height revision are checked.
 3. **`NOTIFY_REQUEST_CHAIN` / `handle_response_chain_entry`** — the densest
    validation point in the flow. Unsolicited response, response past the
@@ -468,8 +478,8 @@ review error.
 
 | path | object / field / string caps | where |
 |------|------------------------------|-------|
-| P2P Levin | 8192 / 16384 / 16384 | `default_levin_limits`, `levin_abstract_invoke2.h:47` |
-| wallet parsing a daemon `.bin` response | 196608 each (`65536*3`) | `default_http_bin_limits`, `http_abstract_invoke.h:98` |
+| P2P Levin | 8192 / 16384 / 16384 | `default_levin_limits`, `levin_abstract_invoke2.h` |
+| wallet parsing a daemon `.bin` response | 196608 each (`65536*3`) | `default_http_bin_limits`, `http_abstract_invoke.h` |
 | **daemon parsing a `.bin` request** | **none** | `MAP_URI_AUTO_BIN2` calls the two-argument `load_t_from_binary`, so `limits` defaults to `NULL` |
 
 `portable_storage::load_from_binary(span, const limits_t *limits = nullptr)`,

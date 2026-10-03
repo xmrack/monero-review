@@ -11,7 +11,7 @@ deanonymises the user directly.
 genuinely different threat models, and a finding real in one is often
 unreachable in another. Always name the one you mean.
 
-Verified against master `3d3920d7`.
+Verified against master `160e21504`.
 
 ---
 
@@ -33,17 +33,18 @@ Consequences worth carrying:
 - `wallet_api` is the only consumer with genuinely **concurrent** access to
   `wallet2`: a background refresh runs alongside caller-driven calls. State
   that the CLI touches serially can be touched concurrently there.
-- `wallet_api` is `EXCLUDE_FROM_ALL` and only built under `BUILD_GUI_DEPS`
-  (default OFF), so a default build does not produce it.
+- `wallet_api` is `EXCLUDE_FROM_ALL`, so a default build does not produce
+  it; it is built only when named as a target or pulled in by a dependent
+  (`libwallet_api_tests`, added only under `BUILD_GUI_DEPS`, default OFF).
 
 ---
 
 ## `src/wallet/wallet2.{h,cpp}` — the engine
 
-15613 lines in one translation unit. It owns the account keys, a hashchain of
-block ids, the `m_transfers` output set, the payment and transfer maps, the
-subaddress table; it drives refresh, builds and signs transactions, and
-persists two files.
+About 16k lines (`wc -l src/wallet/wallet2.cpp`) in one translation unit. It
+owns the account keys, a hashchain of block ids, the `m_transfers` output
+set, the payment and transfer maps, the subaddress table; it drives refresh,
+builds and signs transactions, and persists two files.
 
 **Two files, two keys.** The keys file is JSON under a password-derived
 chacha20 key; the cache file is monero binary serialization under
@@ -53,15 +54,16 @@ so persistence is atomic. **Neither is authenticated**: chacha20 with a random
 IV and no MAC. Tampering is detected only by the deserializer failing.
 
 **Background sync makes it four files and two key hierarchies.** Three modes
-live at `src/wallet/wallet2.h:198-207` -- `BackgroundSyncOff`,
-`BackgroundSyncReusePassword`, `BackgroundSyncCustomPassword` -- parsed from
-`"off"`, `"reuse-wallet-password"` and `"custom-background-password"` by
+-- `BackgroundSyncOff`, `BackgroundSyncReusePassword`,
+`BackgroundSyncCustomPassword`, declared in
+`src/wallet/wallet2_basic/wallet2_types.h` and re-exported in `tools::wallet2`
+-- are parsed from `"off"`, `"reuse-wallet-password"` and `"custom-background-password"` by
 `background_sync_type_from_str`, which throws `std::logic_error` on anything
 else. In the custom-password mode the wallet keeps `<name>.background` and
 `<name>.background.keys` alongside the main pair
-(`make_background_wallet_file_name` at `src/wallet/wallet2.cpp:6307`,
-`make_background_keys_file_name` at `:6312`), encrypted under
-`m_custom_background_key` -- a **different** key from the main cache, so the
+(`wallet2::make_background_wallet_file_name`,
+`wallet2::make_background_keys_file_name` in `src/wallet/wallet2.cpp`),
+encrypted under `m_custom_background_key` -- a **different** key from the main cache, so the
 password that opens the background cache is deliberately not the wallet
 password.
 
@@ -69,21 +71,24 @@ Four things follow, and a diff can break each of them:
 
 - **The background instance must not hold a spend key.** A separate `wallet2`
   is built in `process_background_cache_on_open` with `m_is_background_wallet
-  = true` and `account.forget_spend_key()` (`:6783`, and the same call at
-  `:4635` and `:14030`). That call is the entire security property of the
-  feature; anything that lets a background instance keep or re-derive the
-  spend key defeats it outright.
+  = true` and `account.forget_spend_key()` (the same call is in
+  `get_keys_file_data` when writing the background keys file, and in
+  `start_background_sync` on the main account). That call is the entire
+  security property of the feature; anything that lets a background
+  instance keep or re-derive the spend key defeats it outright.
 - **The background cache is untrusted input on the main wallet's open path.**
-  `process_background_cache_on_open` (`:6731`) loads and merges it when a
+  `process_background_cache_on_open` loads and merges it when a
   normal wallet is opened, so "the user opened their wallet" reaches a
   deserializer over a second, separately-encrypted file. Everything true of
   the main cache as an attack surface is true of this one.
 - **Settings cannot be changed from a background wallet.**
   `THROW_WALLET_EXCEPTION_IF(m_background_syncing || m_is_background_wallet,
-  ... "cannot change wallet settings from background wallet")` at `:6251`.
+  ... "cannot change wallet settings from background wallet")` in
+  `wallet2::rewrite`.
 - **A missing background file is recreated, not treated as an error**
-  (`:6760-6771`). A path that recreates on absence is a path an attacker can
-  force by deleting.
+  (`process_background_cache_on_open`, under "If the background wallet files
+  don't exist, recreate them"). A path that recreates on absence is a path
+  an attacker can force by deleting.
 
 **Refresh** is traced step by step in `flows.md` §3. The load-bearing summary:
 the wallet recomputes every block id from the blob and chains `prev_id`, but
@@ -101,11 +106,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   processed.
 - A reorg deeper than `m_max_reorg_depth` (default 100) aborts the refresh with
   `error::reorg_depth_error` rather than detaching.
-- Every `m_transfers` entry with `m_key_image_known` has a matching
+- Every `m_transfers` entry with `m_key_image_known` and not
+  `m_key_image_partial` has a matching
   `m_key_images` entry and every entry has a matching `m_pub_keys` entry;
   `detach_blockchain` throws if either lookup fails.
 - A ring's real member must come back from `/get_outs.bin` with the wallet's
-  own recomputed public key **and** commitment **and** `unlocked == true`.
+  own stored public key **and** recomputed commitment **and**
+  `unlocked == true`.
 - Every decoy must be in the main subgroup — both the one-time key and the
   commitment (`rct::isInMainSubgroup` in `tx_add_fake_output`).
 - The per-ring `outputs` list must be **sorted by index** before the request
@@ -125,7 +132,8 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   vector rather than erasing it**, so the loop's `if (k == rct::zero())
   continue` is what stops a spent nonce being reused — a rewrite that drops
   that test reuses nonces. And `clear_multisig_k_and_store` wipes
-  the whole set and calls `store()` under the comment "Must succeed before any
+  and clears the nonces of every transfer the txset spends and calls
+  `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
 - Daemon error text is mostly not surfaced verbatim when the daemon is
@@ -166,10 +174,12 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   from the block header; the contents come from a separate blob.
 - **`should_skip_block` gates scanning on the daemon-supplied block
   timestamp.**
-- **`exit(1)` at `src/wallet/wallet2.cpp:2917`** on the received-amount
-  consistency check — a library function that terminates the host process.
-- Lines 245–1038 of `wallet2.cpp` are a **single anonymous namespace**; a
-  helper you cannot find is probably in there.
+- **`exit(1)` in `wallet2::process_new_transaction`** on the received-amount
+  consistency check ("Consistency failure in amounts received") — a library
+  function that terminates the host process.
+- Most of `wallet2.cpp` before `namespace tools` opens is **two anonymous
+  namespaces** (the large one starts with `struct options`); a helper you
+  cannot find is probably in there.
 - `src/wallet/wallet2_basic/CMakeLists.txt` contains **nothing but a licence
   header** — there is no target; the headers reach the build another way.
 - Two independent version numbers govern the cache: `VERSION_FIELD(2)` in the
@@ -179,23 +189,30 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   per-struct Boost versions on the nested types. They are bumped independently
   and a field added to one path is not automatically carried by the other, so
   ask which serializer a new cache field is reachable through: the Boost path
-  lives in `src/wallet/wallet2_basic/wallet2_boost_serialization.h` and the
-  native one in the `VERSION_FIELD` block of `wallet2.h`. A field present in
+  is the `serialize(t_archive &a, const unsigned int ver)` member of
+  `tools::wallet2` in `wallet2.h` plus the nested types in
+  `src/wallet/wallet2_basic/wallet2_boost_serialization.h`, and the native one
+  is the `VERSION_FIELD` block of `wallet2.h` plus
+  `src/wallet/wallet2_basic/wallet2_serialization.h`. A field present in
   one and absent from the other reads back default-constructed after a
   round-trip through the other, which is how a wallet silently loses state.
-- `tx_construction_data`'s `use_rct` field is a **bitfield carrying
-  construction flags** (`_use_rct = 1<<0`, `_use_view_tags = 1<<1`) under a
-  boolean-sounding name.
+- `tx_construction_data`'s serialized `use_rct` field is a **bitfield carrying
+  construction flags** (`construction_flags`: `_use_rct = 1<<0`,
+  `_use_view_tags = 1<<1`) under a boolean-sounding name; the in-memory
+  `use_rct` member is a plain `bool`.
 - `gamma_picker` holds `const std::vector<uint64_t> &rct_offsets` **by
   reference**.
 - **MyMonero / light-wallet support is gone.** `light_wallet` appears zero
   times in `wallet2.{h,cpp}`; older write-ups describing it no longer apply.
-- `wallet2` is **not internally thread-safe.** Its only mutex,
+- `wallet2` is **not internally thread-safe.** Its only per-instance mutex,
   `m_daemon_rpc_mutex`, serialises the HTTP client and `NodeRPCProxy` — it
-  protects none of the wallet state.
+  protects none of the wallet state (the static `default_daemon_address_lock`
+  guards only the process-wide default daemon address).
 
 **Neighbours.** `node_rpc_proxy.cpp` is the caching daemon boundary for scalars
-(height, fees, hard forks) with ~30-second caches. `ringdb.cpp` is a separate
+(height, fees, hard forks): height and `get_info` are re-fetched after 30
+seconds, the fee estimate per height, and the version and hard-fork data only
+after `invalidate()`. `ringdb.cpp` is a separate
 LMDB store of previously used rings keyed by key image, so re-spending an
 output reuses its ring; note `get_rings` returns false the moment *any*
 requested key image is missing, leaving the output partially populated.
@@ -210,9 +227,11 @@ onto slightly fewer handlers (a few handlers serve two names); count them with
 bottom of `wallet_rpc_server.cpp`.
 
 **Threading.** `http_server_impl_base::run(1, true)` — **exactly one network
-thread**, under an explicit comment. The only members touched from another
-thread are five `std::atomic`s, and the only cross-thread caller is
-`stop_refresh()`.
+thread**, under an explicit comment. The only cross-thread callers are
+`stop_refresh()` and `send_stop_signal()`, from the signal handler that
+`t_daemon::run` installs and from `t_daemon::stop`; `stop_refresh()` touches only the `std::atomic`
+members declared in `wallet_rpc_server.h` and, guarded by them, the
+`m_wallet` pointer (`m_wallet->shutdown()`).
 
 **Body size.** `m_max_content_length = MAX_RPC_CONTENT_LENGTH * 100` — the
 wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
@@ -239,12 +258,10 @@ mode. A new handler is unrestricted unless it says otherwise.
 - **A missing request field is not an error.** `KV_SERIALIZE` discards the
   serializer's return, so an absent JSON key leaves the value-initialised
   default. Every field needs a validity check in the handler.
-- **A JSON string is no longer accepted where a `uint64_t` is declared.** The
-  `convert_to_integral<std::string, uint64_t, false>` specialization that used
-  to coerce a string of digits — and an ISO-8601 string to a unix time — is
-  gone from `contrib/epee/include/storages/portable_storage_val_converters.h`,
-  so string-to-integer coercion is out of epee entirely. Such a field now hits
-  the generic `convert_to_integral<from, to, false>` in that header, which
+- **A JSON string is not accepted where a `uint64_t` is declared.** epee has
+  no string-to-integer coercion: such a field hits the generic
+  `convert_to_integral<from, to, false>` in
+  `contrib/epee/include/storages/portable_storage_val_converters.h`, which
   calls `ASSERT_AND_THROW_WRONG_CONVERSION()`; the throw is caught by the
   plain `try`/`catch` in `BEGIN_KV_SERIALIZE_MAP`'s `load()`
   (`contrib/epee/include/serialization/keyvalue_serialization.h`, reached
@@ -264,7 +281,8 @@ mode. A new handler is unrestricted unless it says otherwise.
 - Command-type names collide with the daemon's: `COMMAND_RPC_GET_HEIGHT` and
   `COMMAND_RPC_START_MINING` exist in both `tools::wallet_rpc` and
   `cryptonote`.
-- `tests/fuzz/fuzz_rpc` targets the **daemon's** `core_rpc_server` only. There
+- `tests/fuzz/fuzz_rpc` targets the **daemon** only — `core_rpc_server`
+  (`fuzz_rpc.cpp`) and the ZMQ publisher `zmq_pub` (`fuzz_zmq.cpp`). There
   is no wallet-RPC fuzz target.
 - `WALLET_RPC_VERSION_MINOR` (`#define` in
   `src/wallet/wallet_rpc_server_commands_defs.h`) must be bumped on **any**
@@ -316,7 +334,8 @@ member, exposed verbatim by `getPassword()`, never wiped. `loadUnsignedTx`
 returns a heap pointer the API gives no disposal method for. `use_ssl` is
 forwarded and then never read.
 
-**`checkBackgroundSync()`** guards 33 call sites — every operation that needs
+**`checkBackgroundSync()`** guards every call site found by
+`grep -n 'checkBackgroundSync(' src/wallet/api/wallet.cpp` — every operation that needs
 spend keys or would corrupt the background cache. A new spend-adjacent method
 needs it.
 
@@ -324,7 +343,7 @@ needs it.
 
 ## `src/simplewallet/` and `src/mnemonics/`
 
-`simplewallet.cpp` is 11453 lines: the command table, argument parsing, and the
+`simplewallet.cpp` is about 12k lines (`wc -l`): the command table, argument parsing, and the
 confirmation prompts. The prompts are the point — this is the only consumer
 where "the user would notice" is a real control, and it is only a control if
 the prompt is actually shown. A flow that batches or automates past a prompt
@@ -345,9 +364,10 @@ key derivation**, and it is logic: a C++ wrapper over libpolyseed
 (`polyseed.cpp`, `data::generate_secret_key` and `data::keygen`), a
 PBKDF2-HMAC-SHA256 implementation injected as the polyseed KDF (`pbkdf2.c`,
 `crypto_pbkdf2_sha256`), and utf8proc normalisation of user phrases and
-passphrases. `src/mnemonics/CMakeLists.txt` adds the `polyseed` subdirectory.
-`electrum-words.cpp` also gained `words_to_bytes_ex`
-(`src/mnemonics/electrum-words.cpp:399`), which decides polyseed versus legacy
+passphrases. `src/CMakeLists.txt` adds `mnemonics/polyseed` (target
+`polyseed_wrapper`), which `mnemonics` links publicly.
+`electrum-words.cpp` also has `words_to_bytes_ex`
+(`crypto::ElectrumWords::words_to_bytes_ex`), which decides polyseed versus legacy
 from an arbitrary phrase, and `normalize_mnemonic`. A reviewer who reads this
 directory as word lists and a checksum will walk straight past a live
 key-derivation path.
@@ -366,7 +386,7 @@ images, and the transaction-signing protocol. `device_type` is
 
 Implementations: `device_default.{hpp,cpp}` (software — the default, and what
 `account_keys::m_device` points at unless the account was created against a
-device), `device_ledger.cpp` (2455 lines, over `device_io_hid`), and
+device), `device_ledger.cpp` (about 2.5k lines, over `device_io_hid`), and
 `src/device_trezor/` (protobuf transport, gated by `USE_DEVICE_TREZOR`).
 
 Devices are found through a **registry**: `hw::get_device(descriptor)` over a
@@ -381,7 +401,9 @@ value does damage.
 
 **A concurrency note that spans this and `wallet2`:** `process_parsed_blocks`
 calls `hwdev.generate_key_derivation` from several threadpool threads
-**without** holding the `hw::device` lock, unlike `scan_output`, which locks.
+**without** holding the `hw::device` lock, unlike `process_new_transaction`,
+which takes `boost::unique_lock<hw::device>` around its own derivation and
+around each `scan_output` call.
 Any change that makes a device implementation stateful has to reckon with
 that.
 

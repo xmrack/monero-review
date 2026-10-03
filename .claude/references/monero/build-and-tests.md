@@ -3,7 +3,7 @@
 The build system and the test topology, from the point of view of somebody
 who has to judge whether a change to either is safe.
 
-Measured at master `3d3920d7`.
+Measured at master `160e21504`.
 
 ---
 
@@ -15,12 +15,14 @@ autodetected (sccache then ccache).
 
 ## How targets are declared
 
-Everything goes through two wrappers defined in `cmake/`:
-**`monero_add_library(name …)`** and **`monero_add_executable(name …)`**, plus
-`monero_add_library_with_deps` (used only by `src/fcmp_pp`) and
-`monero_add_minimal_executable` (tests). Headers are globbed by
-`monero_find_all_headers`; **sources are not** — each of the 28 per-directory
-`CMakeLists.txt` files names its `<name>_sources` by hand.
+Everything goes through two wrappers: **`monero_add_library(name …)`**
+(top-level `CMakeLists.txt`) and **`monero_add_executable(name …)`**
+(`src/CMakeLists.txt`), plus `monero_add_library_with_deps` (called directly
+only by `src/fcmp_pp`) and `monero_add_minimal_executable` (tests), both in the
+top-level `CMakeLists.txt`. Headers are globbed by `monero_find_all_headers` in
+most directories; **sources are not** — each per-directory `CMakeLists.txt`
+under `src/` names its `<name>_sources` by hand
+(`grep -rl _sources --include=CMakeLists.txt src`).
 
 **So a new `.cpp` needs a `CMakeLists.txt` edit and a new `.h` does not.** A
 new-file PR touching no CMake file is fine if it is header-only, and broken if
@@ -36,13 +38,13 @@ The resulting library dependency graph is in `architecture.md`.
 | `PER_BLOCK_CHECKPOINT` | **ON** | when on, a matching embedded block hash makes `handle_block_to_main_chain` skip PoW, `ver_non_input_consensus` **and** per-tx `check_tx_inputs` |
 | `BUILD_TESTS` | OFF | gates the whole of `tests/` |
 | `STATIC` | OFF | static linking |
-| `BUILD_SHARED_LIBS` | platform | internal libraries as shared |
+| `BUILD_SHARED_LIBS` | ON for a non-`STATIC` debug build, else OFF | internal libraries as shared |
 | `SANITIZE` | OFF | `-fsanitize=address,undefined` |
-| `NO_AES` | detected | selects a different `cn_slow_hash` implementation |
+| `NO_AES` | OFF | selects a different `cn_slow_hash` implementation |
 | `USE_DEVICE_TREZOR` | on where deps exist | builds `src/device_trezor` |
-| `BUILD_GUI_DEPS` | OFF | the only way `wallet_api` and `libwallet_api_tests` get built |
+| `BUILD_GUI_DEPS` | OFF | gates `libwallet_api_tests`, the only thing that pulls `wallet_api` (`EXCLUDE_FROM_ALL`) into a normal build |
 | `ENABLE_FUZZ_TEST` | OFF | adds `tests/fuzz` to a normal build |
-| `STACK_TRACE` | platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** |
+| `STACK_TRACE` | OFF in release, else platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** |
 | `COVERAGE`, `STRIP_TARGETS`, `MANUAL_SUBMODULES`, `BUILD_DEBUG_UTILITIES`, `USE_READLINE`, `BOOST_IGNORE_SYSTEM_PATHS` | | |
 
 `MONERO_WALLET_CRYPTO_LIBRARY` defaults to `auto` and silently selects
@@ -53,25 +55,25 @@ supercop assembly on x86_64 UNIX — see `subsystems-crypto.md`.
 All in the top-level `CMakeLists.txt`, and all are supply-chain-relevant —
 removing one is a real finding even though it is not a memory-safety bug:
 
-- `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2` (:780-781) — note the level is
+- `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2`, appended with a plain `set` — note the level is
   **2**, and note the guard around it: `if(CMAKE_BUILD_TYPE STREQUAL "Release"
   AND NOT OPENBSD)`, so it is not set in a debug build at all. A diff that
   changes that condition removes the flag from real builds without touching
   the flag.
 - `-fstack-protector` and `-fstack-protector-strong`, via
-  `add_c_flag_if_supported` (:795-798), likewise inside an `if` that excludes
+  `add_c_flag_if_supported`, likewise inside an `if` that excludes
   OpenBSD and Windows/GCC < 9.1
-- `-pie` / `-Wl,-pie` (:823-826), with documented exclusions: PIE crashes
+- `-pie` / `-Wl,-pie`, with documented exclusions: PIE crashes
   under ASAN, and Windows binaries die with PIE under GCC < 9 or when
   dynamically linked
-- `-Wl,-z,relro` (:829)
+- `-Wl,-z,relro`
 
-Every one of those uses `add_*_flag_if_supported`, which **silently does
+Every one of those except `_FORTIFY_SOURCE` uses `add_*_flag_if_supported`, which **silently does
 nothing when the compiler rejects the flag**. "The flag is in CMakeLists" is
 not the same claim as "the flag is in the build".
 
-Also set tree-wide: **`-fno-strict-aliasing`** (:775-776, and again at
-:871-872 for the other branch) and `-ftemplate-depth=900` (:894).
+Also set tree-wide: **`-fno-strict-aliasing`** (appended twice, before and
+after the hardening block) and `-ftemplate-depth=900`.
 
 ## `contrib/depends` — the cross-build dependency tree
 
@@ -93,16 +95,17 @@ binaries people actually download, so a change here changes what ships.
 
 ## CI: three workflows
 
-- **`.github/workflows/build.yml`** — the matrix build. Installs a **pinned
-  Rust toolchain**: it fetches `rustup-init` 1.29.0, checks it against a
-  hardcoded SHA-256, and installs toolchain `1.93`.
+- **`.github/workflows/build.yml`** — the matrix build. The Ubuntu jobs install
+  a **pinned Rust toolchain** (`INSTALL_RUST`): it fetches `rustup-init`
+  1.29.0, checks it against a hardcoded SHA-256, and installs toolchain `1.93`.
+  The macOS, MSYS2 and Arch jobs use the platform's Rust.
 - **`.github/workflows/depends.yml`** — cross builds through
   `contrib/depends`, one job per host triple, each carrying a `rust_host`
   (`riscv64gc-unknown-linux-gnu`, `aarch64-*`, `i686-*`,
   `x86_64-pc-windows-gnu`, darwin, freebsd, android, …).
 - **`.github/workflows/guix.yml`** — the reproducible build.
 
-**Rust is now a hard build dependency** because of `src/fcmp_pp/fcmp_pp_rust`.
+**Rust is a hard build dependency** because of `src/fcmp_pp/fcmp_pp_rust`.
 
 ---
 
@@ -116,17 +119,17 @@ runners, different assertion vocabularies and different build gates.
 
 | directory | what it is |
 |---|---|
-| `unit_tests` | the only large gtest binary — **896** `TEST`/`TEST_F` across 78 translation units |
-| `core_tests` | the chain-generator harness — **165** active `GENERATE_AND_PLAY` tests |
-| `functional_tests` | 19 Python RPC tests driving 5 `monerod` + 7 `monero-wallet-rpc` in regtest, plus two C++ binaries |
-| `fuzz` | **23** executables: 19 file-driven targets + 4 OSS-Fuzz-only RPC/ZMQ ones |
+| `unit_tests` | the only large gtest binary (count: `grep -hcE '^\s*TEST(_F)?\(' tests/unit_tests/*.cpp`) |
+| `core_tests` | the chain-generator harness — one active test per `GENERATE_AND_PLAY(` line in `chaingen_main.cpp` |
+| `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries |
+| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp`) + 4 OSS-Fuzz-only RPC/ZMQ ones under `if(OSSFUZZ)` |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
 | `difficulty`, `block_weight` | diff C++ output against a **Python reference implementation** |
 | `libwallet_api_tests` | gated on `BUILD_GUI_DEPS` |
 | `net_load_tests` | manual two-process socket exhaustion, **no CTest entry** |
 | `trezor` | gated on `TREZOR_DEBUG` |
-| `data` | fixtures — block 202612 per network, 7 tx blobs, two wallets, fuzz seed corpora |
+| `data` | fixtures — block 202612 per network, tx blobs under `txs/`, two wallets, fuzz seed corpora |
 
 ## Why `core_tests` matters more than it looks
 
@@ -150,25 +153,24 @@ be visible through `chaingen_tests_list.h`.
 
 `ctest` covers `unit_tests`, `core_tests`, `cncrypto`, `cnv4-jit`,
 `difficulty`, `wide_difficulty`, `block_weight`, the `hash-*` entries,
-`hash-target`, `wallet-crypto-bench`, `functional_tests_rpc`,
-`check_missing_rpc_methods`, and conditionally `libwallet_api_tests` and
-`trezor_tests`.
+`hash-target`, `wallet-crypto-bench`, and conditionally
+`functional_tests_rpc` and `check_missing_rpc_methods` (only if Python has
+`requests`, `zmq` and `deepdiff`), `libwallet_api_tests` and `trezor_tests`.
 
-**Not covered**: any of the 23 fuzz targets, `performance_tests`,
+**Not covered**: any fuzz target, `performance_tests`,
 `net_load_tests_clt/srv`, and the `functional_tests` C++ binary
 (`transactions_flow_test`). A change to one of those is not exercised by CI's
 test step.
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
 narrows **only its `add_subdirectory` list** to `tests/fuzz` — the
-`if`/`else` on `CMAKE_BUILD_TYPE STREQUAL "fuzz" OR OSSFUZZ` spans lines
-50–65 and nothing else. Everything below it is still configured:
-`libwallet_api_tests` (lines 67–69, under `BUILD_GUI_DEPS`) and `trezor`
-(lines 71–73, under `TREZOR_DEBUG`) are still added, and
-`hash-target-tests` (`monero_add_minimal_executable`, line 80) and
-`monero-wallet-crypto-bench` (line 123) are still built and still register
-their CTest entries `hash-target` (`add_test`, lines 90–92) and
-`wallet-crypto-bench` (line 126).
+`if`/`else` on `CMAKE_BUILD_TYPE STREQUAL "fuzz" OR OSSFUZZ` covers those
+`add_subdirectory` calls and nothing else. Everything below it is still
+configured: `libwallet_api_tests` (under `BUILD_GUI_DEPS`) and `trezor` (under
+`TREZOR_DEBUG`) are still added, and `hash-target-tests` and
+`monero-wallet-crypto-bench` (both `monero_add_minimal_executable`) are still
+built and still register their CTest entries `hash-target` and
+`wallet-crypto-bench`.
 
 ## The fuzz target list is a map
 
@@ -187,8 +189,8 @@ a note even though it ships nothing.
 A new fuzz target is inert unless it is added in **three** places: a
 `monero_add_minimal_executable` in `tests/fuzz/CMakeLists.txt`, a seed corpus
 under `tests/data/fuzz/<name>/`, and the type list in
-`contrib/fuzz_testing/fuzz.sh`. (That script currently accepts 18 names for 19
-file fuzzers — `tx-extra` is missing from it despite having seeds.)
+`contrib/fuzz_testing/fuzz.sh`. (That script's `case` list omits `tx-extra`
+despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
 
 ## Traps in the test tree
 
@@ -196,7 +198,7 @@ file fuzzers — `tx-extra` is missing from it despite having seeds.)
   Editing a fixture or adding a fuzz seed and then running `make && ctest`
   tests the **stale** copy under `build/tests/data`. Re-run cmake.
 - **Production headers friend gtest-generated class names.**
-  `src/wallet/wallet2.h:175` has
+  `class wallet2` in `src/wallet/wallet2.h` has
   `friend class ::Serialization_portability_wallet_Test;` — the class
   `TEST(Serialization, portability_wallet)` expands to. Renaming that test
   breaks the build of `src/`.
@@ -208,9 +210,10 @@ file fuzzers — `tx-extra` is missing from it despite having seeds.)
   `make tests` does **not** build the list above it.
 - `tests/core_tests/double_spend.inl` is a template implementation `#include`d
   from the bottom of `double_spend.h`, listed under headers.
-- `tests/crypto/*.c` and `crypto.cpp` are ~3-line shims that `#include` the
-  corresponding `src/crypto` file — the binary **recompiles crypto internals**
-  rather than linking `cncrypto`, so it can reach static functions.
+- `tests/crypto/{crypto-ops,crypto-ops-data,hash,random}.c` and `crypto.cpp`
+  `#include` the corresponding `src/crypto` file (the `.c` files do nothing
+  else; `crypto.cpp` adds test wrappers) — `cncrypto-tests` **recompiles crypto
+  internals** rather than linking `cncrypto`, so it can reach static functions.
 - `tests/fuzz/levin.cpp` is largely fenced off behind `#if 0`.
 - `BEGIN_SIMPLE_FUZZER` expands to two completely different things:
   `LLVMFuzzerTestOneInput` under OSS-Fuzz, and a `SimpleFuzzer::run(filename)`
