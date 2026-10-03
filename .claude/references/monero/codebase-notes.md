@@ -177,7 +177,8 @@ consensus-reachable**. Get that right in both directions: the only consumer
 outside the directory is `rct::verPointsForTorsion` in `src/ringct/rctSigs.cpp`,
 and that function has no production caller at all — only
 `tests/unit_tests/crypto.cpp`. `RCTType` still stops at
-`RCTTypeBulletproofPlus = 6`.
+`RCTTypeBulletproofPlus = 6`. A defect in it is still a finding, rated as it will run once live: see
+`refutations.md`, "Not refutations".
 
 **It also means Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
 staticlib crate linked as `libfcmp_pp_rust.a`, pulling `helioselene` from a git

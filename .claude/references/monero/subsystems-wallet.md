@@ -113,23 +113,42 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - Change must go to an address the wallet owns — `sanity_check` throws
   otherwise.
 - Multisig nonces are wiped after a single use — `memwipe` under the comment
-  "CRITICAL: a nonce may only be used once!" at
-  `src/wallet/wallet2.cpp:14533`. **There is no wallet-level nonce member.**
+  "CRITICAL: a nonce may only be used once!" in `wallet2::get_multisig_k`.
+  **There is no wallet-level nonce member.**
   The only `m_multisig_k` in the tree is `transfer_details::m_multisig_k`, a
-  plain `std::vector<rct::key>` declared at
-  `src/wallet/wallet2_basic/wallet2_types.h:154`, carrying no deprecation
-  marker, and it is live state: `wallet2::get_multisig_k`
-  (`src/wallet/wallet2.cpp:14518`) walks `m_transfers[idx].m_multisig_k`,
+  plain `std::vector<rct::key>` declared in
+  `src/wallet/wallet2_basic/wallet2_types.h`, carrying no deprecation
+  marker, and it is live state: `wallet2::get_multisig_k` walks
+  `m_transfers[idx].m_multisig_k`,
   matches a nonce by its `L = k*G`, hands it out and wipes it in place.
   Two consequences a diff can break. The wipe **leaves a zero entry in the
   vector rather than erasing it**, so the loop's `if (k == rct::zero())
   continue` is what stops a spent nonce being reused — a rewrite that drops
-  that test reuses nonces. And `clear_multisig_k_and_store` (`:14540`) wipes
+  that test reuses nonces. And `clear_multisig_k_and_store` wipes
   the whole set and calls `store()` under the comment "Must succeed before any
   txset produced with these nonces is exposed", so a change that lets the
   txset out before the store lands is a real finding.
-- Daemon error text is not surfaced verbatim when the daemon is untrusted —
-  every RPC error site passes `get_rpc_status(m_trusted_daemon, res.status)`.
+- Daemon error text is mostly not surfaced verbatim when the daemon is
+  untrusted — most RPC error sites pass
+  `get_rpc_status(m_trusted_daemon, res.status)`. **Not every site does.** In
+  `src/wallet/wallet2.cpp`:
+  - `wallet2::import_key_images` (its `is_key_image_spent` and
+    `gettransactions` calls) uses `THROW_ON_RPC_RESPONSE_ERROR_GENERIC`
+    (`src/wallet/wallet_errors.h`), which puts raw `res.status` into
+    `wallet_generic_rpc_error::what()`. Not reachable from an untrusted
+    daemon; see "Every key-image import with `check_spent` needs a trusted
+    daemon" in `refutations.md`.
+  - The `get_outs.bin` sites in `get_spend_proof` and `check_spend_proof`
+    pass raw `res.status` to `error::get_outs_error`, and
+    `get_num_rct_outputs` (`get_output_histogram`) passes raw
+    `resp_t.status` to `error::get_histogram_error`. Both types keep the
+    status out of `what()`; it appears only in `to_string()`, which
+    `throw_wallet_ex` logs.
+
+  Outside `wallet2.cpp`, `src/wallet/node_rpc_proxy.cpp` returns raw
+  `res.status` as its error string. Find candidates with
+  `grep -n 'THROW_ON_RPC_RESPONSE_ERROR' src/wallet/wallet2.cpp | grep -v get_rpc_status`;
+  a new site that copies one of these inherits the leak.
 
 **Traps.**
 
@@ -186,8 +205,10 @@ requested key image is missing, leaving the output partially populated.
 
 ## `src/wallet/wallet_rpc_server.*` — `monero-wallet-rpc`
 
-97 method names dispatched by a macro-generated `else if` chain onto 93
-handlers. `main()` is at the bottom of `wallet_rpc_server.cpp`.
+About a hundred method names dispatched by a macro-generated `else if` chain
+onto slightly fewer handlers (a few handlers serve two names); count them with
+`grep -c 'MAP_JON_RPC_WE' src/wallet/wallet_rpc_server.h`. `main()` is at the
+bottom of `wallet_rpc_server.cpp`.
 
 **Threading.** `http_server_impl_base::run(1, true)` — **exactly one network
 thread**, under an explicit comment. The only members touched from another
@@ -199,18 +220,38 @@ wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
 
 **Authorisation** is HTTP digest auth in epee plus a coarse `--restricted-rpc`
 allowlist, expressed **only as per-handler early returns — there is no central
-table**. There are 38 `if (m_restricted)` returns in
-`src/wallet/wallet_rpc_server.cpp` and two inverted ones (`if (!m_restricted)`,
-at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new handler is unrestricted unless it says otherwise.
+table**. In `src/wallet/wallet_rpc_server.cpp` the gate takes three forms,
+and a grep for any one of them misses the others:
+- a literal `if (m_restricted)` return in the handler;
+- `CHECK_IF_RESTRICTED_BACKGROUND_SYNCING()`, which expands to
+  `CHECK_IF_RESTRICTED_BACKGROUND_SYNCING_BASE(true)` and tests
+  `check_restricted && m_restricted` (e.g. `on_set_attribute`,
+  `on_tag_accounts`); `CHECK_IF_BACKGROUND_SYNCING()` is the same macro with
+  the restricted check off;
+- `PRE_VALIDATE_BACKGROUND_SYNC()`, used by the three background-sync
+  handlers, which has its own literal `if (m_restricted)`.
+
+Two handlers, `on_get_transfers` and `on_get_transfer_by_txid`, use the
+inverted `if (!m_restricted)` to skip only the pool refresh in restricted
+mode. A new handler is unrestricted unless it says otherwise.
 
 **Traps.**
 
 - **A missing request field is not an error.** `KV_SERIALIZE` discards the
   serializer's return, so an absent JSON key leaves the value-initialised
   default. Every field needs a validity check in the handler.
-- **A JSON string of digits is accepted where a `uint64_t` is declared**, and
-  an ISO-8601 string is converted to a unix time, by
-  `convert_to_integral<std::string, uint64_t, false>`.
+- **A JSON string is no longer accepted where a `uint64_t` is declared.** The
+  `convert_to_integral<std::string, uint64_t, false>` specialization that used
+  to coerce a string of digits — and an ISO-8601 string to a unix time — is
+  gone from `contrib/epee/include/storages/portable_storage_val_converters.h`,
+  so string-to-integer coercion is out of epee entirely. Such a field now hits
+  the generic `convert_to_integral<from, to, false>` at line 130 of that
+  header, which calls `ASSERT_AND_THROW_WRONG_CONVERSION()`; the throw is
+  caught by the plain `try`/`catch` in `BEGIN_KV_SERIALIZE_MAP`'s `load()`
+  (`contrib/epee/include/serialization/keyvalue_serialization.h:58`, reached
+  via `PREPARE_OBJECTS_FROM_JSON` in
+  `contrib/epee/include/net/http_server_handlers_map2.h`) and the request is
+  rejected.
 - A handler that returns false without setting `er.code` produces
   `{"error":{"code":0,…}}`; an escaping exception produces
   `{"error":{"code":0,"message":""}}`.
@@ -226,8 +267,9 @@ at `:2987` and `:3067`), so counting the gate is a grep, not a lookup. A new han
   `cryptonote`.
 - `tests/fuzz/fuzz_rpc` targets the **daemon's** `core_rpc_server` only. There
   is no wallet-RPC fuzz target.
-- `WALLET_RPC_VERSION_MINOR` (currently 33) must be bumped on **any** change to
-  `wallet_rpc_server_commands_defs.h`; MAJOR bumps reset it.
+- `WALLET_RPC_VERSION_MINOR` (`#define` in
+  `src/wallet/wallet_rpc_server_commands_defs.h`) must be bumped on **any**
+  change to that file; MAJOR bumps reset it.
 - Every dispatch-table method name must have a wrapper in
   `utils/python-rpc/framework/wallet.py` or the `check_missing_rpc_methods`
   test fails.
