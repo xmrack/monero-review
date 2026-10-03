@@ -136,7 +136,8 @@ is four, not the two that older notes claim.
    block types in `src/cryptonote_basic/cryptonote_boost_serialization.h`.
    The wallet *keys* file is not Boost: it is a binary `keys_file_data`
    envelope around chacha20 (or legacy chacha8) encrypted JSON, whose
-   `key_data` field is an epee portable-storage blob. `wallet2::load_keys_buf`,
+   `key_data` field is an epee portable-storage blob; the oldest keys files
+   hold that epee blob directly, with no JSON. `wallet2::load_keys_buf`,
    `verify_password` and `query_device` in `src/wallet/wallet2.cpp` read it
    with `::serialization::parse_binary(buf, keys_file_data)`, rapidjson
    `json.Parse` and `epee::serialization::load_t_from_binary`;
