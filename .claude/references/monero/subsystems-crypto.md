@@ -62,6 +62,17 @@ Which macro a key type is registered with decides whether comparing it leaks
 timing. `CRYPTO_DEFINE_HASH_FUNCTIONS` uses SipHash-2-4 keyed by a process
 `crypto_siphash_key`.
 
+**Torsion clearing lives here, and the wallet uses it.**
+`crypto::get_valid_torsion_cleared_point_vartime` (`crypto.cpp`, over
+`ge_clear_torsion_vartime` in `crypto-ops.c`: multiply by `sc_inv_eight`, then
+by 8) returns false for a point that does not decode or clears to the
+identity. `crypto::pubkey_clear_torsion` wraps it and returns `EC_I` instead of
+failing. Its callers are live: `src/wallet/wallet2.cpp` (payment-ID decryption
+in `process_new_transaction`, `get_tx_proof`, `check_tx_proof`,
+`get_reserve_proof`, `check_reserve_proof`) and
+`src/device_trezor/trezor/protocol.cpp`. A change to either function is a
+wallet change, not an FCMP++-only one.
+
 **Recurring questions worth asking of any change here.** Is a point
 deserialized from the wire checked to be on the curve, and for torsion where
 the protocol requires it? Is a scalar reduced, and is reduction *checked*
@@ -201,7 +212,6 @@ which on master finds only the two CMake lines.
 `RCTType` still stops at `RCTTypeBulletproofPlus = 6`.
 
 `fcmp_pp_crypto.h` exports `mul8_is_identity_vartime`,
-`clear_torsion_vartime`, `get_valid_torsion_cleared_point_vartime`,
 `point_to_ed_derivatives`, `ed_derivatives_to_wei_x_y`, `point_to_wei_x_y` and
 `struct EdDerivatives`.
 
