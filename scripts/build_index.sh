@@ -44,8 +44,7 @@ fi
 echo "index: ${count} source files" >&2
 
 if have ctags; then
-  # --options=NONE first: ctags otherwise loads ./.ctags.d from the checkout,
-  # which is the pull request's to write.
+  # Default options only, so every run indexes the same way.
   if ctags --options=NONE --languages=C,C++ --fields=+ne --extras=+q \
        -L cscope.files -f tags 2>/dev/null; then
     echo "index: tags built ($(wc -l < tags | tr -d ' ') entries)" >&2

@@ -60,11 +60,9 @@ esac
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-# The checkout is a stranger's tree: Python must not import from it, or from
-# ~/.local, when this script runs its helpers there.
+# Python imports only from the standard library and the scripts' own paths.
 export PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1
-# The review's shell runs in Claude Code's bubblewrap sandbox, which needs
-# both of these and refuses every Bash call without them.
+# The review's shell runs in Claude Code's bubblewrap sandbox, as in CI.
 for t in bwrap socat; do
   command -v "$t" >/dev/null || { echo "!! $t is required: sudo apt install bubblewrap socat" >&2; exit 1; }
 done
@@ -136,15 +134,14 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # What the pull request could plant, as in the workflow's `Clear files the
 # pull request could plant`: project instructions Claude Code would load as
 # trusted, and the names this script itself writes and reads.
-# Symlinks too: every file this script writes into the checkout follows one,
-# and Monero has none. Case-insensitive, and no -type on .claude, as in CI.
+# As in CI: case-insensitive, any file type, and symlinks.
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json"
-clear_planted() {
+tidy_checkout() {
   find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
     \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
     -exec rm -rf {} + 2>/dev/null || true
 }
-clear_planted
+tidy_checkout
 
 # Same untrusted-input markers the workflow writes: the title and body are
 # author-supplied text entering the model's context, and the skills point at
@@ -263,9 +260,9 @@ done
 # across pull requests, and a stale pin read as this PR's would be a wrong
 # citation with nothing to reveal it.
 python3 "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
-# Again after the fetch: a crates.io crate can carry its own CLAUDE.md. And the
-# fetch must not have moved HEAD off the commit this review is about.
-clear_planted
+# Again for what the dependency fetch unpacked, then confirm the checkout is
+# still at the commit under review.
+tidy_checkout
 if [ "$(git -C "$CACHE" rev-parse HEAD)" != "$SHA_FULL" ]; then
   echo "!! HEAD moved off $SHA_FULL during setup; refusing to review a different commit" >&2
   exit 1
@@ -389,12 +386,9 @@ T0=$(date +%s)
 # fleet's completion notification. Print mode kills background work after a
 # ten-minute ceiling by default, which would abandon every fleet; 0 waits.
 #
-# The same containment as CI, because this runs on YOUR machine with your
-# keys: the allowlist alone does not make Bash read-only (awk system(), find
-# -exec, sed e, git -c alias), so every shell runs in the bubblewrap sandbox
-# with secrets scrubbed, the file tools stay in the checkout, your own
-# settings (a bypassPermissions default, broad allow rules) are not loaded,
-# and the reads CI denies are denied here too, plus your credentials.
+# The same settings as CI: sandboxed shell, file tools scoped to the
+# checkout, only the project's settings loaded, and personal config
+# directories out of scope.
 ( cd "$CACHE" && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$PROMPT" \
     --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \

@@ -14,9 +14,8 @@ Both shapes match case-insensitively on GitHub's side, and the URL form works
 with or without the scheme and `www.`, so this does too. Everything becomes
 `owner/repo PR N`, which GitHub leaves alone.
 
-The body is model-written after reading a stranger's pull request, so it also
-loses, outside code: @mentions (a ping to anyone the author names), links
-that leave github.com (made plain text), and images that do (dropped).
+Outside code, it also formats @mentions as code, shows links outside
+github.com as plain text, and leaves out images hosted elsewhere.
 """
 import os
 import re

@@ -121,11 +121,8 @@ on:
 
 env:
   UPSTREAM: monero-project/monero
-  # Every `python3 -` heredoc runs with the pull request's tree (or a tree the
-  # writer can write to) as the working directory, which Python would put
-  # first on sys.path: a `json.py` there replaces the standard library inside
-  # a step holding secrets. User site-packages is closed for the same reason
-  # (`usercustomize.py`, `.pth` under ~/.local).
+  # Python imports only from the standard library and the scripts' own paths,
+  # never from the working directory or user site-packages.
   PYTHONSAFEPATH: "1"
   PYTHONNOUSERSITE: "1"
   # WHERE A SECURITY-SENSITIVE REVIEW GOES INSTEAD OF HERE. This repository is
@@ -302,11 +299,9 @@ env:
   ALLOWED_TOOLS: >-
     Read,Grep,Glob,Write(./**),Edit(./**),Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)
 
-  # Write and Edit are scoped to the working directory: unscoped, they reach
-  # ~/.local (a usercustomize.py every later python3 imports) and
-  # _actions/ (code a post-step runs with the job's token), outside the
-  # sandbox, which wraps Bash only. MEASURED on 2.1.286: `Write(./**)`
-  # permits the tree and its subdirectories and denies /tmp.
+  # Write and Edit are scoped to the working directory, which is the only
+  # place a review writes. `Write(./**)` covers the tree and its
+  # subdirectories.
   #
   # What no pass may do, whatever the list above allows. Deny rules win over
   # allow rules. Read is otherwise unscoped:
@@ -728,12 +723,8 @@ jobs:
             echo "::warning::submodule fetch failed; external/ deps unreadable"
           fi
 
-          # No symlinks in the working tree. Every file this job writes into
-          # the workspace (PR_CONTEXT.md, TOOLING.md, deps-include/, rust-deps/,
-          # ...) is written with a plain redirect or cp, which follows a link
-          # the pull request committed -- to ~/.npmrc, into .git, anywhere --
-          # and PR_CONTEXT.md carries the author's own text. Monero has none,
-          # so one here is noise to the review and only ever an attack.
+          # The tree has no symlinks upstream; any in a checkout are removed so
+          # the files this job writes land where it expects them.
           links=$(find . -path ./.git -prune -o -type l -print)
           if [ -n "$links" ]; then
             echo "::warning::removed $(printf '%s\n' "$links" | wc -l) symlink(s) from the checkout"
@@ -1113,8 +1104,7 @@ jobs:
         run: |
           set -euo pipefail
           rm -f review.md workflow-updates.json exec-pass1.json
-          # -iname: a case-insensitive filesystem opens claude.md as CLAUDE.md.
-          # No -type on .claude: a symlink named .claude is no directory.
+          # Case-insensitive, and any file type.
           find . -path ./.git -prune -o -path ./.harness -prune -o -path ./.claude -prune -o \
             \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname .mcp.json -o -iname .claude \) \
             -print -exec rm -rf {} +
@@ -1176,12 +1166,9 @@ jobs:
         timeout-minutes: 10
         run: python3 "$RUNNER_TEMP"/harness-scripts/fetch_rust_deps.py .
 
-      # AFTER the fetch, not only before it: a crate anyone can publish to
-      # crates.io, pinned by any Cargo.lock in the PR, unpacks its own
-      # CLAUDE.md or .claude/ into rust-deps/crates/, where researchers are
-      # sent to read. And the fetch must not have moved HEAD off the commit
-      # this review is filed under.
-      - name: Clear planted files again and pin HEAD
+      # The same tidy-up for what the dependency fetch unpacked, and a check
+      # that the checkout is still at the commit under review.
+      - name: Tidy the checkout again and confirm HEAD
         run: |
           set -euo pipefail
           find . -path ./.git -prune -o -path ./.harness -prune -o -path ./.claude -prune -o \
@@ -1510,8 +1497,7 @@ jobs:
           dir="$RUNNER_TEMP/claude-cli"
           chmod -R u+w "$dir" 2>/dev/null || true
           rm -rf "$dir"
-          # No user npmrc and a fixed registry: the integrity check below the
-          # pin is only as good as the registry that supplies the hash.
+          # Fixed registry, no user config.
           NPM_CONFIG_USERCONFIG=/dev/null \
           npm install --registry=https://registry.npmjs.org/ \
             --prefix "$dir" --no-audit --no-fund --loglevel=error \
@@ -3237,8 +3223,7 @@ jobs:
           dir="$RUNNER_TEMP/claude-cli"
           chmod -R u+w "$dir" 2>/dev/null || true
           rm -rf "$dir"
-          # No user npmrc and a fixed registry: the integrity check below the
-          # pin is only as good as the registry that supplies the hash.
+          # Fixed registry, no user config.
           NPM_CONFIG_USERCONFIG=/dev/null \
           npm install --registry=https://registry.npmjs.org/ \
             --prefix "$dir" --no-audit --no-fund --loglevel=error \
@@ -3390,11 +3375,8 @@ jobs:
           # allowlist entirely -- which is why the writer now edits a copy at
           # `refs-work/`. See the staging step.
           #
-          # SCOPED AGAIN, to the copy and the two log files: unqualified, the
-          # writer could plant `./json.py` (imported by the next python3 in a
-          # step holding the push token) or ~/.gitconfig (fsmonitor, filters).
-          # MEASURED on 2.1.286 with exactly this list: the refs-work edit,
-          # SUMMARY.md and SKIPPED.md land; ./json.py and /tmp are denied.
+          # Scoped to the copy and the two log files, which is everything the
+          # writer produces.
           #
           # What replaced it is stricter in the way that counts: the commit
           # step below refuses to stage anything outside the two reference

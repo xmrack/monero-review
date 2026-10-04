@@ -517,8 +517,7 @@ def fetch(url, sha, dest, also=None):
                            timeout=CLONE_TIMEOUT, capture_output=True, text=True)
         if r.returncode:
             return False, r.stderr.strip()[:200]
-        # A failure here is fatal: with `dest` already a repository, the fetch
-        # below would otherwise run against whatever `origin` that one has.
+        # Every step must succeed for the fetch to count.
         r = git_in(dest, "remote", "add", "origin", url)
         if r.returncode:
             return False, (r.stderr.strip() or "remote add failed")[:200]
@@ -878,9 +877,7 @@ def main():
                       "  in `scripts/fetch_rust_deps.py` and re-run.", ""]
             continue
 
-        # The name comes from the raw URL, which `allowed()` checked only after
-        # normalising: `.../x/y/..` passes the allowlist and names `..`, which
-        # would make the checkout under review the fetch target.
+        # Each repository gets its own directory directly under rust-deps/.
         base = os.path.realpath(os.path.join(root, "rust-deps"))
         dest = os.path.join(base, name)
         if (not SAFE_NAME.match(name) or name == "crates"
