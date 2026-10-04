@@ -70,10 +70,8 @@ PRE_EXISTING = re.compile(
     re.IGNORECASE,
 )
 # The two provenances that make a finding this change's own, and so publishable
-# here. A surviving CRITICAL or HIGH must say one of them; pre-existing, a
-# paraphrase, an omission or an injected instruction to drop the phrase all
-# route private. Matching what makes it safe, not what makes it dangerous, is
-# what makes this fail closed.
+# here. A surviving CRITICAL or HIGH that does not state one of them routes
+# private, so the default for an unclear report is the private repository.
 INTRODUCED = re.compile(
     r"\*\*Where it came from\.?\*\*[\s*_]*"
     r"(introduced\s+by\s+this\s+(change|pull\s+request)|newly\s+reachable)",

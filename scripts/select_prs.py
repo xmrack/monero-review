@@ -489,10 +489,8 @@ def main():
              and p["updated_at"] > cutoff
              and pending(p)]
     queue.sort(key=lambda p: p["updated_at"], reverse=True)
-    # A first review always goes ahead of a re-review. `updated_at` is moved
-    # by anyone's comment, and a pull request pushed just past each settle
-    # window would otherwise take a slot every few ticks while the backlog
-    # behind it waits. Stable, so the order inside each group is unchanged.
+    # A first review always goes ahead of a re-review. Stable, so the order
+    # inside each group is unchanged.
     queue.sort(key=lambda p: p["number"] in reviewed_before)
     scope = f"updated since {cutoff}" if cutoff else "of any age"
     on = f" targeting {BASE_BRANCH}" if BASE_BRANCH else ""
