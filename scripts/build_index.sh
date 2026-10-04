@@ -30,11 +30,13 @@ if [ -z "$dirs" ]; then
   exit 0
 fi
 
+# One plain path per line: cscope and ctags read these lists line by line and
+# split on whitespace.
 # shellcheck disable=SC2086  # word splitting on $dirs is intended
-find $dirs -type f \
+find $dirs -type f ! -path '*[[:cntrl:][:space:]]*' \
   \( -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' \
   -o -name '*.h'  -o -name '*.hpp' -o -name '*.inl' \) \
-  > cscope.files 2>/dev/null || true
+  2>/dev/null | grep -E '^(src|contrib)/[A-Za-z0-9_./+-]+$' > cscope.files || true
 
 count=$(wc -l < cscope.files | tr -d ' ')
 if [ "$count" = "0" ]; then
@@ -71,10 +73,10 @@ fi
 # harness noise, which is why they were excluded in the first place. Two
 # indexes gets both: clean caller lists by default, test usage on request.
 if [ -d tests ] && have cscope; then
-  find tests -type f \
+  find tests -type f ! -path '*[[:cntrl:][:space:]]*' \
     \( -name '*.c'  -o -name '*.cc'  -o -name '*.cpp' \
     -o -name '*.h'  -o -name '*.hpp' -o -name '*.inl' \) \
-    > cscope.tests.files 2>/dev/null || true
+    2>/dev/null | grep -E '^tests/[A-Za-z0-9_./+-]+$' > cscope.tests.files || true
   tcount=$(wc -l < cscope.tests.files | tr -d ' ')
   if [ "$tcount" != "0" ] && cscope -b -q -k -i cscope.tests.files -f tests.out 2>/dev/null; then
     echo "index: tests database built (${tcount} files)" >&2

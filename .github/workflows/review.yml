@@ -732,6 +732,11 @@ jobs:
             find . -path ./.git -prune -o -type l -exec rm -f {} +
           fi
 
+          # Names this job writes at the top level start out absent.
+          rm -rf diffstat.txt differr.txt PR_*.md TOOLING.md RUST_DEPS.md \
+            rust-deps deps-include tags cscope.* tests.out review.md \
+            workflow-updates.json exec-pass1.json
+
           # Fixed 12 chars, not --short: `select` compares against this prefix
           # and git's abbreviation length is not stable across repo states.
           echo "HEAD_SHA=$(git rev-parse HEAD | cut -c1-12)" >> "$GITHUB_ENV"
@@ -1019,6 +1024,7 @@ jobs:
             echo "submodules: unchanged by this PR"
             exit 0
           fi
+          strip='s/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g'
           {
             echo "This pull request changes one or more git submodules."
             echo
@@ -1031,13 +1037,11 @@ jobs:
             echo "----- BEGIN AUTHOR-SUPPLIED TEXT -----"
             git diff origin/base...HEAD --submodule=log 2>/dev/null |
               awk '/^Submodule /{p=1} /^diff --git/{p=0} p' |
-              head -120 |
-              sed 's/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g'
+              head -120 | sed "$strip"
             echo
             echo "## Configured URLs"
             git config -f .gitmodules --get-regexp '^submodule\..*\.url$' 2>/dev/null |
-              head -20 || echo "(no .gitmodules)"
-            echo "----- END AUTHOR-SUPPLIED TEXT -----"
+              head -20 | sed "$strip" || echo "(no .gitmodules)"
 
             # The submodule's own history, read HERE because no agent can.
             # MEASURED on the first deep run: five of its eight permission
@@ -1056,12 +1060,13 @@ jobs:
               echo
               echo "### $sub"
               echo '```'
-              git -C "$sub" log --oneline -40 2>/dev/null || echo "(history unavailable)"
+              git -C "$sub" log --oneline -40 2>/dev/null | sed "$strip" || echo "(history unavailable)"
               echo
               echo "refs:"
-              git -C "$sub" for-each-ref --format='  %(refname:short) %(objectname:short)' 2>/dev/null | head -20
+              git -C "$sub" for-each-ref --format='  %(refname:short) %(objectname:short)' 2>/dev/null | head -20 | sed "$strip"
               echo '```'
             done
+            echo "----- END AUTHOR-SUPPLIED TEXT -----"
           } > PR_SUBMODULES.md
           echo "submodules: $(wc -l < PR_SUBMODULES.md) lines written"
 
@@ -1106,7 +1111,7 @@ jobs:
           rm -f review.md workflow-updates.json exec-pass1.json
           # Case-insensitive, and any file type.
           find . -path ./.git -prune -o -path ./.harness -prune -o -path ./.claude -prune -o \
-            \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname .mcp.json -o -iname .claude \) \
+            \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude \) \
             -print -exec rm -rf {} +
 
       # The scripts this job runs are staged OUTSIDE the workspace, and every
@@ -1172,7 +1177,7 @@ jobs:
         run: |
           set -euo pipefail
           find . -path ./.git -prune -o -path ./.harness -prune -o -path ./.claude -prune -o \
-            \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
+            \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
             -print -exec rm -rf {} +
           if [ "$(git rev-parse HEAD)" != "$HEAD_SHA_FULL" ]; then
             echo "::error::HEAD moved off $HEAD_SHA_FULL during setup; refusing to review a different commit"
@@ -3726,7 +3731,7 @@ jobs:
           #
           # The ledger is no longer in this list, because it is no longer in
           # this branch. Nothing but a reference edit may be committed here.
-          outside=$(git diff --cached --name-only | grep -vE \
+          outside=$(git diff --cached --no-renames --name-only | grep -vE \
             '^\.claude/references/monero/' \
             || true)
           if [ -n "$outside" ]; then
@@ -3742,7 +3747,7 @@ jobs:
           # so anything that goes wrong in that round trip -- a mapping that
           # drops a file, a writer that empties one -- arrives here looking
           # like a legitimate change to a file under the prefix.
-          gone=$(git diff --cached --name-only --diff-filter=D || true)
+          gone=$(git diff --cached --no-renames --name-only --diff-filter=D || true)
           if [ -n "$gone" ]; then
             echo "::error::the staged change deletes reference files; refusing to commit or push"
             echo "$gone" | sed 's/^/  /' >&2
