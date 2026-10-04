@@ -138,7 +138,7 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json"
 tidy_checkout() {
   find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
-    \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
+    \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
     -exec rm -rf {} + 2>/dev/null || true
 }
 tidy_checkout

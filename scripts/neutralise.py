@@ -43,9 +43,9 @@ def neutralise(text, upstream):
 
 
 LINK_HOSTS = ("github.com", "www.github.com")
-CODE = re.compile(r"(^```.*?^```[^\n]*$|^~~~.*?^~~~[^\n]*$|`+[^`\n]*?`+)",
+CODE = re.compile(r"(^```.*?^```[^\n]*$|^~~~.*?^~~~[^\n]*$|(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\2(?!`))",
                   re.MULTILINE | re.DOTALL)
-MENTION = re.compile(r"(?<![\w`/.@-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?)\b")
+MENTION = re.compile(r"(?<![\w/.@-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?)\b")
 IMAGE = re.compile(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
 MDLINK = re.compile(r"(?<!!)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
 AUTOLINK = re.compile(r"<(https?://[^>\s]+)>")
@@ -86,7 +86,9 @@ def defang(text):
         seg = BARE.sub(n(lambda m: m.group(0) if not _offsite(
             m.group(1) if "://" in m.group(1) else "//" + m.group(1))
             else f"`{m.group(1)}`"), seg)
-        seg = MENTION.sub(n(lambda m: f"`@{m.group(1)}`"), seg)
+        seg = MENTION.sub(n(lambda m: f"<code>@{m.group(1)}</code>"
+                            if "`" in seg[max(m.start() - 1, 0):m.end() + 1]
+                            else f"`@{m.group(1)}`"), seg)
         return seg
 
     for m in CODE.finditer(text):

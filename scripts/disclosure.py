@@ -52,13 +52,13 @@ import sys
 
 REFUTED_SECTION = re.compile(r"^##\s+Refuted\b", re.MULTILINE | re.IGNORECASE)
 
-# The shapes labels.py reads, but looser on purpose. There a paraphrase costs a
-# label; here it publishes a live zero-day. So bold or stray spacing around the
-# bracket still counts as a finding heading.
+# The shapes labels.py reads, but looser on purpose: any heading level, bold,
+# stray spacing, and a severity with or without the brackets counts.
 HEADING = re.compile(
-    r"^###\s*\**\s*\[\s*(CRITICAL|HIGH|MEDIUM|LOW)\b([^\]]*)\]",
+    r"^#{2,6}[ \t]*[*_\[( \t]*(CRITICAL|HIGH|MEDIUM|LOW)\b(?!-)([^\n]*)",
     re.MULTILINE | re.IGNORECASE,
 )
+SECTION = re.compile(r"^##(?!#)[ \t]*(.*)", re.MULTILINE)
 # Where a finding's block ends: the next finding, or the next section.
 BLOCK_END = re.compile(r"^##", re.MULTILINE)
 # Anywhere in the finding's block, not only on an exact locator line: a
@@ -88,13 +88,15 @@ KNOWN_REASONS = ("security-fix", "live-code")
 def severe_pre_existing(text):
     """True when a surviving CRITICAL or HIGH finding predates the PR, or does
     not say that it does not."""
-    cut = REFUTED_SECTION.search(text)
-    if cut:
-        text = text[:cut.start()]
     for match in HEADING.finditer(text):
         if match.group(1).upper() not in ("CRITICAL", "HIGH"):
             continue
         if re.search(r"refuted", match.group(2) or "", re.IGNORECASE):
+            continue
+        section = None
+        for section in SECTION.finditer(text, 0, match.start()):
+            pass
+        if section and REFUTED_SECTION.match(section.group(0)):
             continue
         end = BLOCK_END.search(text, match.end())
         block = text[match.end():end.start() if end else len(text)]
