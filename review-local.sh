@@ -59,6 +59,15 @@ esac
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number" >&2; exit 1; }
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+# The checkout is a stranger's tree: Python must not import from it, or from
+# ~/.local, when this script runs its helpers there.
+export PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1
+# The review's shell runs in Claude Code's bubblewrap sandbox, which needs
+# both of these and refuses every Bash call without them.
+for t in bwrap socat; do
+  command -v "$t" >/dev/null || { echo "!! $t is required: sudo apt install bubblewrap socat" >&2; exit 1; }
+done
 CACHE=${CACHE:-$HOME/.cache/monero-review/src}
 
 # Blobless partial clone, cached between runs so only the first is slow.
@@ -127,11 +136,15 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # What the pull request could plant, as in the workflow's `Clear files the
 # pull request could plant`: project instructions Claude Code would load as
 # trusted, and the names this script itself writes and reads.
+# Symlinks too: every file this script writes into the checkout follows one,
+# and Monero has none. Case-insensitive, and no -type on .claude, as in CI.
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json"
-find "$CACHE" -path "$CACHE/.git" -prune -o \
-  \( -name CLAUDE.md -o -name CLAUDE.local.md -o -name .mcp.json \) -exec rm -f {} + 2>/dev/null || true
-find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
-  -type d -name .claude -exec rm -rf {} + 2>/dev/null || true
+clear_planted() {
+  find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
+    \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
+    -exec rm -rf {} + 2>/dev/null || true
+}
+clear_planted
 
 # Same untrusted-input markers the workflow writes: the title and body are
 # author-supplied text entering the model's context, and the skills point at
@@ -250,6 +263,13 @@ done
 # across pull requests, and a stale pin read as this PR's would be a wrong
 # citation with nothing to reveal it.
 python3 "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
+# Again after the fetch: a crates.io crate can carry its own CLAUDE.md. And the
+# fetch must not have moved HEAD off the commit this review is about.
+clear_planted
+if [ "$(git -C "$CACHE" rev-parse HEAD)" != "$SHA_FULL" ]; then
+  echo "!! HEAD moved off $SHA_FULL during setup; refusing to review a different commit" >&2
+  exit 1
+fi
 
 # Which optional tools this machine has. Tools, not requirements: the skills
 # read this and fall back rather than assuming. Install what you want with
@@ -306,7 +326,7 @@ python3 "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
 # slow it down.
 bash "$HERE/scripts/build_index.sh" "$CACHE"
 
-TOOLS="Read,Grep,Glob,Write,Edit,Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
+TOOLS="Read,Grep,Glob,Write(./**),Edit(./**),Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
 
 # The two FLEET tiers need these on top, and nothing else does. Kept identical
 # to FLEET_EXTRA_TOOLS in .github/workflows/review.yml -- four separate
@@ -361,14 +381,26 @@ claude update >/dev/null 2>&1 || echo "!! 'claude update' failed; reviewing with
 echo "==> Claude Code $(claude --version 2>/dev/null | awk '{print $1}')"
 
 rm -f "$CACHE/review.md" "$CACHE/exec.json"
+DENY="Read(//proc/**),Edit(//proc/**),Edit(.git/**),Edit(**/.git/**),Write(.git/**),Write(**/.git/**)"
+DENY="$DENY,Read(~/.ssh/**),Read(~/.gnupg/**),Read(~/.config/**),Read(~/.claude/**),Read(~/.aws/**),Read(~/.netrc),Read(~/.git-credentials),Read(~/.npmrc)"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
 # The Lead ends its turn after dispatching the fleet and is woken by the
 # fleet's completion notification. Print mode kills background work after a
 # ten-minute ceiling by default, which would abandon every fleet; 0 waits.
-( cd "$CACHE" && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 claude -p "$PROMPT" \
+#
+# The same containment as CI, because this runs on YOUR machine with your
+# keys: the allowlist alone does not make Bash read-only (awk system(), find
+# -exec, sed e, git -c alias), so every shell runs in the bubblewrap sandbox
+# with secrets scrubbed, the file tools stay in the checkout, your own
+# settings (a bypassPermissions default, broad allow rules) are not loaded,
+# and the reads CI denies are denied here too, plus your credentials.
+( cd "$CACHE" && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
+    CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$PROMPT" \
     --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
-    --output-format json --allowedTools "$TOOLS" > exec.json )
+    --permission-mode default --setting-sources project \
+    --output-format json --allowedTools "$TOOLS" \
+    --disallowedTools "$DENY" > exec.json )
 
 if [ ! -s "$CACHE/review.md" ]; then
   echo "!! no review.md produced" >&2

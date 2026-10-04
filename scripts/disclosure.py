@@ -69,6 +69,16 @@ PRE_EXISTING = re.compile(
     r"|\*\*Where it came from\.?\*\*\s*\**\s*pre-?existing",
     re.IGNORECASE,
 )
+# The two provenances that make a finding this change's own, and so publishable
+# here. A surviving CRITICAL or HIGH must say one of them; pre-existing, a
+# paraphrase, an omission or an injected instruction to drop the phrase all
+# route private. Matching what makes it safe, not what makes it dangerous, is
+# what makes this fail closed.
+INTRODUCED = re.compile(
+    r"\*\*Where it came from\.?\*\*[\s*_]*"
+    r"(introduced\s+by\s+this\s+(change|pull\s+request)|newly\s+reachable)",
+    re.IGNORECASE,
+)
 # Searched over the WHOLE file: the marker sits at the foot, below
 # `## Refuted`, beside the other stamps. Lazy and across lines, so neither a
 # line break nor a `>` inside the comment hides it.
@@ -78,7 +88,8 @@ KNOWN_REASONS = ("security-fix", "live-code")
 
 
 def severe_pre_existing(text):
-    """True when a surviving CRITICAL or HIGH finding predates the PR."""
+    """True when a surviving CRITICAL or HIGH finding predates the PR, or does
+    not say that it does not."""
     cut = REFUTED_SECTION.search(text)
     if cut:
         text = text[:cut.start()]
@@ -89,7 +100,7 @@ def severe_pre_existing(text):
             continue
         end = BLOCK_END.search(text, match.end())
         block = text[match.end():end.start() if end else len(text)]
-        if PRE_EXISTING.search(block):
+        if PRE_EXISTING.search(block) or not INTRODUCED.search(block):
             return True
     return False
 

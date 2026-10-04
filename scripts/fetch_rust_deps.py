@@ -517,7 +517,11 @@ def fetch(url, sha, dest, also=None):
                            timeout=CLONE_TIMEOUT, capture_output=True, text=True)
         if r.returncode:
             return False, r.stderr.strip()[:200]
-        git_in(dest, "remote", "add", "origin", url)
+        # A failure here is fatal: with `dest` already a repository, the fetch
+        # below would otherwise run against whatever `origin` that one has.
+        r = git_in(dest, "remote", "add", "origin", url)
+        if r.returncode:
+            return False, (r.stderr.strip() or "remote add failed")[:200]
         # By SHA, so what lands is exactly what the lockfile pins and nothing
         # else -- no branch tip, no tags, no history to be confused by.
         r = git_in(dest, "fetch", "--depth", "1", "--no-tags", "origin", sha)
@@ -874,7 +878,19 @@ def main():
                       "  in `scripts/fetch_rust_deps.py` and re-run.", ""]
             continue
 
-        dest = os.path.join(root, "rust-deps", name)
+        # The name comes from the raw URL, which `allowed()` checked only after
+        # normalising: `.../x/y/..` passes the allowlist and names `..`, which
+        # would make the checkout under review the fetch target.
+        base = os.path.realpath(os.path.join(root, "rust-deps"))
+        dest = os.path.join(base, name)
+        if (not SAFE_NAME.match(name) or name == "crates"
+                or os.path.dirname(os.path.realpath(dest)) != base):
+            refused += 1
+            lines += [f"## {name!r}: NOT FETCHED", "",
+                      f"- URL: `{url}`",
+                      "- **Why not:** the repository name it gives is not a safe",
+                      "  directory name. Report this as not covered.", ""]
+            continue
         prev = base_revs.get(url)
         bumped = bool(prev) and prev != sha
         good, detail = fetch(url, sha, dest, also=prev if bumped else None)
