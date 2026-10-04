@@ -52,10 +52,10 @@ import sys
 
 REFUTED_SECTION = re.compile(r"^##\s+Refuted\b", re.MULTILINE | re.IGNORECASE)
 
-# The shapes labels.py reads, but looser on purpose: any heading level, bold,
-# stray spacing, and a severity with or without the brackets counts.
+# The shapes labels.py reads, but looser on purpose: any heading whose first
+# severity word is the finding's severity, wherever on the line it sits.
 HEADING = re.compile(
-    r"^#{2,6}[ \t]*[*_\[( \t]*(CRITICAL|HIGH|MEDIUM|LOW)\b(?!-)([^\n]*)",
+    r"^#{2,6}[^\n]*?\b(CRITICAL|HIGH|MEDIUM|LOW)\b(?!-level)([^\n]*)",
     re.MULTILINE | re.IGNORECASE,
 )
 SECTION = re.compile(r"^##(?!#)[ \t]*(.*)", re.MULTILINE)
