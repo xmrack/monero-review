@@ -93,8 +93,14 @@ request line and a 100000-byte header block.
 
 **Traps.** The connection filter (`is_remote_host_allowed`) and connection
 limit (`is_host_limit`) are virtuals called from
-`connection<T>::start_internal` (`abstract_tcp_server2.inl`) before any bytes
-are read; the daemon implements both in `node_server`. The RPC server's limit
+`connection<T>::start_internal` (`abstract_tcp_server2.inl`); the limit only
+when `is_income` is true (`if (is_income && limit && ...)`). The filter runs
+before any bytes reach `handle_recv`, but not always before bytes are read:
+for the I2P SAM zone `net::sam::client` reads peer bytes before
+`start_internal` runs and passes them in as `initial_data`, and the SAM
+inbound handler lambda in `node_server::init` (`src/p2p/net_node.inl`) calls
+both checks itself before `add_connection(..., initial_data, true)`. The
+daemon implements both in `node_server`. The RPC server's limit
 is `http_server_impl_base::is_host_limit`; it has no filter of its own —
 `core_rpc_server::init` installs the `node_server`
 (`set_connection_filter(&m_p2p)`). Any HTTP 500 sets `m_want_close`, so a handler that throws also kills the connection.
@@ -499,7 +505,11 @@ template on the payload handler; `net_node.inl` is emitted from
 `src/rpc/instantiations.cpp`.
 
 **Zones.** Public / Tor / I2P, each with its own `boosted_tcp_server`,
-peerlist, peer id and connect function. **All non-public zones borrow the
+peerlist, peer id and connect function. Only the public zone gets a random
+peer id: the `config_t` constructor (`src/p2p/net_node.h`) initialises
+`m_peer_id(1)` and `node_server::init_config` assigns `crypto::rand` only to
+`public_zone.m_config.m_peer_id` (`grep -n 'm_peer_id\s*=' src/p2p/net_node.inl`),
+so every Tor and I2P node presents the same id. **All non-public zones borrow the
 public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 `COMMAND_TIMED_SYNC` and `NOTIFY_NEW_TRANSACTIONS` are allowed
 (`is_filtered_command`).
@@ -523,8 +533,12 @@ never trusted — `sanitize_peerlist` zeroes it.
 - **Most of `peerlist_manager` lives in the header**, not the `.cpp`.
 - `get_peerlist` exists three times with three different meanings, one of
   which *appends*.
-- `m_network_zones.at(zone)` throws; `m_network_zones[zone]` **inserts**, and
-  inserting after configuration invalidates held references.
+- `m_network_zones.at(zone)` throws; `m_network_zones[zone]` **inserts**. It
+  is a `std::map` (`src/p2p/net_node.h`, see the comment above it about
+  constant key/value pointers), so insertion does not invalidate held
+  references — `node_server::add_zone` uses `emplace_hint` and keeps the
+  reference it got from `m_network_zones[public_]`. The hazard is that
+  `operator[]` silently creates a zone with no `m_connect` and no notifier.
 - **Ping connections are real connections** that must not be counted;
   `is_ping` marks them.
 - `get_random_index_with_fixed_probability` is deliberately **not uniform** —
