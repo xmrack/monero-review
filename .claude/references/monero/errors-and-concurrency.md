@@ -233,6 +233,20 @@ So "this runs on a worker thread" is never guaranteed, which matters for any
 reasoning about reentrancy or thread-local state. `create` spawns `max - 1`
 threads because the submitting thread is expected to contribute.
 
+Two more that bite callers (`grep -n "is_leaf\|~waiter" src/common/threadpool.cpp`):
+
+- **`submit` throws when called from inside a leaf job.** `threadpool::run`
+  sets the thread-local `is_leaf = e.leaf` around each job, and
+  `threadpool::submit` opens with
+  `CHECK_AND_ASSERT_THROW_MES(!is_leaf, "A leaf routine is using a thread pool")`.
+  Code that submits only when more than one thread is available therefore
+  behaves differently by thread count when reached from a leaf job.
+- **`threadpool::waiter::~waiter` calls `wait()`.** Locals are destroyed in
+  reverse order, so on an early return or throw after a `submit`, any local a
+  job captures by reference that is declared *after* the waiter is freed while
+  queued jobs may still run. Captured state must be declared before the
+  waiter.
+
 ## Thread affinity that is enforced
 
 `BlockchainLMDB` records `m_writer = boost::this_thread::get_id()` in
