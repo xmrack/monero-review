@@ -416,11 +416,16 @@ and an atomic counter.
   back as all-zero there, which every consumer must treat as "absent". Adding
   a field is a DB migration only when it changes the size or moves an existing
   offset — and moving `valid_input_verification_id` trips the `offsetof`
-  assert at compile time, which is the point of it. The writers that zero the
-  reserve are the two branches of `tx_memory_pool::add_tx`
-  (`src/cryptonote_core/tx_pool.cpp`) that build a fresh `meta`
+  assert at compile time, which is the point of it. In
+  `tx_memory_pool::add_tx` (`src/cryptonote_core/tx_pool.cpp`) only the
+  `kept_by_block` failed-inputs branch builds a fresh `meta`
   (`meta.bf_padding = 0; memset(meta.padding, 0, sizeof(meta.padding));`); a
   new write path that forgets that pair persists stack garbage into the DB.
+  The other branch starts from the stored record —
+  `const bool existing_tx = m_blockchain.get_txpool_tx_meta(id, meta);` — and
+  rewrites selected fields under `meta.upgrade_relay_method(tx_relay) || !existing_tx`;
+  as of monero-project/monero PR 11499, `double_spend_seen`, `kept_by_block`
+  and `do_not_relay` carry over from the DB record there.
 - The table schema is **duplicated** in
   `src/blockchain_utilities/blockchain_prune.cpp`; `open()`'s comment says to
   change both.
