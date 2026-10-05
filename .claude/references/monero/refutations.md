@@ -305,6 +305,17 @@ entry point either refuses to run unless the daemon is trusted or clears
   simplewallet and `wallet_api`, which runs with any daemon but passes
   `is_trusted_daemon()` as `check_spent`.
 
+The head of monero-project/monero#9464 adds two more entry points, both
+guarded: `WalletImpl::importKeyImagesFromStr` refuses without a trusted
+daemon, and the new overload
+`WalletImpl::importKeyImages(signed_key_images, offset, spent, unspent, check_spent)`
+refuses when `check_spent` is set and the daemon is untrusted
+(`grep -n "trustedDaemon()" src/wallet/api/wallet.cpp`). On that head the
+file-based `wallet2::import_key_images(filename, ...)` delegates to
+`wallet2::import_key_images_from_str`
+(`grep -n "import_key_images_from_str" src/wallet/wallet2.cpp`), so the RPCs
+behind `check_spent` are reached through the latter.
+
 And `get_rpc_status` (`src/rpc/core_rpc_server_commands_defs.h`) returns a
 trusted daemon's status unchanged, so routing those sites through it changes
 nothing. Re-check these four on the head you are reviewing; a new entry point
