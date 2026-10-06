@@ -279,6 +279,15 @@ control. The daemon is untrusted and the keys are in the process.
   funds from the wallet's view silently.
 - `m_max_reorg_depth` (`src/wallet/wallet2.h`) is a **wallet** bound. The
   daemon has no maximum reorg depth at all.
+- **"Synced" means the node stopped advancing, not that the wallet reached
+  the node's top.** `wallet2::refresh` ends its loop when a `/getblocks.bin`
+  reply's start height does not move past the previous one
+  (`if(!first && blocks_start_height == next_blocks_start_height)`); it never
+  compares against `current_height`. `wallet2::pull_and_parse_next_blocks`
+  sets `last` from `current_height` but uses it only to stop prefetching. A
+  node that answers with just the common block therefore ends refresh
+  successfully below its own top, and nothing trims a wallet tail longer
+  than the node's chain (`src/wallet/wallet2.cpp`).
 
 ---
 
