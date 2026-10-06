@@ -110,8 +110,16 @@ serializer for several of the same types.
 
 > **The multi-serializer trap, concretely.** `rct::rctSigBase` has a
 > `BEGIN_SERIALIZE_OBJECT()` block in `rctTypes.h` **and** the member template
-> `serialize_rctsig_base`. The consensus path uses only the latter. A `FIELD()`
-> added to the former changes nothing on the wire.
+> `serialize_rctsig_base`. The consensus path uses only the latter, so a
+> `FIELD()` added to the former leaves the consensus wire alone — but **not
+> every wire**. `rct::rctSig`'s own `BEGIN_SERIALIZE_OBJECT` in `rctTypes.h`
+> (`FIELDS((rctSigBase&)*this)`, `FIELD(p)`) runs the object blocks of
+> `rctSigBase` and `rctSigPrunable`, and `struct multisig_sig` in
+> `src/wallet/wallet2.h` serializes one with `FIELD(sigs)`. `wallet2::save_multisig_tx`
+> and `wallet2::parse_multisig_tx_from_str` (`src/wallet/wallet2.cpp`) push
+> the `multisig_tx_set` through `binary_archive`, so a `FIELD()` added there
+> changes the bytes co-signers exchange and wants a bump of `multisig_sig`'s
+> `VERSION_FIELD`.
 > Likewise `transfer_details` carries both a `BEGIN_SERIALIZE_OBJECT_FN` block
 > (in `src/wallet/wallet2_basic/wallet2_serialization.h`, not next to the type) and a Boost hook.
 > **Before judging a change to any type that crosses a wire or a disk,

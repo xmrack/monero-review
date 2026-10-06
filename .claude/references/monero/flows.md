@@ -93,7 +93,14 @@ attacker-exposed sequence in the daemon.
     `KEY_IMAGE_EXISTS` on conflict.
 13. **`cleanup_handle_incoming_blocks` → `batch_stop` or `batch_abort`.**
     Committed only if `m_batch_success` is still true, and only by the thread
-    that opened the batch.
+    that opened the batch. Only the `add_block` catch blocks in
+    `handle_block_to_main_chain` clear it
+    (`grep -n 'm_batch_success = false' src/cryptonote_core/blockchain.cpp`):
+    an exception from a pop during a reorg, rethrown by
+    `Blockchain::pop_block_from_blockchain`, is caught in
+    `Blockchain::add_new_block`, which does not clear it, and
+    `BlockchainLMDB::block_wtxn_abort` is a no-op inside a batch — so the
+    partial pop is committed.
 
 **Trust boundaries crossed:** peer → process (steps 1–8, twice: framing then
 payload); the binary's own embedded hash list → process (step 11, see the
@@ -174,7 +181,10 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first
     (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, non-zero
     `unlock_time`, key-image conflicts), then `ver_non_input_consensus` and
-    `Blockchain::check_tx_inputs`.
+    `Blockchain::check_tx_inputs`. `ver_non_input_consensus` runs only when
+    the caller's `version` differs from its `nic_verified_hf_version`
+    argument (`version != nic_verified_hf_version` in `add_tx`): a caller that
+    passes the same value for both vouches for the non-input rules itself.
 12. **`levin::notify::send_txs` → Dandelion++** —
     `src/cryptonote_protocol/levin_notify.cpp`. Stem or fluff by epoch.
 13. **`tx_memory_pool::fill_block_template`** — walks
@@ -464,7 +474,12 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 - `rollback_blockchain_switching` is misnamed and the code says so: the pops
   have already happened; it only re-applies.
 - `handle_alternative_block` inserts the alt block's transactions into the
-  **real mempool** before deciding whether a reorg happens.
+  **real mempool** before deciding whether a reorg happens. It calls
+  `m_tx_pool.add_tx(tx, tvc, relay_method::block, /*relayed=*/true, hf_version, hf_version)`
+  with the alt block's ideal version as both arguments, so the pool skips
+  `ver_non_input_consensus`: those txs were checked only at the alt block's
+  version, and nothing re-runs the non-input rules on pool txs at template or
+  block time (`git grep -n ver_non_input_consensus -- src/cryptonote_core`).
 - Sync is refused entirely on non-public zones: `process_payload_sync_data`
   returns early for Tor and I2P peers.
 

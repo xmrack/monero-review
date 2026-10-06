@@ -311,9 +311,14 @@ consumes).
 **Invariants.**
 
 - `hf_version` means different things on the two paths:
-  `handle_block_to_main_chain` uses `get_current_hard_fork_version()` (state at
-  the tip); `handle_alternative_block` uses `get_ideal_version(block_height)`.
-  Mixing them up changes verdicts.
+  `handle_block_to_main_chain` uses `get_current_hard_fork_version()`;
+  `handle_alternative_block` uses `get_ideal_version(block_height)`.
+  Mixing them up changes verdicts. `get_current_hard_fork_version()` is
+  **not** the tip block's version: it is the version the *next* block must
+  carry, i.e. the block being validated. `HardFork::add`
+  (`src/cryptonote_basic/hardfork.cpp`) advances `current_fork_index` with
+  `get_voted_fork_index(height + 1)` (and `HardFork::on_block_popped` rewinds
+  it), so the first block of a fork is already validated under the new version.
 - `update_next_cumulative_weight_limit()` must run after every height change
   and every fork transition — `m_current_block_cumul_weight_median` is what
   `validate_miner_transaction` bounds the reward against.
@@ -334,9 +339,18 @@ consumes).
   does not reorg, first seen keeps the chain.
 - **`handle_alternative_block` returns `true` for an orphan** (setting
   `bvc.m_marked_as_orphaned`). Read `bvc`, not the return value.
-- **`handle_alternative_block` does not run `check_tx_inputs`.** Only
-  `ver_non_input_consensus`. Input validity is checked when the alt chain is
-  reapplied through the main-chain path.
+- **`handle_alternative_block` does not run `check_tx_inputs` against the alt
+  chain.** It runs `ver_non_input_consensus`; input validity on the alt chain
+  is checked when the alt chain is reapplied through the main-chain path. But
+  it does pool each supplement tx: `m_tx_pool.add_tx(tx, tvc, relay_method::block, ...)`
+  (`grep -n 'in pool supplement failed to enter main pool' src/cryptonote_core/blockchain.cpp`),
+  and `tx_memory_pool::add_tx` (`src/cryptonote_core/tx_pool.cpp`) runs
+  `Blockchain::check_tx_inputs` against the **main** chain, ignoring a failure
+  for `kept_by_block`. It passes the alt block's ideal version as
+  `nic_verified_hf_version`, so the pool's
+  `version != nic_verified_hf_version` condition skips
+  `ver_non_input_consensus`, and nothing re-runs non-input rules at the main
+  chain's version later — which can differ across a fork boundary.
 - **`fast_check`** (under `PER_BLOCK_CHECKPOINT`, on by default) skips the PoW
   hash, `ver_non_input_consensus` and per-tx `check_tx_inputs`. Any new
   consensus check placed in the non-fast branch is skipped during sync.
@@ -362,9 +376,17 @@ backend choice, so LMDB's behaviour is effectively consensus-relevant: an
 output index returned wrong is a chain split.
 
 **Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
-`migrate_4_5` ladder run from `open()`. 19 sub-databases are opened
-(`maxdbs` 32). The DUPFIXED tables use a dummy 8-byte all-zero key
-(`zerokval`), so the logical key is the first field of the *data*.
+`migrate_4_5` ladder run from `open()`. 19 sub-databases are opened on
+master `160e21504` (`maxdbs` 32); recount with
+`sed -n '/^void BlockchainLMDB::open/,/^}/p' src/blockchain_db/lmdb/db_lmdb.cpp | grep -c lmdb_db_open`.
+Every table is opened with `MDB_CREATE`, so a read-only open throws on a
+missing table; that is why the comment above the `LMDB_HF_STARTING_HEIGHTS`
+open skips it and `txs_prunable_tip` under `MDB_RDONLY`. Most DUPFIXED
+tables use a dummy 8-byte all-zero key (`zerokval`), so the logical key is
+the first field of the *data* — **but not all**: `output_amounts` is keyed
+by the real amount (`BlockchainLMDB::add_output` puts with `&val_amount`),
+and its data starts with `amount_index`. The schema comment above
+`LMDB_BLOCKS` in `db_lmdb.cpp` lists the tables that don't use a dummy key.
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
 `batch_commit` / `batch_stop` / `batch_abort` all re-check it. `do_resize`
@@ -423,7 +445,17 @@ and an atomic counter.
   new write path that forgets that pair persists stack garbage into the DB.
 - The table schema is **duplicated** in
   `src/blockchain_utilities/blockchain_prune.cpp`; `open()`'s comment says to
-  change both.
+  change both. A new table missing from the `copy_table` calls in that file's
+  `main()` is silently dropped from a pruned copy; the only backstop is
+  `MAX_SUPPORTED_DB_VERSION` in the same file, which makes the tool refuse a
+  source database whose version is higher — so it holds only if the new
+  table comes with a `VERSION` bump.
+- **A value pointer from `mdb_cursor_get` is valid only until the next write
+  in the transaction.** On a dirty DUPFIXED page a delete followed by a
+  rebalance shifts records (`mdb_rebalance`, `mdb_node_move` and the `LEAF2`
+  branch of `mdb_node_add` in `external/db_drivers/liblmdb/mdb.c`), so the old
+  pointer silently reads a neighbouring record. Copy fields out before any
+  cursor write; `BlockchainLMDB::remove_output` is the place to check.
 - `BlockchainDB::fixup()` will pop blocks back to height 202612 on a mainnet
   chain missing a specific key image.
 - `external/db_drivers/liblmdb` is vendored third-party code with its own
