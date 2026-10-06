@@ -362,9 +362,17 @@ backend choice, so LMDB's behaviour is effectively consensus-relevant: an
 output index returned wrong is a chain split.
 
 **Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
-`migrate_4_5` ladder run from `open()`. 19 sub-databases are opened
-(`maxdbs` 32). The DUPFIXED tables use a dummy 8-byte all-zero key
-(`zerokval`), so the logical key is the first field of the *data*.
+`migrate_4_5` ladder run from `open()`. Count the sub-databases it opens
+with `grep -c 'lmdb_db_open(txn, LMDB_' src/blockchain_db/lmdb/db_lmdb.cpp`
+(`maxdbs` 32: `grep -n mdb_env_set_maxdbs src/blockchain_db/lmdb/db_lmdb.cpp`).
+**Not every DUPFIXED table uses a dummy key.** `block_info`,
+`block_heights`, `tx_indices`, `output_txs` and `spent_keys` use a dummy
+8-byte all-zero key (`zerokval`), so the logical key is the first field of
+the *data*. `output_amounts` keys on the amount (`BlockchainLMDB::add_output`
+puts to `m_cur_output_amounts` with `&val_amount`; the schema comment above
+`LMDB_BLOCKS` says "The output_amounts table doesn't use a dummy key"), and
+`txs_prunable_hash` / `txs_prunable_tip` key on the tx id
+(`BlockchainLMDB::add_transaction_data` puts them with `&val_tx_id`).
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
 `batch_commit` / `batch_stop` / `batch_abort` all re-check it. `do_resize`
@@ -387,6 +395,18 @@ and an atomic counter.
   for `m_cursors->m_txc_blocks`; `CURSOR(x)` / `RCURSOR(x)` paste the name.
 - `TXN_POSTFIX_RDONLY()` is an **empty macro** — a missing call changes
   nothing.
+- **A new table must not be created on a read-only open.** Under
+  `DBF_RDONLY`, `BlockchainLMDB::open` runs a read-only txn but still passes
+  `MDB_CREATE`; for a table that does not exist yet, `mdb_dbi_open`
+  (`external/db_drivers/liblmdb/mdb.c`, its `MDB_TXN_RDONLY` branch) returns
+  `EACCES`. Every new table needs the `!(mdb_flags & MDB_RDONLY)` gate that
+  `txs_prunable_tip` has in `BlockchainLMDB::open`.
+- **Data from `mdb_cursor_get` is invalid after any write in the same txn.**
+  A delete on a dirty LEAF2 page can trigger `mdb_rebalance`, whose
+  `mdb_node_move` shifts a neighbouring record into the deleted slot (see
+  `mdb_rebalance`, `mdb_node_move` and `mdb_node_add` in
+  `external/db_drivers/liblmdb/mdb.c`). Copy the value out before writing;
+  compare `BlockchainLMDB::remove_output`.
 - **`block_rtxn_start()` silently returns the *write* transaction** when
   called on the writer thread with a write txn (e.g. a batch) open, so reads on that thread see
   uncommitted data.
