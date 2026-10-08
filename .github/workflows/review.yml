@@ -128,7 +128,7 @@ env:
   # WHERE A SECURITY-SENSITIVE REVIEW GOES INSTEAD OF HERE. This repository is
   # public, and so is every run log, step summary and artifact it produces. A
   # review goes to this private repository, and leaves nothing readable here,
-  # when scripts/disclosure.py routes it private: a CRITICAL or HIGH finding
+  # when scripts/disclosure.py routes it private: a CRITICAL, HIGH or MEDIUM finding
   # already in live code, or an obvious security patch by Monero developers,
   # which a public review would point attackers at before the release ships.
   #

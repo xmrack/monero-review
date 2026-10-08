@@ -22,7 +22,7 @@ workspace, and each consumer reads that file inside its own `run:`.
 
 A review goes private when any of these holds:
 
-  pre-existing  a CRITICAL or HIGH finding that survived the panel and is not
+  pre-existing  a CRITICAL, HIGH or MEDIUM finding that survived the panel and is not
                 this pull request's own. It is in code that is already live,
                 so publishing it is publishing a zero-day.
   security-fix  the review carries `<!-- disclosure reason=security-fix -->`:
@@ -30,12 +30,12 @@ A review goes private when any of these holds:
                 critical or high severity security bug -- a cryptographic flaw,
                 a consensus bug, a remote crash. A public review of the patch
                 points at the hole before the release ships.
-  fixed-on-master  a CRITICAL or HIGH entry under `## Fixed on master`. A fix
+  fixed-on-master  a CRITICAL, HIGH or MEDIUM entry under `## Fixed on master`. A fix
                 on master is not a fix in a release. Also any entry whose
                 severity cannot be read, and a coverage stamp counting more
                 fixed entries than the section holds.
   live-code     the review carries `<!-- disclosure reason=live-code -->`: a
-                CRITICAL or HIGH finding that this pull request did not add to
+                CRITICAL, HIGH or MEDIUM finding that this pull request did not add to
                 the surviving list as pre-existing, but which still affects
                 code that is live (the change is already merged, or the same
                 defect sits in the base branch or a release).
@@ -74,7 +74,7 @@ PRE_EXISTING = re.compile(
     re.IGNORECASE,
 )
 # The two provenances that make a finding this change's own, and so publishable
-# here. A surviving CRITICAL or HIGH that does not state one of them routes
+# here. A surviving SEVERE finding that does not state one of them routes
 # private, so the default for an unclear report is the private repository.
 INTRODUCED = re.compile(
     r"\*\*Where it came from\.?\*\*[\s*_]*"
@@ -87,6 +87,8 @@ INTRODUCED = re.compile(
 MARKER = re.compile(r"<!--\s*disclosure\b(.*?)-->", re.IGNORECASE | re.DOTALL)
 MARKER_REASON = re.compile(r"\breason\s*=\s*([a-z-]+)", re.IGNORECASE)
 KNOWN_REASONS = ("security-fix", "live-code")
+# Severities that route a live finding private.
+SEVERE = ("CRITICAL", "HIGH", "MEDIUM")
 # Entries a merged pull request's recheck found fixed on master. They sit below
 # `## Refuted`, so the finding-heading rule above never sees them. The same
 # three patterns are in labels.py; change them together.
@@ -102,10 +104,10 @@ STAMP_FIXED = re.compile(r"<!--\s*deep-scan\b[^>]*?\sfixedOnMaster=(\d+)", re.IG
 
 
 def severe_pre_existing(text):
-    """True when a surviving CRITICAL or HIGH finding predates the PR, or does
+    """True when a surviving SEVERE finding predates the PR, or does
     not say that it does not."""
     for match in HEADING.finditer(text):
-        if match.group(1).upper() not in ("CRITICAL", "HIGH"):
+        if match.group(1).upper() not in SEVERE:
             continue
         if re.search(r"refuted", match.group(2) or "", re.IGNORECASE):
             continue
@@ -122,7 +124,7 @@ def severe_pre_existing(text):
 
 
 def severe_fixed_on_master(text):
-    """True when a fixed-on-master entry is CRITICAL or HIGH, or cannot be read.
+    """True when a fixed-on-master entry is SEVERE, or cannot be read.
 
     Fails closed: an entry heading without `(was SEVERITY)`, or a stamp
     counting more entries than the section holds, counts as severe."""
@@ -132,7 +134,7 @@ def severe_fixed_on_master(text):
     heads = [h.group(1) for m in sections for h in FIXED_ENTRY.finditer(m.group(1))]
     for head in heads:
         was = FIXED_WAS.search(head)
-        if not was or was.group(1).upper() in ("CRITICAL", "HIGH"):
+        if not was or was.group(1).upper() in SEVERE:
             return True
     stamps = STAMP_FIXED.findall(text)
     return bool(stamps) and int(stamps[-1]) > len(heads)

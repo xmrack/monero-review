@@ -644,13 +644,13 @@ coverage stamp when there is no workflow-updates stamp:
   and you must be able to say from the code alone what it fixes. A title
   that says "security" is not enough, and neither is a title that hides it.
   Patches like these are often titled blandly on purpose.
-- `reason=live-code`: a surviving `CRITICAL` or `HIGH` finding that is this
+- `reason=live-code`: a surviving `CRITICAL`, `HIGH` or `MEDIUM` finding that is this
   pull request's own, but still affects code that is live. Examples: the
   change is already merged, the same defect sits in `origin/base` through
   another path, or a release already carries it.
 
-The harness also routes a `CRITICAL` or `HIGH` entry under `## Fixed on
-master` private on its own. A fix on master is not a fix in a release.
+The harness also routes a `CRITICAL`, `HIGH` or `MEDIUM` entry under `## Fixed
+on master` private on its own. A fix on master is not a fix in a release.
 
 Write the marker once, and at most one per file. Write no marker in any other
 case. A finding that this pull request introduces, in code that is not live
