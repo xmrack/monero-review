@@ -70,7 +70,8 @@ planned caller at all.
 **No caller is not a dead end.** When staged code has no caller at the head,
 do not stop at "nothing reaches it". On a merged pull request,
 `git grep <symbol> origin/master` finds the callers FCMP++ has added since:
-trace the input from them. Where no caller exists anywhere, treat every
+trace the input from them. They are in scope although they are outside the
+diff, so never leave one untraced because it is outside this pull request. Where no caller exists anywhere, treat every
 argument as attacker-controlled unless the function's contract or the FCMP++
 design constrains it, and cite what does. How a future caller will use the code
 is not a gap to report. It is the analysis to do.
