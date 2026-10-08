@@ -203,6 +203,17 @@ build target to a Rust target triple, and the Guix release build vendors the
 crates (`contrib/guix/rust/config.toml`). **A change under `fcmp_pp_rust/` is a
 supply-chain change**, whatever the diff looks like.
 
+**The C++ side hard-codes generators the Rust side also defines.**
+`src/crypto/generators.cpp` carries the FCMP++ generators `T`, `U` and `V` as
+raw constants, each with a `//Source:` comment naming where it came from. They
+must equal monero-oxide's `CompressedPoint::T`
+(`monero-oxide/ed25519/src/compressed_point.rs`) and `FCMP_PLUS_PLUS_U` /
+`FCMP_PLUS_PLUS_V` (`ringct/fcmp++/generators/src/lib.rs`) at the pinned
+revision. So **a monero-oxide pin bump that leaves `generators.cpp` unchanged
+can desync C++ from Rust** — compare the constants against the new revision,
+not just the manifest. Upstream has already had to correct them once: commit
+`25a7c97b`, "fix T,U,V generator raw values".
+
 CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
 FFI API header 'fcmp++.h' has broken compatibility with C" if the checked-in,
 hand-written header `fcmp_pp_rust/fcmp++.h` stops being C-compatible.
