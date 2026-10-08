@@ -141,6 +141,26 @@ prime, and point-versus-negation handling, have both repeatedly looked like
 breaks and turned out to be fine once the protocol's own constraints were taken
 into account. Read the construction, not just the function.
 
+## A `CarrotOutputPairV1` is torsion-free by contract
+
+`fcmp_pp::curve_trees::output_to_tuple` skips torsion clearing for a
+`CarrotOutputPairV1`, which looks like a small-order point (the order-2 point
+`(0,-1)`, say) walking straight into `point_to_ed_derivatives` or
+`fe_batch_invert`. That is the type's contract, not a gap in curve_trees:
+
+- `src/fcmp_pp/fcmp_pp_types.h` marks the struct `// No torsion, use unbiased key image generator for I`
+  above `struct CarrotOutputPairV1`;
+- `output_checked_for_torsion` in `src/fcmp_pp/fcmp_pp_types.cpp` returns
+  true for `CarrotOutputPairV1`;
+- `rct::verPointsForTorsion` in `src/ringct/rctSigs.cpp` rejects points whose
+  torsion-cleared form is the identity.
+
+So a torsioned point in a `CarrotOutputPairV1` breaks a precondition where the
+pair is built. A proposal of this shape is not a defect in curve_trees; retarget
+it at the code that constructs the `CarrotOutputPairV1` and ask whether that
+code checks for torsion. This was recorded on PR 10360; re-read those three
+places on the head you are reviewing before citing it.
+
 ## Not refutations: "nobody reaches it" and "it is not live yet"
 
 Neither kills a candidate. If the defect is real and nothing guards it, but no
