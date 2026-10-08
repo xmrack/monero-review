@@ -2645,6 +2645,14 @@ jobs:
               labels="$labels,deep-review" ;;
           esac
 
+          # A review of a pull request that had already merged when it ran.
+          if [ "${PR_STATE:-}" = "merged" ]; then
+            gh label create already-merged --repo "$repo" --color 6F42C1 --force \
+              --description "The pull request was already merged when it was reviewed" \
+              >/dev/null 2>&1 || true
+            labels="$labels,already-merged"
+          fi
+
           # Severity labels, from findings that survived verification only --
           # refuted ones stay in the report but must not tag the issue.
           #

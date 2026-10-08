@@ -712,6 +712,14 @@ const researched = await parallel(cells.map((cell) => () => agent(
    'and anything a future hard fork or new RCTType switches on is scheduled to go',
    'live: rate it on the path it will have then (a peer\'s transaction or block,',
    'a daemon feeding a wallet) and note it is not live on today\'s chain.',
+   'NO CALLER IS NOT A DEAD END. When staged code has no caller at the head, do',
+   'not stop at "nothing reaches it". ' + (MASTER
+     ? 'This pull request is merged: git grep <symbol> ' + MASTER + ' finds the callers'
+       + ' FCMP++ has added since, so trace the input from them. '
+     : '') + 'Where no caller exists, treat',
+   'every argument as attacker-controlled unless the function\'s contract or the',
+   'FCMP++ design constrains it, and cite what does. How a future caller will use',
+   'the code is the analysis to do, not a gap to hand on.',
    '',
    'WHETHER THIS DIFF CAUSED IT IS NOT PART OF THAT TEST. A weakness identical on',
    'origin/base is still a weakness, and you are the one who found it: propose it.',
@@ -1477,6 +1485,8 @@ const judged = await parallel(candidates.map((c) => () => parallel(
      '(FCMP++, src/fcmp_pp, the curve trees, anything a future hard fork or new',
      'RCTType switches on) is judged on the path it will have once live, from a',
      'peer or a daemon; "not live yet" is neither a refutation nor a reason for LOW.',
+     'With no caller at the head, ' + (MASTER ? 'read the callers on ' + MASTER + ' first; where there are none, ' : '')
+       + 'take every argument as attacker-controlled unless something cited constrains it.',
      '',
      'Candidate ' + c.id + ': ' + c.title,
      '  where:            ' + c.file + ':' + c.line + ' in ' + c.symbol,
