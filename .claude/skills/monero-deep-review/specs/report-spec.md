@@ -32,6 +32,7 @@ though they will.
 
 **Result:** <2 findings: 1 MEDIUM, 1 LOW> · <what it reaches, ≤10 words>, or
 `**Result:** No findings · nothing in the diff reaches a trust boundary`
+<For staged code, neither this line nor the Summary explains a clean result by the missing caller. Name what was checked instead.>
 <When any finding is not this change's, say so on this line: `**Result:** 2 findings: 1 MEDIUM, 1 LOW · 1 introduced here, 1 pre-existing · a peer can stall block sync`. A maintainer deciding whether to merge needs that split before anything else.>
 <When the run returned `fixedOnMaster` entries, add the count: `**Result:** 1 finding: 1 LOW · 2 fixed on master since · <what it reaches>`.>
 **Change:** <N> files, +<A>/-<B> · <subsystems touched>
@@ -97,7 +98,7 @@ though they will.
 
 ## Not covered
 
-- <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet. Never "no caller exists" or "how future callers will use it" for staged code, and never advise reviewing a later change instead: that analysis belongs in this report.>
+- <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet. Never "no caller exists", "how future callers will use it" or a master caller left untraced because it is outside the pull request, and never advise reviewing a later change instead: that analysis belongs in this report.>
 
 ## Checked and clear
 
