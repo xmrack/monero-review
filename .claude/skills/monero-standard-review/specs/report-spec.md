@@ -33,6 +33,7 @@ you claim cannot weigh what you cite.
 **Result:** <1 finding: 1 MEDIUM> · <what it reaches, ≤10 words>, or
 `**Result:** No findings · nothing in the diff reaches a trust boundary`
 <When any finding is not this change's, say so on this line: `**Result:** 2 findings: 1 MEDIUM, 1 LOW · 1 introduced here, 1 pre-existing · a peer can stall block sync`. A maintainer deciding whether to merge needs that split before anything else.>
+<When the run returned `fixedOnMaster` entries, add the count: `**Result:** 1 finding: 1 LOW · 2 fixed on master since · <what it reaches>`.>
 **Change:** <N> files, +<A>/-<B> · <subsystems touched>
 **Head:** `<sha12>` · opened by <the `Opened by:` login from PR_CONTEXT.md>
 
@@ -61,9 +62,23 @@ you claim cannot weigh what you cite.
 
 **Where it came from.** <At most 2 sentences. One of: introduced by this change, and the `+` line or the deleted guard; newly reachable, and what now reaches it; or pre-existing, and where outside the change's own code it sits. Take the word from the finding's `provenance`, which the panel settled. One line.>
 
+**On master.** <Only when the finding carries `onMaster`. One sentence: each site's `location` on upstream master from `onMaster.sites`, and whether it still holds there. One line.>
+
 ## Refuted
 
 - ~~<proposal>~~: <what took it apart, and the line that settled it.>
+
+## Fixed on master
+
+<Only when the run returned `fixedOnMaster` entries. Omit the heading entirely when it is empty. Spell the heading and each entry heading exactly as shown: the harness parses both.>
+
+### Short title (was SEVERITY)
+
+`path/to/file.cpp:123` · `function_name` · confirmed on the pull request's head
+
+**Defect.** <At most 3 sentences: what was wrong on the head. One line.>
+
+**Fixed on master.** <At most 3 sentences: the line that now stops it at each site, from `onMaster.sites`, and each commit in `onMaster.fixedBy` as its 12-character sha in backticks with its upstream pull request number. The harness checks every sha here is on master and not in the pull request's head, and refuses to publish the report if one is not. One line.>
 
 ## Needs human review
 
@@ -104,7 +119,7 @@ you claim cannot weigh what you cite.
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
 -->
 
-<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> -->
+<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> -->
 ```
 
 # The header is three lines
@@ -563,6 +578,7 @@ reasoned your way to.
 | `candidates` | `coverage.candidatesDistinct` |
 | `confirmed` | `coverage.confirmed`: proposals whose panel said holds, **not** the number of entries in `findings`. Those two used to be the same number and the merge stage separated them |
 | `published` | `coverage.published`: the number of `###` entries you write under `## Findings` |
+| `fixedOnMaster` | `coverage.fixedOnMaster`: entries under `## Fixed on master`, which a merged pull request's recheck moved out of `findings`. `0` when there was no recheck |
 | `merged` | `coverage.merged`: confirmed proposals folded into another entry |
 | `refuted` | the number of entries in `refuted` |
 | `unverified` | `coverage.candidatesUnverified` |
@@ -576,9 +592,9 @@ adjudicators alike, distinguished by `kind`. On a clean run it is **empty**.
 counts only the ones that came back unusable.
 
 `confirmed + refuted + unverified` must equal `candidates`, because every
-proposal ends in exactly one of those buckets. `published + merged` must equal
-`confirmed`, because every confirmed proposal either gets an entry of its own
-or is folded into somebody else's. The harness checks both. A stamp that fails
+proposal ends in exactly one of those buckets. `published + fixedOnMaster + merged`
+must equal `confirmed`, because every confirmed proposal gets an entry under
+`## Findings` or `## Fixed on master`, or is folded into somebody else's. The harness checks both. A stamp that fails
 either was not copied from a real result, and the report is not published. So
 if your numbers do not add up, you took them from the wrong place. Go back to
 `coverage` rather than adjusting one to fit.
@@ -631,6 +647,9 @@ coverage stamp when there is no workflow-updates stamp:
   pull request's own, but still affects code that is live. Examples: the
   change is already merged, the same defect sits in `origin/base` through
   another path, or a release already carries it.
+
+The harness also routes a `CRITICAL` or `HIGH` entry under `## Fixed on
+master` private on its own. A fix on master is not a fix in a release.
 
 Write the marker once, and at most one per file. Write no marker in any other
 case. A finding that this pull request introduces, in code that is not live
@@ -720,6 +739,9 @@ So:
   it. The triage table is safe, because it has no `###` heading, and so is a
   bracketed severity in a table cell or a bullet;
 - `## Summary` sits above `## Findings` and holds prose only;
+- `## Fixed on master` sits below `## Refuted`, and its headings carry no
+  bracket, so its entries never label the issue with a severity. `labels.py`
+  reads the heading to add a `fixed-on-master` label instead;
 - `## Needs human review`, `## Not covered`, `## Checked and clear` and
   `## Coverage` sit below `## Refuted`, where
   `labels.py` has already stopped counting severities. That is why they can be

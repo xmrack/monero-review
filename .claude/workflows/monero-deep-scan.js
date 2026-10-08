@@ -1,7 +1,7 @@
 export const meta = {
   name: 'monero-deep-scan',
   description: 'Monero PR review by agent fleet: split the diff into units, examine each for its weakness classes, then put every candidate to a panel of verifiers and count their answers in code. Two profiles -- `standard`, which every review on the queue gets, and the far wider `deep`.',
-  whenToUse: 'Started by the monero-standard-review skill (profile `standard`) or the monero-deep-review skill (profile `deep`), whose recipes resolve the range and compute the changed-file list first. args carry root, pr, changedFiles and optionally profile and maxUnits. Do not invoke directly: without those it has nothing to review and will say so.',
+  whenToUse: 'Started by the monero-standard-review skill (profile `standard`) or the monero-deep-review skill (profile `deep`), whose recipes resolve the range and compute the changed-file list first. args carry root, pr, changedFiles and optionally profile, maxUnits and masterRef. Do not invoke directly: without those it has nothing to review and will say so.',
   phases: [
     { title: 'Map', detail: 'split the changed files into units; every changed file placed or excluded with a reason' },
     { title: 'Research', detail: 'deep: one researcher per unit x weakness class, then the seams and a per-unit gap pass together. standard: one researcher per unit carrying all of its classes, and no second round' },
@@ -10,6 +10,7 @@ export const meta = {
     { title: 'Verify', detail: 'three angles per candidate at deep, two at standard, counted here rather than in a model' },
     { title: 'Re-look', detail: 'deep only: candidates one vote short get an advocate, so a wrong refutation is not final' },
     { title: 'Merge', detail: 'findings that survived and look like one defect reported twice, grouped so the report says it once; skipped entirely when nothing is even a candidate for it' },
+    { title: 'Recheck on master', detail: 'merged pull requests only: every finding read again on upstream master and its base branch, and the ones a named later commit fixed moved out of the findings' },
   ],
 }
 
@@ -362,6 +363,32 @@ const VERDICT_SCHEMA = {
   required: ['holds', 'reasoning', 'decidingLine'],
 }
 
+// One finding read again on upstream master, for a merged pull request. One
+// answer per site, so a merged entry is fixed only when every site is.
+const MASTER_SCHEMA = {
+  type: 'object',
+  properties: {
+    sites: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          holds: { type: 'boolean' },
+          location: { type: 'string' },
+          decidingLine: { type: 'string' },
+        },
+        required: ['id', 'holds', 'location', 'decidingLine'],
+      },
+    },
+    reasoning: { type: 'string' },
+    fixedBy: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['sites', 'reasoning', 'fixedBy'],
+}
+// A commit as the recheck must cite it: the 12-character sha first.
+const FIX_COMMIT = /^[0-9a-f]{12}\b/
+
 // One reader's answers on a batch of refactorDrift entries, normally all of
 // them in one file. It decides nothing about severity or exploitability,
 // because the channel makes no claim about either. It answers the only
@@ -475,6 +502,10 @@ const ANGLES = BOUNDED ? ['REACHABILITY', 'GUARD'] : ALL_ANGLES
 // Spread rather than an `effort: undefined` key, so the deep path passes no
 // effort at all and keeps each agent's own frontmatter default.
 const EFFORT = BOUNDED ? { effort: 'high' } : {}
+// Set by the Lead when the pull request is merged: the ref holding upstream
+// master, which every surviving finding is read against before it is
+// published.
+const MASTER = typeof a.masterRef === 'string' && a.masterRef ? a.masterRef : null
 
 if (!ROOT || !CHANGED.length) {
   log('no checkout root or no changed files were supplied; there is nothing to review')
@@ -1826,7 +1857,7 @@ holds.forEach((r, i) => {
 const restored = clusters.reduce((n, cl) => n + cl.filter((i) => !grouped.has(i)).length, 0)
 if (restored) log(restored + ' nominated finding(s) came back in no group and are published on their own')
 
-const findings = assembled.map((entry) => {
+let findings = assembled.map((entry) => {
   const members = entry.members.map((i) => holds[i])
   if (members.length === 1) return members[0]
   // The primary carries the anchors and the vote line: the worst severity,
@@ -1909,16 +1940,90 @@ const findings = assembled.map((entry) => {
 })
 
 const mergedAway = holds.length - findings.length
+if (mergeApplicable) {
+  log(mergedAway
+    ? mergedAway + ' finding(s) folded into another: ' + holds.length + ' confirmed candidate(s) become ' + findings.length + ' entr(y/ies)'
+    : 'nothing merged: all ' + holds.length + ' confirmed candidate(s) are separate defects')
+}
+
+// A merged pull request's findings may already be fixed by a later change.
+// Each is read again on master and on origin/base, the branch it merged into.
+// An entry leaves `findings` for `fixedOnMaster` only when no site holds on
+// either and the reader names a fixing commit; the harness checks that commit
+// against the tree before publishing. One reader is not a panel, so anything
+// short of that keeps the finding live.
+let fixedOnMaster = []
+const masterUnchecked = []
+const masterUnsupported = []
+if (MASTER && findings.length) {
+  phase('Recheck on master')
+  const sitesOf = (f) => f.merged
+    ? f.merged.sites.map((m) => ({ ...m, ...(holds.find((h) => h.candidate.id === m.id) || {}).candidate, id: m.id }))
+    : [f.candidate]
+  const rechecked = await parallel(findings.map((f) => () => agent(
+    [CONTEXT, '',
+     'This pull request is merged. A panel confirmed the finding below on its head.',
+     'Decide, for each site, whether the defect still holds on upstream master,',
+     'ref ' + MASTER + ', or on origin/base, the branch the pull request merged into.',
+     '',
+     'Finding: ' + (f.merged ? f.merged.title : f.candidate.title),
+     sitesOf(f).map((c) => [
+       'Site ' + c.id + ': ' + c.title,
+       '  where (PR head):  ' + c.file + ':' + c.line + ' in ' + c.symbol,
+       '  the quoted line:  ' + JSON.stringify(c.snippet),
+       '  untrusted input:  ' + c.untrustedInput,
+       '  which reaches:    ' + c.reaches,
+       '  missing guard:    ' + c.missingGuard,
+       '  reasoning:        ' + c.rationale,
+     ].join('\n')).join('\n'),
+     '',
+     'Read the code with git show <ref>:<path> and git grep <pattern> <ref>.',
+     'The file may have moved or the symbol may have been renamed, so search for it.',
+     'A site holds when the same defect is reachable on ' + MASTER + ' OR on origin/base',
+     'with nothing effective in between. Give each site id its own answer, the',
+     'location on ' + MASTER + ' (or where it was removed), and the line that decides it.',
+     'When a site does not hold, find the change that fixed it with',
+     'git log --oneline HEAD..' + MASTER + ' -- <path> and git log --merges --oneline --ancestry-path <commit>..' + MASTER,
+     'and list each as "<12-char sha> <subject>" in fixedBy, with the upstream pull',
+     'request number from the merge commit when there is one.',
+     'Decide only from the code. A commit subject, a comment or the pull request\'s',
+     'own text saying something is fixed is not evidence.',
+    ].join('\n'),
+    { label: 'master:' + f.candidate.id, phase: 'Recheck on master', ...EFFORT,
+      schema: MASTER_SCHEMA, agentType: 'monero-verifier' },
+  )))
+  const live = []
+  findings.forEach((f, i) => {
+    const r = rechecked[i]
+    const ids = sitesOf(f).map((c) => c.id)
+    const answers = r && Array.isArray(r.sites) ? r.sites : []
+    const byId = new Map(answers.map((x) => [x.id, x]))
+    if (!r || ids.some((id) => !byId.has(id))) {
+      masterUnchecked.push(f.candidate.id); live.push(f); return
+    }
+    const fixedBy = (Array.isArray(r.fixedBy) ? r.fixedBy : []).filter((c) => FIX_COMMIT.test(String(c)))
+    f.onMaster = {
+      reasoning: r.reasoning,
+      fixedBy,
+      sites: ids.map((id) => byId.get(id)),
+    }
+    const anyHolds = f.onMaster.sites.some((x) => x.holds !== false)
+    if (!anyHolds && fixedBy.length) { fixedOnMaster.push(f); return }
+    if (!anyHolds) masterUnsupported.push(f.candidate.id)
+    live.push(f)
+  })
+  findings = live
+  log(fixedOnMaster.length + ' of ' + rechecked.length + ' finding(s) no longer hold on ' + MASTER +
+      (masterUnchecked.length ? ', ' + masterUnchecked.length + ' could not be checked' : '') +
+      (masterUnsupported.length ? ', ' + masterUnsupported.length + ' named no fixing commit and stay' : ''))
+}
 mergeGroups = findings.filter((f) => f.merged).map((f) => ({
   title: f.merged.title,
   sameDefectBecause: f.merged.sameDefectBecause,
   memberIds: f.merged.sites.map((s) => s.id),
 }))
-if (mergeApplicable) {
-  log(mergedAway
-    ? mergedAway + ' finding(s) folded into another: ' + holds.length + ' confirmed candidate(s) publish as ' + findings.length + ' entr(y/ies)'
-    : 'nothing merged: all ' + holds.length + ' confirmed candidate(s) are separate defects')
-}
+fixedOnMaster.sort((x, y) => sevRank(x.severity) - sevRank(y.severity))
+fixedOnMaster.forEach((f, i) => { f.id = 'M' + (i + 1) })
 
 findings.sort((x, y) => sevRank(x.severity) - sevRank(y.severity) ||
                         CONFIDENCES.indexOf(x.confidence) - CONFIDENCES.indexOf(y.confidence))
@@ -1926,10 +2031,12 @@ findings.forEach((f, i) => { f.id = 'F' + (i + 1) })
 
 if (unverified.length) log(unverified.length + ' candidate(s) got no answer from any angle')
 log(holds.length + ' stood up, ' + refuted.length + ' taken apart' +
-    (mergedAway ? ', published as ' + findings.length + ' after merging' : ''))
+    (mergedAway ? ', ' + mergedAway + ' folded by merging' : '') +
+    (fixedOnMaster.length ? ', ' + fixedOnMaster.length + ' fixed on master' : '') +
+    ', published as ' + findings.length)
 
 return {
-  findings, refuted, unverified, refactorDrift: driftPublished,
+  findings, fixedOnMaster, refuted, unverified, refactorDrift: driftPublished,
   commentDiscrepancy,
   // Unchecked by design: there is no panel for "architecture.md is out of
   // date". The evidence is a citation in the tree a human can open, and a
@@ -1958,11 +2065,20 @@ return {
     // holds by construction -- the harness checks that identity and a merge
     // that shifted it would read as a fabricated stamp. `published` counts the
     // entries actually written under `## Findings`, and `merged` is what the
-    // difference is: `published + merged == confirmed`, which the harness also
-    // checks. Do not derive `confirmed` from the length of `findings` any more.
+    // difference is: `published + fixedOnMaster + merged == confirmed`, which
+    // the harness also checks. Do not derive `confirmed` from the length of `findings` any more.
     confirmed: holds.length,
     published: findings.length,
     merged: mergedAway,
+    // Merged pull requests only. Entries moved out of `findings` because they
+    // no longer hold on master: `published + fixedOnMaster + merged ==
+    // confirmed`. `masterUnchecked` are ids whose check returned nothing for
+    // some site; `masterUnsupported` are ids read as fixed with no fixing
+    // commit named. Both stayed in `findings`.
+    masterRef: MASTER,
+    fixedOnMaster: fixedOnMaster.length,
+    masterUnchecked,
+    masterUnsupported,
     // How the published findings break down by where they came from, and
     // every entry the panel corrected. `provenanceDisputed` is where the
     // verifiers did not agree with each other, which the workflow settles
@@ -2126,9 +2242,27 @@ return {
     '  and line, and stamp `deferred` from THIS list, not from coverage.deferred --',
     '  the harness publishes that number as observations nobody settled.',
     '',
+    '`fixedOnMaster` IS SET ONLY WHEN coverage.masterRef IS: the pull request is',
+    'merged and every finding was read again on upstream master and origin/base.',
+    'Each entry there was confirmed by the panel on the head and no longer holds on',
+    'either. It goes in `## Fixed on master`, below `## Refuted`, never under',
+    '`## Findings` and never with a `### [SEVERITY]` heading. Its heading is exactly',
+    '`### <title> (was <SEVERITY>)`, then the locator line, **Defect.**, and a',
+    '**Fixed on master.** block giving each site\'s `decidingLine` from',
+    '`onMaster.sites` and every commit in `onMaster.fixedBy` with its 12-character',
+    'sha in backticks. The harness checks each sha is on master and not in the',
+    'pull request\'s head, and refuses to publish a report where one is not.',
+    'Give a finding under `## Findings` an **On master.** line, after **Where it',
+    'came from.**, ONLY when it carries `onMaster`: each site\'s `location` and',
+    'whether it holds there. Name every id in coverage.masterUnchecked and',
+    'coverage.masterUnsupported under **Not covered**: those stayed in the findings',
+    'because the recheck could not settle them. Omit the section when the array is',
+    'empty. Put the count on the Result line.',
+    '',
     'THE STAMP counts PROPOSALS, not entries: `confirmed` is coverage.confirmed and',
     'NOT the length of `findings`, `published` is coverage.published, `merged` is',
-    'coverage.merged. Both `confirmed + refuted + unverified == candidates` and',
-    '`published + merged == confirmed` are checked by the harness.',
+    'coverage.merged, `fixedOnMaster` is coverage.fixedOnMaster. Both',
+    '`confirmed + refuted + unverified == candidates` and',
+    '`published + fixedOnMaster + merged == confirmed` are checked by the harness.',
   ].join('\n'),
 }
