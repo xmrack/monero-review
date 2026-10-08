@@ -276,3 +276,11 @@ is wrong and nothing guards it, but it has no attacker path today, propose it at
 LOW and say what is missing from the path. Staged FCMP++ code, and anything only
 a future hard fork switches on, is proposed as it will run once live, with a
 note that it is not live yet. `finding-spec.md` has both rules.
+
+**No caller is not a dead end.** When staged code has no caller at the head,
+do not stop at "nothing reaches it". On a merged pull request,
+`git grep <symbol> origin/master` finds the callers FCMP++ has added since:
+trace the input from them. Where no caller exists anywhere, treat every
+argument as attacker-controlled unless the function's contract or the FCMP++
+design constrains it, and cite what does. How a future caller will use the code
+is not a gap to report. It is the analysis to do.

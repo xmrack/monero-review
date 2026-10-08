@@ -97,7 +97,7 @@ though they will.
 
 ## Not covered
 
-- <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet.>
+- <What could not be settled, and why: a tool this run lacked, a claim needing a running binary, a submodule whose source was absent, an observation nobody adjudicated, a third party's report this run reached no verdict on. One line per bullet. Never "no caller exists" or "how future callers will use it" for staged code, and never advise reviewing a later change instead: that analysis belongs in this report.>
 
 ## Checked and clear
 
