@@ -20,7 +20,14 @@ Verified against master `160e21504`.
 
 1. **Ed25519 group and scalar arithmetic**, plain C: `crypto-ops.c` and
    `crypto-ops-data.c` (precomputed tables, no functions). SUPERCOP `ref10` with Monero-specific additions grafted on —
-   `ge_fromfe_frombytes_vartime` (the legacy hash-to-point),
+   `ge_fromfe_frombytes_vartime` (the map under *both* hash-to-point
+   functions in `crypto.cpp`, not only the legacy one:
+   `crypto_ops::biased_hash_to_ec` applies it once to `cn_fast_hash(pub)`;
+   `crypto_ops::unbiased_hash_to_ec` applies it to each 32-byte half of a
+   64-byte unkeyed `blake2b_monero` digest, multiplies each result by 8 and
+   adds them; `crypto_ops::derive_key_image_generator(pub, biased)` picks
+   between the two for FCMP++/Carrot, so the FCMP++ path depends on this map
+   too — `git grep -n ge_fromfe_frombytes_vartime -- src/crypto/crypto.cpp`),
    `fe_batch_invert`, `ge_p3_is_point_at_infinity_vartime`, and newer
    FCMP++/Carrot helpers at the end of the file.
 2. **The CryptoNote key API**: `crypto.h` / `crypto.cpp`. Key derivation
