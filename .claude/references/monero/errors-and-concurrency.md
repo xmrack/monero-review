@@ -221,13 +221,21 @@ a redefinition error.
 ## The threadpool does not guarantee a worker thread
 
 `tools::threadpool` has two process-wide singletons —
-`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Two behaviours
+`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Three behaviours
 that break the obvious mental model:
 
 - **`submit` runs a non-leaf task inline on the caller** when depth > 0 or
   every thread is busy with work already queued.
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking.
+- **`submit` throws when called from inside a leaf job.** `threadpool::submit`
+  in `src/common/threadpool.cpp` does
+  `CHECK_AND_ASSERT_THROW_MES(!is_leaf, ...)` with the message "A leaf routine
+  is using a thread pool", and leaf jobs are always queued with
+  `queue.push_front`, never run inline. So any code that submits leaf jobs —
+  e.g. `hash_children_chunks` and `outputs_to_leaves` in
+  `src/fcmp_pp/curve_trees.cpp`, which submit with `leaf=true` — throws if its
+  caller is itself running as a leaf job.
 
 So "this runs on a worker thread" is never guaranteed, which matters for any
 reasoning about reentrancy or thread-local state. `create` spawns `max - 1`
