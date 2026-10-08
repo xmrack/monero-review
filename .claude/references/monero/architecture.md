@@ -167,12 +167,17 @@ their bounds.
 `randomx` (proof-of-work), `supercop` (assembly Ed25519 for the wallet),
 `db_drivers/liblmdb` (a *patched* LMDB, not upstream), `easylogging++`,
 `rapidjson`, `gtest`, `qrcodegen`, and — added for the polyseed seed scheme,
-in `external/CMakeLists.txt` — `polyseed` and `utf8proc`. Those last two
-reach `src/` through one edge only: `target_link_libraries` in
+in `external/CMakeLists.txt` — `polyseed` and `utf8proc`. `polyseed`
+reaches `src/` through `target_link_libraries` in
 `src/mnemonics/CMakeLists.txt` and
-`src/mnemonics/polyseed/CMakeLists.txt` make `mnemonics` link
+`src/mnemonics/polyseed/CMakeLists.txt`, which make `mnemonics` link
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
-`cryptonote_basic`. `contrib/epee/` is Monero's own but
+`cryptonote_basic`. `utf8proc` has a second, wider edge: `common` links it
+`PUBLIC` (`target_link_libraries(common PUBLIC ...)` in
+`src/common/CMakeLists.txt`), so every target that links `common` gets
+it, and `src/common/utf8.h`, `src/common/util.cpp` and
+`src/mnemonics/language_base.h` include it directly — check with
+`git grep -n 'include <utf8proc.h>' -- src`. `contrib/epee/` is Monero's own but
 predates most of `src/` and follows different conventions — treat it as a
 fifth dialect, not as part of `src/`.
 
