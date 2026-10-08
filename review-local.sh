@@ -106,6 +106,15 @@ PR_STATE=$(printf '%s' "$PR_META" \
 [ -n "$PR_STATE" ] || echo "!! could not read the PR's state; findings will not be checked against master" >&2
 MASTER_SHA=""
 if [ "$PR_STATE" = "merged" ]; then
+  # The base branch's tip already contains a merged pull request; diff against
+  # the merge commit's first parent instead.
+  MERGE=$(printf '%s' "$PR_META" | jq -r '.merge_commit_sha // empty' 2>/dev/null) || MERGE=""
+  if [ -z "$MERGE" ] || ! git -C "$CACHE" update-ref refs/remotes/origin/base \
+       "$(git -C "$CACHE" rev-parse --verify "$MERGE^1")"; then
+    echo "!! cannot find the merge commit for PR $PR on $BASE" >&2
+    exit 1
+  fi
+  echo "==> PR $PR merged as ${MERGE:0:12}; diffing against its first parent"
   git -C "$CACHE" fetch --filter=blob:none --quiet origin \
     "+refs/heads/master:refs/remotes/origin/master"
   MASTER_SHA=$(git -C "$CACHE" rev-parse origin/master | cut -c1-12)

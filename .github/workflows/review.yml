@@ -669,8 +669,8 @@ jobs:
           # backport review so far was reading that garbage.
           # One call for both: the base branch, and whether the pull request is
           # merged, closed unmerged, or open.
-          read -r BASE STATE < <(gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" \
-            --jq '"\(.base.ref) \(if .merged then "merged" else .state end)"')
+          read -r BASE STATE MERGE < <(gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" \
+            --jq '"\(.base.ref) \(if .merged then "merged" else .state end) \(.merge_commit_sha // "")"')
           if [ -z "$BASE" ]; then
             echo "::error::could not determine the base branch for PR ${{ matrix.pr }}"
             exit 1
@@ -701,6 +701,15 @@ jobs:
           # description` and `Verification status`.
           echo "PR_STATE=$STATE" >> "$GITHUB_ENV"
           if [ "$STATE" = "merged" ]; then
+            # The base branch's tip already contains a merged pull request, so
+            # origin/base...HEAD is empty. Diff against the branch as it stood
+            # when the pull request merged: the merge commit's first parent.
+            if [ -z "$MERGE" ] || ! git update-ref refs/remotes/origin/base "$(git rev-parse --verify "$MERGE^1")"; then
+              echo "::error::cannot find the merge commit for PR ${{ matrix.pr }} on $BASE"
+              echo "PR_FAULT=merge commit unavailable" >> "$GITHUB_ENV"
+              exit 1
+            fi
+            echo "PR ${{ matrix.pr }} merged as ${MERGE:0:12}; diffing against its first parent"
             git fetch --filter=blob:none origin "+refs/heads/master:refs/remotes/origin/master"
             echo "MASTER_SHA=$(git rev-parse origin/master | cut -c1-12)" >> "$GITHUB_ENV"
             echo "PR ${{ matrix.pr }} is merged; findings will be checked against master"
