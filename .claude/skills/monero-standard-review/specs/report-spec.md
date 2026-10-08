@@ -78,7 +78,7 @@ you claim cannot weigh what you cite.
 
 **Defect.** <At most 3 sentences: what was wrong on the head. One line.>
 
-**Fixed on master.** <At most 3 sentences: the line that now stops it at each site, from `onMaster.sites`, and each commit in `onMaster.fixedBy` as its 12-character sha in backticks with its upstream pull request number. The harness checks every sha here is on master and not in the pull request's head, and refuses to publish the report if one is not. One line.>
+**Fixed on master.** <At most 3 sentences: the line that now stops it at each site, from `onMaster.sites`, and each commit in `onMaster.fixedBy` as its 12-character sha in backticks with its upstream pull request number. The harness checks every sha here is on master and not in the pull request's head, and that at least one changes the file on the locator line, and refuses to publish the report otherwise. One line.>
 
 ## Needs human review
 

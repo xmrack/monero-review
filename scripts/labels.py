@@ -8,7 +8,7 @@ then `fixed-on-master` when a finding no longer holds on upstream master.
 
 --fixed prints one line per entry under `## Fixed on master`: the severity from
 its `(was SEVERITY)` heading, or `?`, then every 12-to-40 character hex sha the
-entry cites.
+entry cites, then `@`, then every path its locator lines name.
 
 Only findings that SURVIVED verification count. Refuted ones stay in the report
 on purpose -- so a reader can see what was considered and dismissed -- but they
@@ -38,6 +38,7 @@ FIXED_SECTION = re.compile(r"^##\s+Fixed on master\b[^\n]*$(.*?)(?=^##\s|\Z)",
 FIXED_ENTRY = re.compile(r"^###\s+(.*)$", re.MULTILINE)
 FIXED_WAS = re.compile(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM|LOW)\s*\)\s*$", re.IGNORECASE)
 SHA = re.compile(r"\b[0-9a-f]{12,40}\b")
+LOCATOR_PATH = re.compile(r"^`([^`\s:]+):\d+`", re.MULTILINE)
 
 # A finding the panel settled as `pre-existing` carries this exact phrase on its
 # locator line, which the REPORT SPEC fixes as literal text for that reason: it
@@ -86,7 +87,7 @@ def pre_existing(text):
 
 
 def fixed_entries(text):
-    """(severity or None, [shas]) for each entry under `## Fixed on master`."""
+    """(severity or None, [shas], [paths]) for each `## Fixed on master` entry."""
     entries = []
     for section in FIXED_SECTION.finditer(text):
         body = section.group(1)
@@ -94,8 +95,9 @@ def fixed_entries(text):
         for i, head in enumerate(heads):
             end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
             was = FIXED_WAS.search(head.group(1))
+            block = body[head.end():end]
             entries.append((was.group(1).upper() if was else None,
-                            SHA.findall(body[head.end():end])))
+                            SHA.findall(block), LOCATOR_PATH.findall(block)))
     return entries
 
 
@@ -116,8 +118,8 @@ def main():
     except OSError:
         return
     if fixed:
-        for sev, shas in fixed_entries(text):
-            print(" ".join([sev or "?"] + shas))
+        for sev, shas, paths in fixed_entries(text):
+            print(" ".join([sev or "?"] + shas + ["@"] + paths))
         return
     for sev in severities(text):
         print(sev.lower())

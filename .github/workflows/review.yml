@@ -2066,8 +2066,9 @@ jobs:
           fixed=${fixed:-0}
           # Each such entry is a confirmed finding the report does not count
           # as live, on the word of one reader. So the section must hold
-          # exactly that many entries, and every commit an entry cites as the
-          # fix must exist, be on master, and not be in the pull request.
+          # exactly that many entries, every commit an entry cites as the fix
+          # must exist, be on master, and not be in the pull request, and at
+          # least one of them must change a file the entry's locator names.
           if fixed_lines=$(python3 "$RUNNER_TEMP"/harness-scripts/labels.py --fixed review.md); then
             fixed_entries=$(printf '%s\n' "$fixed_lines" | grep -c . || true)
           else
@@ -2083,8 +2084,11 @@ jobs:
             git rev-parse --verify --quiet "origin/master^{commit}" >/dev/null \
               || fixed_bad="origin/master is not in this checkout"
           fi
-          while [ -z "$fixed_bad" ] && read -r _ shas; do
-            [ -n "$shas" ] || { fixed_bad="an entry cites no commit"; break; }
+          while [ -z "$fixed_bad" ] && read -r _ rest; do
+            shas=${rest%%@*}; paths=${rest#*@}
+            [ -n "${shas// /}" ] || { fixed_bad="an entry cites no commit"; break; }
+            [ -n "${paths// /}" ] || { fixed_bad="an entry names no file"; break; }
+            touched=no
             for c in $shas; do
               full=$(git rev-parse --verify --quiet "$c^{commit}" 2>/dev/null) \
                 || { fixed_bad="$c is not a commit"; break 2; }
@@ -2092,7 +2096,14 @@ jobs:
                 || { fixed_bad="$c is not on master"; break 2; }
               rc=0; git merge-base --is-ancestor "$full" "$HEAD_SHA_FULL" 2>/dev/null || rc=$?
               [ "$rc" -eq 1 ] || { fixed_bad="$c is in the pull request's head"; break 2; }
+              # First parent, so a merge commit counts for what it merged.
+              changed=$(git diff --no-renames --name-only "$full^1" "$full" 2>/dev/null) \
+                || { fixed_bad="cannot list the files $c changes"; break 2; }
+              for f in $paths; do
+                if printf '%s\n' "$changed" | grep -qxF -- "$f"; then touched=yes; fi
+              done
             done
+            [ "$touched" = yes ] || { fixed_bad="no cited commit changes a file the entry names ($paths)"; break; }
           done < <(if [ "$fixed_entries" != unreadable ]; then printf '%s\n' "$fixed_lines" | grep .; fi || true)
           # How many verifier angles the pipeline actually ran: 3 at deep,
           # 2 at medium. Read rather than assumed, so the note below cannot
