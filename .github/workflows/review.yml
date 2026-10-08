@@ -2084,10 +2084,16 @@ jobs:
             git rev-parse --verify --quiet "origin/master^{commit}" >/dev/null \
               || fixed_bad="origin/master is not in this checkout"
           fi
+          # No globbing: every word below comes from the report.
+          set -f
           while [ -z "$fixed_bad" ] && read -r _ rest; do
             shas=${rest%%@*}; paths=${rest#*@}
             [ -n "${shas// /}" ] || { fixed_bad="an entry cites no commit"; break; }
             [ -n "${paths// /}" ] || { fixed_bad="an entry names no file"; break; }
+            for f in $paths; do
+              git cat-file -e "$HEAD_SHA_FULL:$f" 2>/dev/null \
+                || { fixed_bad="$f is not a file at the pull request's head"; break 2; }
+            done
             touched=no
             for c in $shas; do
               full=$(git rev-parse --verify --quiet "$c^{commit}" 2>/dev/null) \
@@ -2105,6 +2111,7 @@ jobs:
             done
             [ "$touched" = yes ] || { fixed_bad="no cited commit changes a file the entry names ($paths)"; break; }
           done < <(if [ "$fixed_entries" != unreadable ]; then printf '%s\n' "$fixed_lines" | grep .; fi || true)
+          set +f
           # How many verifier angles the pipeline actually ran: 3 at deep,
           # 2 at medium. Read rather than assumed, so the note below cannot
           # tell a reader a medium finding faced three verifiers. Older

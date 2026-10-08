@@ -37,8 +37,11 @@ FIXED_SECTION = re.compile(r"^##\s+Fixed on master\b[^\n]*$(.*?)(?=^##\s|\Z)",
                            re.MULTILINE | re.IGNORECASE | re.DOTALL)
 FIXED_ENTRY = re.compile(r"^###\s+(.*)$", re.MULTILINE)
 FIXED_WAS = re.compile(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM|LOW)\s*\)\s*$", re.IGNORECASE)
-SHA = re.compile(r"\b[0-9a-f]{12,40}\b")
-LOCATOR_PATH = re.compile(r"^`([^`\s:]+):\d+`", re.MULTILINE)
+# Case-insensitive and printed lowercase, so no spelling of a sha escapes the
+# check. Paths are limited to characters a tracked file uses, so nothing the
+# shell would expand reaches the gate.
+SHA = re.compile(r"\b[0-9a-f]{12,40}\b", re.IGNORECASE)
+LOCATOR_PATH = re.compile(r"^`([A-Za-z0-9._+/-]+):\d+`", re.MULTILINE)
 
 # A finding the panel settled as `pre-existing` carries this exact phrase on its
 # locator line, which the REPORT SPEC fixes as literal text for that reason: it
@@ -97,7 +100,8 @@ def fixed_entries(text):
             was = FIXED_WAS.search(head.group(1))
             block = body[head.end():end]
             entries.append((was.group(1).upper() if was else None,
-                            SHA.findall(block), LOCATOR_PATH.findall(block)))
+                            [h.lower() for h in SHA.findall(block)],
+                            LOCATOR_PATH.findall(block)))
     return entries
 
 
