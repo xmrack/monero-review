@@ -319,6 +319,25 @@ trusted daemon's status unchanged, so routing those sites through it changes
 nothing. Re-check these four on the head you are reviewing; a new entry point
 that sets `check_spent` without a trusted daemon reopens this.
 
+## A `cargo build` without `--locked` still builds the lock file
+
+The FCMP++ Rust crate is built by `CARGO_CMD` in
+`src/fcmp_pp/fcmp_pp_rust/CMakeLists.txt`, which does not pass `--locked`.
+That looks like a supply-chain hole, since a dependency such as the
+`crypto-bigint` fork is pinned to a git branch rather than a revision. It is
+not a defect while the committed `src/fcmp_pp/fcmp_pp_rust/Cargo.lock` agrees
+with `Cargo.toml`: cargo then builds the revisions the lock file records, and
+the `crypto-bigint` entry there carries an exact commit
+(`source = "git+...?branch=c-repr#<rev>"`). Release builds are tighter still:
+`contrib/guix/rust/cargo.sh` runs `cargo vendor --locked`, and Guix builds from
+the vendored crates only.
+
+The limit is the condition itself. Without `--locked`, cargo rewrites a lock
+file that no longer matches `Cargo.toml` instead of refusing, so a pull request
+that edits `Cargo.toml` or `Cargo.lock` -- or lets them drift apart -- is the
+case to check, not the missing flag. Compare the two on the head you are
+reviewing before citing this.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
