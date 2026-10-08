@@ -214,6 +214,11 @@ despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
   `#include` the corresponding `src/crypto` file (the `.c` files do nothing
   else; `crypto.cpp` adds test wrappers) — `cncrypto-tests` **recompiles crypto
   internals** rather than linking `cncrypto`, so it can reach static functions.
+  `tests/crypto/main.cpp` likewise does `#include "fcmp_pp/fcmp_pp_crypto.cpp"`,
+  so the binary also compiles in the FCMP++ conversions (`point_to_wei_x_y` and
+  friends, exercised by the `point_to_wei_x_y` branch of `main()`), and a
+  change to `src/fcmp_pp/fcmp_pp_crypto.cpp` is covered by the `cncrypto`
+  ctest entry. Check: `git grep -n 'fcmp_pp_crypto.cpp' -- tests/crypto/main.cpp`.
 - `tests/fuzz/levin.cpp` is largely fenced off behind `#if 0`.
 - `BEGIN_SIMPLE_FUZZER` expands to two completely different things:
   `LLVMFuzzerTestOneInput` under OSS-Fuzz, and a `SimpleFuzzer::run(filename)`
