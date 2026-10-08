@@ -21,6 +21,15 @@ Take the number and title from there and treat the rest as the author's claims.
 If that line is absent (an older harness, or a checkout prepared by hand),
 pass `pr: null` rather than guessing; the workflow handles it.
 
+The harness also writes a `PR state:` line: `open`, `merged` or `closed`.
+On `merged`, confirm `git rev-parse --verify --quiet origin/master` and pass
+`masterRef: "origin/master"` in step 4: the workflow then reads every finding
+again on master and `origin/base`, which later changes may have fixed. If the
+ref is missing, pass no `masterRef` and say under **Not covered** that the
+findings were not checked against master. On `closed`, the pull request was
+never merged, so pass no `masterRef` and say in the summary that its code did
+not land. On anything else, pass no `masterRef`.
+
 ## 2. Take the changed-file list
 
 `PR_FILES.md` already holds it, one path per line, written by the harness from
@@ -75,7 +84,8 @@ Workflow({ name: "monero-deep-scan",
                    pr: <number from PR_CONTEXT.md, or null>,
                    profile: "standard",
                    changedFiles: [<the list from step 2, verbatim>],
-                   maxUnits: 4 } })
+                   maxUnits: 4,
+                   masterRef: <"origin/master" when step 1 says merged, else omit> } })
 ```
 
 `profile: "standard"` is not optional and not a hint. The workflow defaults an

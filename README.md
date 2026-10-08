@@ -29,6 +29,10 @@ Run locally, leaves the result in `reviews/`:
 | `-f model=<id>` | pins the model. Default `auto`, the same model on both tiers |
 | `DEEP=1 ./review-local.sh` | deep, locally |
 
+When the PR is merged, every confirmed finding is also read against upstream
+master and the branch it merged into. Ones a later commit fixed on both move to
+a `## Fixed on master` section and the issue gets a `fixed-on-master` label.
+
 Deep issues carry a `deep-review` label. Standard reviews are unlabelled.
 
 To stop the scheduled sweeps:

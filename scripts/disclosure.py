@@ -30,6 +30,10 @@ A review goes private when any of these holds:
                 critical or high severity security bug -- a cryptographic flaw,
                 a consensus bug, a remote crash. A public review of the patch
                 points at the hole before the release ships.
+  fixed-on-master  a CRITICAL or HIGH entry under `## Fixed on master`. A fix
+                on master is not a fix in a release. Also any entry whose
+                severity cannot be read, and a coverage stamp counting more
+                fixed entries than the section holds.
   live-code     the review carries `<!-- disclosure reason=live-code -->`: a
                 CRITICAL or HIGH finding that this pull request did not add to
                 the surviving list as pre-existing, but which still affects
@@ -83,6 +87,18 @@ INTRODUCED = re.compile(
 MARKER = re.compile(r"<!--\s*disclosure\b(.*?)-->", re.IGNORECASE | re.DOTALL)
 MARKER_REASON = re.compile(r"\breason\s*=\s*([a-z-]+)", re.IGNORECASE)
 KNOWN_REASONS = ("security-fix", "live-code")
+# Entries a merged pull request's recheck found fixed on master. They sit below
+# `## Refuted`, so the finding-heading rule above never sees them. The same
+# three patterns are in labels.py; change them together.
+FIXED_SECTION = re.compile(r"^##\s+Fixed on master\b[^\n]*$(.*?)(?=^##\s|\Z)",
+                           re.MULTILINE | re.IGNORECASE | re.DOTALL)
+FIXED_ENTRY = re.compile(r"^###\s+(.*)$", re.MULTILINE)
+FIXED_WAS = re.compile(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM|LOW)\s*\)\s*$", re.IGNORECASE)
+# Looser than FIXED_SECTION, the way HEADING is looser than labels.py: any
+# heading level, bold or stray spacing. A section only this matches is one
+# the strict parse cannot read, which routes private.
+FIXED_SECTION_LOOSE = re.compile(r"^#{1,6}\s*[*_]*\s*Fixed\s+on\s+master", re.MULTILINE | re.IGNORECASE)
+STAMP_FIXED = re.compile(r"<!--\s*deep-scan\b[^>]*?\sfixedOnMaster=(\d+)", re.IGNORECASE)
 
 
 def severe_pre_existing(text):
@@ -105,6 +121,23 @@ def severe_pre_existing(text):
     return False
 
 
+def severe_fixed_on_master(text):
+    """True when a fixed-on-master entry is CRITICAL or HIGH, or cannot be read.
+
+    Fails closed: an entry heading without `(was SEVERITY)`, or a stamp
+    counting more entries than the section holds, counts as severe."""
+    sections = list(FIXED_SECTION.finditer(text))
+    if len(FIXED_SECTION_LOOSE.findall(text)) > len(sections):
+        return True
+    heads = [h.group(1) for m in sections for h in FIXED_ENTRY.finditer(m.group(1))]
+    for head in heads:
+        was = FIXED_WAS.search(head)
+        if not was or was.group(1).upper() in ("CRITICAL", "HIGH"):
+            return True
+    stamps = STAMP_FIXED.findall(text)
+    return bool(stamps) and int(stamps[-1]) > len(heads)
+
+
 def marker_reason(text):
     """The reason on the first disclosure marker, `unknown` for a marker whose
     reason is missing or not one we know, or None when there is no marker."""
@@ -123,6 +156,8 @@ def route(text):
         return "private", reason
     if severe_pre_existing(text):
         return "private", "pre-existing"
+    if severe_fixed_on_master(text):
+        return "private", "fixed-on-master"
     return "public", ""
 
 

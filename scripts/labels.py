@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Print the labels a review warrants, one per line: the severities highest
-first, then `pre-existing` when a surviving finding predates the pull request.
+first, then `pre-existing` when a surviving finding predates the pull request,
+then `fixed-on-master` when a finding no longer holds on upstream master.
 
     python3 scripts/labels.py [review.md]
+    python3 scripts/labels.py --fixed [review.md]
+
+--fixed prints one line per entry under `## Fixed on master`: the severity from
+its `(was SEVERITY)` heading, or `?`, then every 12-to-40 character hex sha the
+entry cites.
 
 Only findings that SURVIVED verification count. Refuted ones stay in the report
 on purpose -- so a reader can see what was considered and dismissed -- but they
@@ -24,6 +30,14 @@ HEADING = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 REFUTED_SECTION = re.compile(r"^##\s+Refuted\b", re.MULTILINE | re.IGNORECASE)
+# Findings a merged pull request's recheck found fixed on master. The section
+# sits below `## Refuted` and its headings carry no severity bracket. The same
+# three patterns are in disclosure.py; change them together.
+FIXED_SECTION = re.compile(r"^##\s+Fixed on master\b[^\n]*$(.*?)(?=^##\s|\Z)",
+                           re.MULTILINE | re.IGNORECASE | re.DOTALL)
+FIXED_ENTRY = re.compile(r"^###\s+(.*)$", re.MULTILINE)
+FIXED_WAS = re.compile(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM|LOW)\s*\)\s*$", re.IGNORECASE)
+SHA = re.compile(r"\b[0-9a-f]{12,40}\b")
 
 # A finding the panel settled as `pre-existing` carries this exact phrase on its
 # locator line, which the REPORT SPEC fixes as literal text for that reason: it
@@ -71,12 +85,39 @@ def pre_existing(text):
     return bool(PRE_EXISTING.search(text))
 
 
+def fixed_entries(text):
+    """(severity or None, [shas]) for each entry under `## Fixed on master`."""
+    entries = []
+    for section in FIXED_SECTION.finditer(text):
+        body = section.group(1)
+        heads = list(FIXED_ENTRY.finditer(body))
+        for i, head in enumerate(heads):
+            end = heads[i + 1].start() if i + 1 < len(heads) else len(body)
+            was = FIXED_WAS.search(head.group(1))
+            entries.append((was.group(1).upper() if was else None,
+                            SHA.findall(body[head.end():end])))
+    return entries
+
+
+def fixed_on_master(text):
+    """True when the report has an entry under `## Fixed on master`."""
+    return bool(fixed_entries(text))
+
+
 def main():
-    path = sys.argv[1] if len(sys.argv) > 1 else "review.md"
+    args = sys.argv[1:]
+    fixed = args[:1] == ["--fixed"]
+    if fixed:
+        args = args[1:]
+    path = args[0] if args else "review.md"
     try:
         with open(path, errors="replace") as fh:
             text = fh.read()
     except OSError:
+        return
+    if fixed:
+        for sev, shas in fixed_entries(text):
+            print(" ".join([sev or "?"] + shas))
         return
     for sev in severities(text):
         print(sev.lower())
@@ -86,6 +127,8 @@ def main():
     # label the issue whatever it was about.
     if pre_existing(text):
         print("pre-existing")
+    if fixed_on_master(text):
+        print("fixed-on-master")
 
 
 if __name__ == "__main__":
