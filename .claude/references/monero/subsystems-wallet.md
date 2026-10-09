@@ -75,7 +75,15 @@ Four things follow, and a diff can break each of them:
   `get_keys_file_data` when writing the background keys file, and in
   `start_background_sync` on the main account). That call is the entire
   security property of the feature; anything that lets a background
-  instance keep or re-derive the spend key defeats it outright.
+  instance keep or re-derive the spend key defeats it outright. It is also
+  narrower than its name: `account_base::forget_spend_key`
+  (`src/cryptonote_basic/account.cpp`) clears `m_spend_secret_key`,
+  `m_multisig_keys` and `m_polyseed` only. It leaves
+  `account_keys::m_monero_c_passphrase` (`src/cryptonote_basic/account.h`,
+  serialized as `"m_passphrase"` in `BEGIN_KV_SERIALIZE_MAP`) in place, so
+  background and watch-only keys files still carry a monero_c wallet's seed
+  passphrase. Check what `forget_spend_key` clears against every secret
+  field of `account_keys` before trusting either kind of file.
 - **The background cache is untrusted input on the main wallet's open path.**
   `process_background_cache_on_open` loads and merges it when a
   normal wallet is opened, so "the user opened their wallet" reaches a
