@@ -319,6 +319,22 @@ trusted daemon's status unchanged, so routing those sites through it changes
 nothing. Re-check these four on the head you are reviewing; a new entry point
 that sets `check_spent` without a trusted daemon reopens this.
 
+## A watch-only export of a multisig wallet has no in-tree caller
+
+A change to `wallet2::write_watch_only_wallet` was proposed as leaking
+multisig state (`m_original_view_secret_key`, `m_multisig_keys`) into the
+watch-only file.
+The only in-tree caller is `simple_wallet::save_watch_only` in
+`src/simplewallet/simplewallet.cpp`, which refuses any wallet whose
+`get_multisig_status().multisig_is_active` is set before it gets that far.
+`wallet_rpc_server` and `src/wallet/api` do not call it:
+`git grep -n write_watch_only_wallet src/` lists the callers.
+
+So a finding of that shape needs an out-of-tree `wallet2` caller and is at
+most a hardening note. This is the caller-already-validated shape above, and
+it goes stale the same way: re-run the grep on the head you are reviewing, and
+a new caller that skips the multisig check reopens it.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
