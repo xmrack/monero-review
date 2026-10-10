@@ -21,8 +21,15 @@ The path a block at the chain tip actually takes. It is the single most
 attacker-exposed sequence in the daemon.
 
 1. **`connection<T>::handle_read`** — `contrib/epee/include/net/abstract_tcp_server2.inl`.
-   ASIO delivers bytes into a fixed-size buffer. No validation; only throttle
-   and timeout accounting.
+   ASIO delivers bytes into a fixed-size buffer. No validation, and no
+   accounting either: `handle_read` only posts `handle_recv` to
+   `connection_basic::strand_`. Throttle, `m_recv_cnt`, `m_last_recv` and
+   timeout accounting live in the `on_read` lambda inside
+   `connection<T>::start_read` (it calls `handle_trafic_exact` and
+   `start_timer`) — compare it with `handle_read` to check. Any path that
+   calls `handle_read` without going through `start_read` skips all of that;
+   as of monero-project/monero PR 10523 (not master), the `initial_data`
+   branch of `connection<T>::start_internal` does exactly this.
 2. **`async_protocol_handler::handle_recv`** — `contrib/epee/include/net/levin_protocol_handler_async.h`.
    Appends to a per-connection cache and runs a head/body state machine.
    Cumulative buffered bytes are bounded by `m_max_packet_size`, which is

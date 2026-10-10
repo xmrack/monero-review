@@ -499,8 +499,14 @@ template on the payload handler; `net_node.inl` is emitted from
 `src/rpc/instantiations.cpp`.
 
 **Zones.** Public / Tor / I2P, each with its own `boosted_tcp_server`,
-peerlist, peer id and connect function. **All non-public zones borrow the
-public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
+peerlist, `m_config.m_peer_id` field and connect function. **Only the public
+zone's peer id is randomised** (`public_zone.m_config.m_peer_id = crypto::rand<uint64_t>()`
+in `node_server::init_config` is the only assignment — `grep -n 'm_peer_id' src/p2p/net_node.inl`);
+Tor and I2P keep the value-initialised 0. The peer-id self-connection checks in
+`do_handshake_with_peer` and `handle_handshake` are gated on
+`azone == epee::net_utils::zone::public_`, so anonymity zones rely solely on
+the `m_our_address` comparison to avoid dialling themselves. **All non-public
+zones borrow the public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 `COMMAND_TIMED_SYNC` and `NOTIFY_NEW_TRANSACTIONS` are allowed
 (`is_filtered_command`).
 
