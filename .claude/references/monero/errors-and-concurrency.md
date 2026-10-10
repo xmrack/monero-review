@@ -221,13 +221,22 @@ a redefinition error.
 ## The threadpool does not guarantee a worker thread
 
 `tools::threadpool` has two process-wide singletons —
-`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Two behaviours
+`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Behaviours
 that break the obvious mental model:
 
 - **`submit` runs a non-leaf task inline on the caller** when depth > 0 or
   every thread is busy with work already queued.
+- **A leaf submit (third argument `true`) is never run inline** — the
+  inline path is gated on `!leaf` in `threadpool::submit`, and a leaf job is
+  always queued at the front.
+- **`submit` throws when called from inside a leaf job** (the `CHECK` on
+  `is_leaf` in `threadpool::submit`).
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking.
+- **`threadpool::waiter::~waiter` calls `wait()`, but too late for locals
+  declared after the waiter**: they are destroyed first, so a job that
+  captured them by reference can outlive them. Declare the waiter after
+  everything its jobs touch.
 
 So "this runs on a worker thread" is never guaranteed, which matters for any
 reasoning about reentrancy or thread-local state. `create` spawns `max - 1`
