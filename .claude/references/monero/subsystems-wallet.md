@@ -165,6 +165,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   An `else` after it binds to the macro's hidden `if`.
 - **`encrypt_keys(key)` encrypts the *spend* key and decrypts the *view* key**;
   `decrypt_keys` does the reverse. The names describe the spend key only.
+  **Neither call is idempotent and only one checks the password:**
+  `wallet2::decrypt_keys` checks it against `m_cache_key`
+  (`verify_password_with_cached_key`), but `wallet2::encrypt_keys` checks
+  nothing, and `account_keys::encrypt` draws a fresh IV every time
+  (`m_encryption_iv = crypto::rand<crypto::chacha_iv>()` in
+  `src/cryptonote_basic/account.cpp`). So encrypting twice, decrypting twice
+  or encrypting under the wrong password loses the spend key for good.
 - **`hashchain::size()` is a height, not a container size** — it returns
   `m_blockchain.size() + m_offset`, and `operator[]` subtracts the offset.
 - **`m_global_output_index` comes from the daemon and is stored unverified.**
