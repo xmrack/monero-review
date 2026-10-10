@@ -214,8 +214,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 seconds, the fee estimate per height, and the version and hard-fork data only
 after `invalidate()`. `ringdb.cpp` is a separate
 LMDB store of previously used rings keyed by key image, so re-spending an
-output reuses its ring; note `get_rings` returns false the moment *any*
-requested key image is missing, leaving the output partially populated.
+output reuses its ring. A missing key image does not fail `get_rings`: the
+`if (dbr == MDB_NOTFOUND) { all_outs.emplace_back(); continue; }` branch
+pushes an empty ring and keeps going, so it returns true with exactly one
+entry per key image, and throws on an LMDB or decode error. Callers treat
+empty as absent — `ringdb::get_ring` via `|| all_outs.front().empty()`, and
+`wallet2::get_outs` via `if (!all_outs[i].empty())` when filling
+`existing_rings`.
 
 ---
 
