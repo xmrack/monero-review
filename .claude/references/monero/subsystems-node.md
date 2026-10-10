@@ -535,7 +535,14 @@ never trusted — `sanitize_peerlist` zeroes it.
 - `i2p_address::store` writes port **1**, not 0, for compatibility.
 - In `src/net/parse.cpp`, `get_network_address` returns
   `net::error::unsupported_address` for anything hostname-shaped, and callers
-  treat that specific error as "try DNS".
+  treat that specific error as "try DNS". `get_tcp_endpoint` also returns
+  `unsupported_address` for a valid `.onion` or `.i2p` address that
+  `get_network_address` parsed successfully (its
+  `default: return make_error_code(net::error::unsupported_address)` branch),
+  so a caller that treats this error as "try DNS" must filter
+  anonymity-network names itself. In the tree of PR #11529,
+  `net::socks::endpoint::get` does that in its `resolve_host` branch with an
+  `iends_with` check for `".onion"` and `".i2p"`.
 
 ---
 
