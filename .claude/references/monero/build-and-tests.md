@@ -122,7 +122,7 @@ runners, different assertion vocabularies and different build gates.
 | `unit_tests` | the only large gtest binary (count: `grep -hcE '^\s*TEST(_F)?\(' tests/unit_tests/*.cpp`) |
 | `core_tests` | the chain-generator harness — one active test per `GENERATE_AND_PLAY(` line in `chaingen_main.cpp` |
 | `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries |
-| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp`) + 4 OSS-Fuzz-only RPC/ZMQ ones under `if(OSSFUZZ)` |
+| `fuzz` | file-driven targets plus OSS-Fuzz-only ones under `if(OSSFUZZ)` (RPC/ZMQ, but also others such as `p2p-commands_fuzz_tests`); not one target per source — a `tests/fuzz/*.cpp` can have no CMake target (see "The fuzz target list is a map") |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
 | `difficulty`, `block_weight` | diff C++ output against a **Python reference implementation** |
@@ -182,6 +182,14 @@ attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
 this list: it is the kind of thing a pull request adds to.
 
+Do not assume one CMake target per source file: a `tests/fuzz/*.cpp` can exist
+with no target, and the `if(OSSFUZZ)` block can hold non-RPC targets such as
+`p2p-commands_fuzz_tests`. Compare `ls tests/fuzz/*.cpp` against:
+
+```
+grep -n 'monero_add_minimal_executable\|if(OSSFUZZ)\|endif()' tests/fuzz/CMakeLists.txt
+```
+
 Two readings: a PR touching a surface with an existing target is touching
 something known to be reachable, and a PR that **weakens** a harness deserves
 a note even though it ships nothing.
@@ -191,6 +199,14 @@ A new fuzz target is inert unless it is added in **three** places: a
 under `tests/data/fuzz/<name>/`, and the type list in
 `contrib/fuzz_testing/fuzz.sh`. (That script's `case` list omits `tx-extra`
 despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
+
+That rule covers **file-driven targets only**. An OSS-Fuzz-only target inside
+the `if(OSSFUZZ)` block of `tests/fuzz/CMakeLists.txt` (`fuzz_rpc`,
+`fuzz_zmq`, `p2p-commands_fuzz_tests`, …) has no `fuzz.sh` entry and no
+`tests/data/fuzz/` seed directory, because OSS-Fuzz's external build script
+drives it. A missing `fuzz.sh` entry or seed corpus for such a target is not
+evidence that it is inert — check with
+`grep -n 'fuzz_rpc' contrib/fuzz_testing/fuzz.sh` and `ls tests/data/fuzz/`.
 
 ## Traps in the test tree
 
