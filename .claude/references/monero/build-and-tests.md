@@ -122,7 +122,7 @@ runners, different assertion vocabularies and different build gates.
 | `unit_tests` | the only large gtest binary (count: `grep -hcE '^\s*TEST(_F)?\(' tests/unit_tests/*.cpp`) |
 | `core_tests` | the chain-generator harness — one active test per `GENERATE_AND_PLAY(` line in `chaingen_main.cpp` |
 | `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries |
-| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp`) + 4 OSS-Fuzz-only RPC/ZMQ ones under `if(OSSFUZZ)` |
+| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp` and any OSS-Fuzz-only source) + OSS-Fuzz-only ones under `if(OSSFUZZ)`: the RPC/ZMQ group and, where present, `wallet-proof-uri_fuzz_tests` (a wallet target; its `wallet-proof-uri.cpp` gets no file-driven target because it needs `FuzzedDataProvider.h` from the OSSFUZZ-only include path). List them with `grep -n 'if(OSSFUZZ)\|endif\|monero_add_minimal_executable' tests/fuzz/CMakeLists.txt` and `grep -ln FuzzedDataProvider tests/fuzz/*.cpp` |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
 | `difficulty`, `block_weight` | diff C++ output against a **Python reference implementation** |
@@ -190,7 +190,14 @@ A new fuzz target is inert unless it is added in **three** places: a
 `monero_add_minimal_executable` in `tests/fuzz/CMakeLists.txt`, a seed corpus
 under `tests/data/fuzz/<name>/`, and the type list in
 `contrib/fuzz_testing/fuzz.sh`. (That script's `case` list omits `tx-extra`
-despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
+despite its seeds; compare it against `ls tests/fuzz/*.cpp`.) That rule covers
+only the file-driven targets. The OSS-Fuzz-only targets in the `if(OSSFUZZ)`
+block of `tests/fuzz/CMakeLists.txt` — `fuzz_rpc`, `fuzz_rpc_full`,
+`fuzz_rpc_full_no_exceptions`, `fuzz_zmq` and, where present,
+`wallet-proof-uri_fuzz_tests` — have no corpus under `tests/data/fuzz/` and no
+`fuzz.sh` entry; the external OSS-Fuzz build script picks them up, so a
+missing corpus or `fuzz.sh` entry does not make one of them inert (check with
+`ls tests/data/fuzz/` and `grep -n 'wallet\|rpc\|zmq' contrib/fuzz_testing/fuzz.sh`).
 
 ## Traps in the test tree
 

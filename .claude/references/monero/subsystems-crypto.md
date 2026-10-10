@@ -335,6 +335,11 @@ top block.
 The fuzz target list tells you which surfaces upstream already treats as
 attacker-reachable. Cryptography-relevant targets: `bulletproof`,
 `bulletproof-plus`, `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`,
-`signature`, `cold-outputs`, `cold-transaction`. A PR touching a surface with
+`signature`, `cold-outputs`, `cold-transaction`, and, where present, the
+OSS-Fuzz-only `wallet-proof-uri_fuzz_tests` (`tests/fuzz/wallet-proof-uri.cpp`:
+`fuzz_tx_proof`, `try_check_tx_proof`, `mutate_proof`), which drives the
+transaction overloads of `wallet2::get_tx_proof` and `wallet2::check_tx_proof`
+and through them `crypto::check_tx_proof` for both V1 and V2 strings — the
+tx-proof surface. A PR touching a surface with
 an existing target is touching something known to be reachable; a PR that
 *weakens* a harness is worth a note even though it ships nothing.
