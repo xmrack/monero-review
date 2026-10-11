@@ -233,6 +233,17 @@ So "this runs on a worker thread" is never guaranteed, which matters for any
 reasoning about reentrancy or thread-local state. `create` spawns `max - 1`
 threads because the submitting thread is expected to contribute.
 
+**A job's exception surfaces on one of two channels, depending on where it
+ran.** A job `submit` runs inline rethrows straight to the caller of `submit`
+— the inline branch of `threadpool::submit` calls `f()` under a `scope_guard`
+with no `catch`. A queued job's exception is caught in `threadpool::run`,
+whose catch blocks call `e.wo->set_error()`, so `waiter::wait`
+(`src/common/threadpool.h`) returns **false** instead of throwing. A
+non-`std::exception` takes the queued path too only where `threadpool::run`
+has a `catch (...)`; monero-project/monero#11531 adds one, so check which
+tree you are reading. **A validation caller must handle both a throw out of
+`submit` and a false return from `wait()`.**
+
 ## Thread affinity that is enforced
 
 `BlockchainLMDB` records `m_writer = boost::this_thread::get_id()` in
