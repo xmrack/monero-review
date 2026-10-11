@@ -51,6 +51,16 @@ The case this exists for: an unauthenticated cross-site request reaching
 `MAP_URI_AUTO_JON2_IF` with 400 before `on_stop_daemon` runs. Ask which one
 you have before you lean on the paragraph above.
 
+That 400 holds only while `json::load_from_json`
+(`contrib/epee/include/storages/portable_storage_from_json.h`) rejects an
+empty body. A change that makes it return true for an empty or
+whitespace-only body (e.g. a `std::all_of(..., isspace)` early return, as
+proposed at the head of monero-project/monero#11532) lets a bodiless `GET`
+through `MAP_URI_AUTO_JON2_IF`
+(`contrib/epee/include/net/http_server_handlers_map2.h`) to `on_stop_daemon`
+and to any other handler whose request has no required fields. Check
+`load_from_json` in the tree you are reviewing before relying on the 400.
+
 ## 3. Deserialization — the widest surface
 
 `src/serialization/`, `contrib/epee/include/serialization/`
