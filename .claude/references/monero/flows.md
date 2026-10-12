@@ -151,7 +151,12 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
    For the wallet's own real output the daemon must return the correct key,
    correct mask and `unlocked == true`, or construction fails. Decoys are not
    checked against the chain; `tx_add_fake_output` only drops locked,
-   duplicate, or non-main-subgroup key/commitment entries.
+   duplicate, or non-main-subgroup key/commitment entries, plus any entry
+   at the real output's own index (`global_index == real_index`, the early
+   return commented `don't re-add real one` in `wallet2::tx_add_fake_output`)
+   — the real output is already in the ring, pushed by `wallet2::get_outs`
+   (the `push_back` after the `pick real out first` comment) before any
+   decoy is considered, so it is never added twice.
 6. **`cryptonote::construct_tx_with_tx_key`** —
    `src/cryptonote_core/cryptonote_tx_utils.cpp`. Key images via the
    `hw::device` abstraction; **inputs sorted strictly descending by key image**
