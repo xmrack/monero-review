@@ -507,7 +507,10 @@ public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 **Peer lists.** White (verified), gray (heard about), anchor (eclipse
 resistance). An address enters the white list only after a successful outbound
 handshake or a successful **back-ping** proving the advertised port accepts
-connections and returns the same peer id. `last_seen` from a remote peer is
+connections and returns the same peer id. The exception is command-line peers
+(`--add-peer`): `node_server::init` in `src/p2p/net_node.inl` puts each of
+`m_command_line_peers` straight into the white list with
+`m_peerlist.append_with_peer_white(p)`, with no handshake. `last_seen` from a remote peer is
 never trusted — `sanitize_peerlist` zeroes it.
 
 **Lock order inside the node:** `m_host_fails_score_lock` →
@@ -527,8 +530,15 @@ never trusted — `sanitize_peerlist` zeroes it.
   inserting after configuration invalidates held references.
 - **Ping connections are real connections** that must not be counted;
   `is_ping` marks them.
-- `get_random_index_with_fixed_probability` is deliberately **not uniform** —
-  a cubic bias toward the most recently seen white peer.
+- `get_random_index_with_fixed_probability`, where it exists, is deliberately
+  **not uniform** — a cubic bias toward the most recently seen white peer. At
+  the head of monero-project/monero PR #11527 (`2c3323d7a41c`) it is gone:
+  `src/p2p/net_node.h` no longer declares it, and on the `use_white_list`
+  branch of `make_new_connection_from_peerlist` (`src/p2p/net_node.inl`)
+  `random_index = crypto::rand_idx(filtered.size())` picks uniformly over the
+  host- and /24-deduplicated candidates, with no 20-entry cap. The
+  `m_used_stripe_peers` override still applies. Check which version your tree
+  has (`git grep get_random_index_with_fixed_probability src/p2p`).
 - `block_subnet` and `unblock_subnet` are asymmetric: unblock recursively
   splits stored subnets around the removed range.
 - `--igd` / `--no-igd` are accepted and do nothing; UPnP was removed.

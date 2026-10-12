@@ -141,6 +141,17 @@ prime, and point-versus-negation handling, have both repeatedly looked like
 breaks and turned out to be fine once the protocol's own constraints were taken
 into account. Read the construction, not just the function.
 
+## The white list keeps one entry per host
+
+The white peer list holds at most one entry per host. Before inserting a new
+address, `peerlist_manager::append_with_peer_white` (`src/p2p/net_peerlist.h`)
+calls `evict_host_from_peerlist(true, ple)`, and
+`peerlist_manager::evict_host_from_peerlist` (`src/p2p/net_peerlist.cpp`)
+removes every white entry whose address `is_same_host` as the new one. For
+IPv4, `ipv4_network_address::is_same_host`
+(`contrib/epee/include/net/net_utils_base.h`) compares only the IP. Port
+inflation from one IPv4 host therefore cannot fill the white list.
+
 ## Not refutations: "nobody reaches it" and "it is not live yet"
 
 Neither kills a candidate. If the defect is real and nothing guards it, but no
