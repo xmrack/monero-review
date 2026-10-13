@@ -46,10 +46,19 @@ opened for it. Reach of that shape is a finding at the severity its effect
 earns, and the `Unrestricted-RPC-only` row below does not apply.
 
 The case this exists for: an unauthenticated cross-site request reaching
-`/stop_daemon` on a default daemon. It needs a JSON body (e.g. a CORS-simple
-`text/plain` POST of `{}`); a bodiless `GET` fails the JSON parse in
-`MAP_URI_AUTO_JON2_IF` with 400 before `on_stop_daemon` runs. Ask which one
-you have before you lean on the paragraph above.
+`/stop_daemon` on a default daemon. It does not need a JSON body: an empty
+body parses successfully, because `json::load_from_json` never enters
+`run_handler`'s loop on an empty string and returns true
+(`contrib/epee/include/storages/portable_storage_from_json.h`, reached via
+`load_t_from_json` in `portable_storage_template_helper.h`), and
+`COMMAND_RPC_STOP_DAEMON::request` in
+`src/rpc/core_rpc_server_commands_defs.h` has no required field. So on
+master a bodiless `GET` runs `on_stop_daemon`, as does a CORS-simple
+`text/plain` POST of `{}`. PR 11196 adds `MAP_URI_AUTO_JON2_IF_UNSAFE`,
+which answers 415 to a `GET` without an `application/json` Content-Type —
+see the comment above it in
+`contrib/epee/include/net/http_server_handlers_map2.h`. Ask which tree and
+which request you have before you lean on the paragraph above.
 
 ## 3. Deserialization — the widest surface
 
