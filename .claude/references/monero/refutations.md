@@ -319,6 +319,21 @@ trusted daemon's status unchanged, so routing those sites through it changes
 nothing. Re-check these four on the head you are reviewing; a new entry point
 that sets `check_spent` without a trusted daemon reopens this.
 
+## The SOCKS proxy chose not to take credentials
+
+The SOCKS client follows the proxy's method choice. In `src/net/socks.cpp`,
+`v5_auth_initial::make` offers `v5_noauth_method` and `v5_userpass_method`
+together, and the v5 reply handler sets
+`send_userpass = (header.method == v5_userpass_method)`, so credentials are
+sent only when the proxy selects username/password.
+
+A proxy that declines credentials is therefore not attacker input: the SOCKS
+proxy is configured by the operator and trusted by them. And Tor stream
+isolation by credentials is a service the proxy provides; the client cannot
+enforce it. A candidate of the shape "the client connects without sending its
+credentials" has to show something other than the configured proxy making
+that choice. Re-read both functions on the head you are reviewing.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
