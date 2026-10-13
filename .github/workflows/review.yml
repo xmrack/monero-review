@@ -227,6 +227,8 @@ env:
   # 2.1.280 through the Agent SDK. If a release changes that, scripts/
   # attempt.py spares the pull request rather than charging it, and the
   # install step logs the version so the run shows which CLI did it.
+  # Re-measured on 2.1.296: runs 38332248161 and 38332687548 dispatched the
+  # fleet, woke on its notification and published, with no refused calls.
   CLAUDE_CODE_VERSION: 2.1.296
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
