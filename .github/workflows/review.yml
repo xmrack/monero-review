@@ -227,7 +227,9 @@ env:
   # 2.1.280 through the Agent SDK. If a release changes that, scripts/
   # attempt.py spares the pull request rather than charging it, and the
   # install step logs the version so the run shows which CLI did it.
-  CLAUDE_CODE_VERSION: 2.1.280
+  # Re-measured on 2.1.296: runs 38332248161 and 38332687548 dispatched the
+  # fleet, woke on its notification and published, with no refused calls.
+  CLAUDE_CODE_VERSION: 2.1.296
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
   # ~42 at 3. Start at 1 so the first drain is survivable, then widen.
@@ -497,7 +499,7 @@ jobs:
       offbranch: ${{ steps.pick.outputs.offbranch }}
       open: ${{ steps.pick.outputs.open }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - id: pick
@@ -1096,7 +1098,7 @@ jobs:
 
       # The skill lives in this repo, not in Monero. Graft it onto the checkout.
       - name: Add the review skill
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: .harness
           persist-credentials: false
@@ -1669,6 +1671,7 @@ jobs:
           effort=()
           [ -n "${EFFORT:-}" ] && effort=(--effort "$EFFORT")
           "$CLAUDE_CLI" -p "$PROMPT" \
+            --permission-mode default \
             --model "$MODEL" "${effort[@]}" \
             --max-turns "$TURNS" \
             --allowedTools "$ALLOWED_TOOLS,$FLEET_EXTRA_TOOLS" \
@@ -1710,8 +1713,9 @@ jobs:
 
       # NB: env.ALLOWED_TOOLS is the list that BINDS, and it is now the single
       # copy in this file -- both passes reference it. The `allowed-tools:`
-      # line in each of the three skills' frontmatter is documentation, and
-      # review-local.sh carries a fourth copy. Four hand-synced copies is the
+      # line in each skill's frontmatter also grants while the skill runs, so
+      # it must never be wider than this, and review-local.sh carries another
+      # copy. Four hand-synced copies is the
       # same drift that let the verification gate and labels.py disagree;
       # change them together, and see the ALLOWED_TOOLS comment for the list.
       #
@@ -2352,7 +2356,7 @@ jobs:
       # review's file was deleted by `Collect proposed reference
       # corrections`, and the upload finds nothing, exactly as it does for a
       # public review that proposed nothing.
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always() && steps.verified.outputs.state == 'fleet'
         with:
           name: updates-${{ matrix.pr }}
@@ -2904,7 +2908,7 @@ jobs:
           rm -f "$out/transcript.tar.gz"
           rm -rf "$GNUPGHOME"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: transcript-${{ matrix.pr }}
@@ -2991,7 +2995,7 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       REPO_URL: ${{ github.server_url }}/${{ github.repository }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # This job commits. Both of the review job's checkouts set
           # persist-credentials: false and neither is reachable from here.
@@ -3011,7 +3015,7 @@ jobs:
       # Downloaded OUTSIDE the checkout: `git add -A` below would otherwise
       # commit the raw proposals into the pull request. Measured in a local
       # simulation of this job, which committed `incoming/` on the first try.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: updates-*
@@ -3503,6 +3507,7 @@ jobs:
           rm -f "$raw" "$out"
           echo "execution_file=$out" >> "$GITHUB_OUTPUT"
           "$CLAUDE_CLI" -p "$PROMPT" \
+            --permission-mode default \
             --model claude-opus-5-5 \
             --max-turns 40 \
             --allowedTools "Read,Grep,Glob,Edit(./refs-work/**),Write(./refs-work/**),Edit(./SUMMARY.md),Write(./SUMMARY.md),Edit(./SKIPPED.md),Write(./SKIPPED.md)" \
@@ -3565,7 +3570,7 @@ jobs:
           # mistake the .git/config paragraph below already survived once: a
           # guard that cannot tell the harness from an attacker, on a file the
           # harness touches every time, is the same failure as the tool
-          # patterns it replaced. `actions/checkout@v6` runs `git
+          # patterns it replaced. `actions/checkout@v7` runs `git
           # sparse-checkout disable` on every checkout that does not request
           # sparse-checkout -- which this job's does not -- and that command
           # writes this file as a side effect on a stock git 2.55, even
@@ -3747,7 +3752,7 @@ jobs:
           # Neither file plus an empty diff is the signature of a tool denial,
           # not of a writer that considered the entries and passed on them.
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always() && steps.check.outputs.any != '0'
         with:
           name: propose-exec-${{ github.run_id }}
