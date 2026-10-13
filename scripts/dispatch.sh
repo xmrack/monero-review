@@ -53,7 +53,7 @@ WORKFLOW=${WORKFLOW:-review.yml}
 # Sweeps run on Opus 5.5, matching DEFAULT_MODEL in the workflow. Passed
 # explicitly anyway: this script's whole job is to be the unattended driver,
 # and it should not silently change model because someone edited a default in
-# the workflow. Set MODEL=claude-sonnet-5 in the environment to run a cheap
+# the workflow. Set MODEL=claude-sonnet-5-5 in the environment to run a cheap
 # sweep without touching either file.
 #
 # Cost: Opus is several times Sonnet's rate on this queue -- a $1.02 Sonnet

@@ -227,7 +227,7 @@ env:
   # 2.1.280 through the Agent SDK. If a release changes that, scripts/
   # attempt.py spares the pull request rather than charging it, and the
   # install step logs the version so the run shows which CLI did it.
-  CLAUDE_CODE_VERSION: 2.1.280
+  CLAUDE_CODE_VERSION: 2.1.296
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
   # ~42 at 3. Start at 1 so the first drain is survivable, then widen.
@@ -497,7 +497,7 @@ jobs:
       offbranch: ${{ steps.pick.outputs.offbranch }}
       open: ${{ steps.pick.outputs.open }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - id: pick
@@ -1096,7 +1096,7 @@ jobs:
 
       # The skill lives in this repo, not in Monero. Graft it onto the checkout.
       - name: Add the review skill
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: .harness
           persist-credentials: false
@@ -2352,7 +2352,7 @@ jobs:
       # review's file was deleted by `Collect proposed reference
       # corrections`, and the upload finds nothing, exactly as it does for a
       # public review that proposed nothing.
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always() && steps.verified.outputs.state == 'fleet'
         with:
           name: updates-${{ matrix.pr }}
@@ -2904,7 +2904,7 @@ jobs:
           rm -f "$out/transcript.tar.gz"
           rm -rf "$GNUPGHOME"
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: transcript-${{ matrix.pr }}
@@ -2991,7 +2991,7 @@ jobs:
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       REPO_URL: ${{ github.server_url }}/${{ github.repository }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # This job commits. Both of the review job's checkouts set
           # persist-credentials: false and neither is reachable from here.
@@ -3011,7 +3011,7 @@ jobs:
       # Downloaded OUTSIDE the checkout: `git add -A` below would otherwise
       # commit the raw proposals into the pull request. Measured in a local
       # simulation of this job, which committed `incoming/` on the first try.
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           pattern: updates-*
@@ -3565,7 +3565,7 @@ jobs:
           # mistake the .git/config paragraph below already survived once: a
           # guard that cannot tell the harness from an attacker, on a file the
           # harness touches every time, is the same failure as the tool
-          # patterns it replaced. `actions/checkout@v6` runs `git
+          # patterns it replaced. `actions/checkout@v7` runs `git
           # sparse-checkout disable` on every checkout that does not request
           # sparse-checkout -- which this job's does not -- and that command
           # writes this file as a side effect on a stock git 2.55, even
@@ -3747,7 +3747,7 @@ jobs:
           # Neither file plus an empty diff is the signature of a tool denial,
           # not of a writer that considered the entries and passed on them.
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         if: always() && steps.check.outputs.any != '0'
         with:
           name: propose-exec-${{ github.run_id }}
