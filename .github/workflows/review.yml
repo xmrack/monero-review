@@ -1669,6 +1669,7 @@ jobs:
           effort=()
           [ -n "${EFFORT:-}" ] && effort=(--effort "$EFFORT")
           "$CLAUDE_CLI" -p "$PROMPT" \
+            --permission-mode default \
             --model "$MODEL" "${effort[@]}" \
             --max-turns "$TURNS" \
             --allowedTools "$ALLOWED_TOOLS,$FLEET_EXTRA_TOOLS" \
@@ -1710,8 +1711,9 @@ jobs:
 
       # NB: env.ALLOWED_TOOLS is the list that BINDS, and it is now the single
       # copy in this file -- both passes reference it. The `allowed-tools:`
-      # line in each of the three skills' frontmatter is documentation, and
-      # review-local.sh carries a fourth copy. Four hand-synced copies is the
+      # line in each skill's frontmatter also grants while the skill runs, so
+      # it must never be wider than this, and review-local.sh carries another
+      # copy. Four hand-synced copies is the
       # same drift that let the verification gate and labels.py disagree;
       # change them together, and see the ALLOWED_TOOLS comment for the list.
       #
@@ -3503,6 +3505,7 @@ jobs:
           rm -f "$raw" "$out"
           echo "execution_file=$out" >> "$GITHUB_OUTPUT"
           "$CLAUDE_CLI" -p "$PROMPT" \
+            --permission-mode default \
             --model claude-opus-5-5 \
             --max-turns 40 \
             --allowedTools "Read,Grep,Glob,Edit(./refs-work/**),Write(./refs-work/**),Edit(./SUMMARY.md),Write(./SUMMARY.md),Edit(./SKIPPED.md),Write(./SKIPPED.md)" \
