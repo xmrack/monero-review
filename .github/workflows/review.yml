@@ -671,9 +671,19 @@ jobs:
           # backport review so far was reading that garbage.
           # One call for both: the base branch, and whether the pull request is
           # merged, closed unmerged, or open.
-          read -r BASE STATE MERGE < <(gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" \
-            --jq '"\(.base.ref) \(if .merged then "merged" else .state end) \(.merge_commit_sha // "")"')
-          if [ -z "$BASE" ]; then
+          # Fetched once, retried, and checked: on an API error gh prints the
+          # error body, which once became the base branch (run 38556760673,
+          # HTTP 503). `Fetch PR description` reads the same file.
+          pr_json="$RUNNER_TEMP/pr-meta.json"
+          rm -f "$pr_json"
+          for wait in 10 30 60 0; do
+            gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" > "$pr_json" \
+              && jq -e '.number == ${{ matrix.pr }}' "$pr_json" >/dev/null && break
+            rm -f "$pr_json"
+            sleep "$wait"
+          done
+          read -r BASE STATE MERGE < <(jq -r '"\(.base.ref) \(if .merged then "merged" else .state end) \(.merge_commit_sha // "")"' "$pr_json" 2>/dev/null) || true
+          if ! [[ "$BASE" =~ ^[A-Za-z0-9._/-]+$ && "$STATE" =~ ^(open|closed|merged)$ ]]; then
             echo "::error::could not determine the base branch for PR ${{ matrix.pr }}"
             exit 1
           fi
@@ -830,16 +840,14 @@ jobs:
             # fence below. It is still a fact about WHO opened the change, never
             # a reason to weigh the change differently -- the report names it so
             # a reader can see the provenance at a glance, and that is all.
-            author=$(gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" \
-                       --jq '.user.login' 2>/dev/null || true)
+            author=$(jq -r '.user.login' "$RUNNER_TEMP/pr-meta.json")
             echo "Opened by: ${author:-(unknown)}"
             # The author's standing upstream (MEMBER, COLLABORATOR,
             # CONTRIBUTOR, NONE...), from the API and an enum, so it cannot
             # carry markup either. The review uses it for one decision only:
             # whether an obvious security patch was made by Monero developers,
             # which routes the review to the private disclosure repository.
-            assoc=$(gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" \
-                      --jq '.author_association' 2>/dev/null || true)
+            assoc=$(jq -r '.author_association' "$RUNNER_TEMP/pr-meta.json")
             echo "Author association: ${assoc:-(unknown)}"
             # Decided here, from the login and MONERO_DEVELOPERS, not left to
             # the model's memory of who works on Monero -- which a description
@@ -860,8 +868,7 @@ jobs:
             # An author who writes the end marker into their description would
             # otherwise close the fence and continue outside it. Strip any line
             # that looks like either marker before it goes in.
-            gh api "repos/$UPSTREAM/pulls/${{ matrix.pr }}" \
-              --jq '"# \(.title)\n\n\(.body // "(no description)")"' \
+            jq -r '"# \(.title)\n\n\(.body // "(no description)")"' "$RUNNER_TEMP/pr-meta.json" \
               | sed 's/-\{3,\} *\(BEGIN\|END\) AUTHOR-SUPPLIED TEXT *-\{3,\}/[marker stripped]/g' \
               | sed -E 's/^[[:space:]>*_`#-]*(Pull request|Opened by|Author association|Monero developer|PR state|Upstream master)[[:space:]*_`]*:/[harness field stripped]:/I'
             # The second sed: the lines above the fence are the harness's, and
