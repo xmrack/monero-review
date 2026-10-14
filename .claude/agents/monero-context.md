@@ -48,7 +48,7 @@ against master returns the whole branch divergence instead of the change
 - `submodule-diffs/` and `submodule-base/`: written with `PR_SUBMODULES.md`.
   A path inside a moved submodule is in `PR_FILES.md`, but `git diff
   origin/base...HEAD` shows only the gitlink. Its change is
-  `submodule-diffs/<path with / as _>.diff`, its old version is
+  `submodule-diffs/<submodule path>.diff`, its old version is
   `submodule-base/<same path>`, and its new version is the path itself. Use
   those wherever you would use `git show origin/base:<path>` or a `+` line in
   the diff.

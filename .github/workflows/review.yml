@@ -1096,8 +1096,9 @@ jobs:
                 git -C "$sub" cat-file -e "$c^{commit}" 2>/dev/null \
                   || git -C "$sub" fetch -q --filter=blob:none origin "$c" 2>/dev/null || true
               done
-              name=$(printf '%s' "$sub" | tr '/' '_')
-              mkdir -p submodule-diffs
+              # Named by the submodule's own path, so no two can collide.
+              name=$sub
+              mkdir -p "submodule-diffs/$(dirname "$sub")"
               if ! git -C "$sub" diff --no-color --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
                      "$from" "$to" > "submodule-diffs/$name.diff" 2>/dev/null; then
                 rm -f "submodule-diffs/$name.diff"
