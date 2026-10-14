@@ -1070,9 +1070,12 @@ jobs:
           empty=$(git hash-object -t tree /dev/null)
           : > "$RUNNER_TEMP/submodule-files"
           : > "$RUNNER_TEMP/submodule-diffs.md"
-          git diff origin/base...HEAD --raw --no-abbrev 2>/dev/null |
-            awk '$1==":160000" || $2=="160000" {print $3, $4, $6}' |
-            while read -r old new sub; do
+          # -z, so a path is exactly what git means by it: each record is the
+          # meta field, NUL, the path, NUL.
+          git diff origin/base...HEAD --raw --no-abbrev -z 2>/dev/null |
+            while IFS= read -r -d '' meta && IFS= read -r -d '' sub; do
+              read -r omode nmode old new _ <<< "${meta#:}"
+              [ "$omode" = 160000 ] || [ "$nmode" = 160000 ] || continue
               zero='^0+$'
               {
                 echo
