@@ -34,7 +34,7 @@ only. Read it upward: a change low down is felt everywhere above it.
 
 ```
 easylogging  liblmdb  qrcodegen                                 (external/, in tree)
-randomx  rapidjson  supercop  polyseed  utf8proc                (external/, submodules)
+randomx  rapidjson  supercop  polyseed  utf8proc  mx25519*      (external/, submodules)
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
@@ -172,7 +172,14 @@ reach `src/` through one edge only: `target_link_libraries` in
 `src/mnemonics/CMakeLists.txt` and
 `src/mnemonics/polyseed/CMakeLists.txt` make `mnemonics` link
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
-`cryptonote_basic`. `contrib/epee/` is Monero's own but
+`cryptonote_basic`. Once monero-project/monero PR 10964 merges, `mx25519`
+(starred above; `https://github.com/tevador/mx25519.git`) is a
+further submodule. Its `MX25519_COPYLEFT` option defaults ON only when Monero
+is the top-level CMake project — `external/CMakeLists.txt` computes
+`MONERO_IS_TOP_LEVEL` with `string(COMPARE EQUAL "${CMAKE_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}" ...)`
+before `option(MX25519_COPYLEFT ...)` — and OFF leaves only the portable C
+backend: `external/mx25519/src/platform.h` defines `IMPL_AMD64`/`IMPL_ARM64`
+only when `MX25519_NO_COPYLEFT` is not defined. `contrib/epee/` is Monero's own but
 predates most of `src/` and follows different conventions — treat it as a
 fifth dialect, not as part of `src/`.
 
