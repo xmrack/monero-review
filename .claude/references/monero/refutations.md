@@ -160,6 +160,31 @@ argument as attacker-controlled unless the function's contract or the FCMP++
 design constrains it, and cite what does. How a future caller will use the code
 is not a gap to report. It is the analysis to do.
 
+## `CarrotOutputPairV1` skips torsion clearing by contract
+
+`fcmp_pp::curve_trees::output_to_tuple` does not clear torsion for a
+`CarrotOutputPairV1`, which looks like a small-order point reaching
+`point_to_ed_derivatives`. That is the type's contract: the comment above
+`struct CarrotOutputPairV1` in `src/fcmp_pp/fcmp_pp_types.h` ("No torsion")
+makes torsion-freeness a precondition on whoever constructs one, and
+`output_checked_for_torsion` in `src/fcmp_pp/fcmp_pp_types.cpp` returns true
+for it. The only checks left in `output_to_tuple` do not cover the case: the
+torsion re-check is a plain `assert` under `!defined(NDEBUG)` (see "An existing
+assertion covers it"), and the release-build check rejects only the identity.
+
+Nothing in the tree constructs a `CarrotOutputPairV1` -- check with
+`git grep -n CarrotOutputPairV1` -- so no untrusted point reaches the skip
+today. Two limits:
+
+- **It expires when a constructor appears.** Code that wraps outputs in a
+  `CarrotOutputPairV1` must first check BOTH the output pubkey and the
+  commitment for torsion. A pull request adding one without both checks is a
+  finding; retarget the candidate at that code and re-run the grep on the head
+  you are reviewing.
+- **Per "Not refutations" above, rate on the live path.** Once outputs flow
+  into this type, an unchecked point is rated as the consensus or wallet
+  defect it becomes, not as staged code.
+
 ## It is test-only code
 
 Changes under `tests/` do not ship. They matter only if they also modify

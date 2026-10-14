@@ -221,13 +221,20 @@ a redefinition error.
 ## The threadpool does not guarantee a worker thread
 
 `tools::threadpool` has two process-wide singletons —
-`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Two behaviours
-that break the obvious mental model:
+`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). Behaviours
+that break the obvious mental model (all in `src/common/threadpool.cpp`):
 
 - **`submit` runs a non-leaf task inline on the caller** when depth > 0 or
-  every thread is busy with work already queued.
+  every thread is busy with work already queued. A leaf task
+  (`leaf == true`) is always queued, at the front (`queue.push_front`).
+- **`submit` throws when called from inside a leaf job**
+  (`CHECK_AND_ASSERT_THROW_MES(!is_leaf, ...)`). So code that itself submits
+  (e.g. `hash_children_chunks` and `outputs_to_leaves` in
+  `src/fcmp_pp/curve_trees.cpp`) throws if run as a leaf job.
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking.
+- **`threadpool::run` catches only `std::exception`** from a job; anything
+  else escapes the worker thread.
 
 So "this runs on a worker thread" is never guaranteed, which matters for any
 reasoning about reentrancy or thread-local state. `create` spawns `max - 1`
@@ -255,8 +262,12 @@ reads on that thread see uncommitted data.
 `NodeRPCProxy` — it protects none of `m_transfers`, `m_blockchain` or the
 subaddress table. Serialization is the front end's job:
 
-- **simplewallet**: `LOCK_IDLE_SCOPE()` around every command and the idle
-  refresh.
+- **simplewallet**: `m_idle_mutex` held by the idle refresh
+  (`wallet_idle_thread`) and taken by many commands via `LOCK_IDLE_SCOPE()`
+  (directly or through `SCOPED_WALLET_UNLOCK()`) — **not every one**.
+  `on_command` takes no lock, so handlers without it (e.g. `show_transfer`,
+  `unspent_outputs`, `freeze_thaw`, `address_book`) run concurrently with the
+  idle refresh. Check the handler.
 - **wallet-rpc**: one network thread, and five `std::atomic`s for the only
   cross-thread interaction (`stop_refresh`).
 - **`wallet_api`**: `m_refreshMutex2` in `doRefresh` and the `LOCK_REFRESH()`

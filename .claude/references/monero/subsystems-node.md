@@ -408,9 +408,10 @@ and an atomic counter.
   Those two are the invariant, **not the field count**. The struct carries
   reserve in two places, and they behave differently. One is a
   bitfield byte — `double_spend_seen:1, pruned:1, is_local:1,
-  dandelionpp_stem:1, is_forwarding:1, bf_padding:3` — with only **three
-  spare bits left**, so a fourth flag has to come out of `padding` instead.
-  The other is `uint8_t padding[44]; // til 160 bytes`, immediately ahead of
+  dandelionpp_stem:1, is_forwarding:1, prunable_hash_valid:1, bf_padding:2` —
+  with only **two spare bits left**, so a third flag has to come out of
+  `padding` instead. The other is `uint8_t padding[12]; // til 160 bytes`,
+  between `crypto::hash prunable_hash` and
   `crypto::hash valid_input_verification_id`. A field carved out of
   either reserve needs **no** migration: records written by older daemons read
   back as all-zero there, which every consumer must treat as "absent". Adding
@@ -418,9 +419,13 @@ and an atomic counter.
   offset — and moving `valid_input_verification_id` trips the `offsetof`
   assert at compile time, which is the point of it. The writers that zero the
   reserve are the two branches of `tx_memory_pool::add_tx`
-  (`src/cryptonote_core/tx_pool.cpp`) that build a fresh `meta`
+  (`src/cryptonote_core/tx_pool.cpp`)
   (`meta.bf_padding = 0; memset(meta.padding, 0, sizeof(meta.padding));`); a
   new write path that forgets that pair persists stack garbage into the DB.
+  That pair does not touch `prunable_hash_valid` / `prunable_hash`; both
+  branches set them via `cache_prunable_hash` (the second only when the
+  `meta` read back from the DB lacks them), so a new write path must set
+  them too.
 - The table schema is **duplicated** in
   `src/blockchain_utilities/blockchain_prune.cpp`; `open()`'s comment says to
   change both.
@@ -609,7 +614,9 @@ varints, `expect<T>`, a password prompt, and `boost::program_options` wrappers.
 **`tools::threadpool`** has two process-wide singletons —
 `getInstanceForCompute()` (hardware concurrency) and `getInstanceForIO()` (8
 threads). Two things to internalise: `submit` **runs a non-leaf task inline on
-the caller** when depth > 0 or every thread is busy with work still queued, and `waiter::wait()` **drains
+the caller** when depth > 0 or every thread is busy with work still queued
+(`threadpool::submit`, `src/common/threadpool.cpp`); a leaf task is always
+queued, at the front (`queue.push_front`). And `waiter::wait()` **drains
 the queue on the calling thread** before blocking. "This runs on a worker
 thread" is never guaranteed. `create` spawns `max - 1` threads because the
 submitter is expected to contribute.
