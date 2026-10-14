@@ -1128,6 +1128,14 @@ jobs:
                 echo "- full patch: submodule-diffs/$name.diff ($(wc -l < "submodule-diffs/$name.diff") lines)"
                 [ -d "submodule-base/$sub" ] && echo "- old tree: submodule-base/$sub/ (the head tree is $sub/)"
                 echo "- commits the new pin drops, if any, are the \`<\` lines above"
+                # Provenance, which no agent can read: a pin on no branch of the
+                # configured remote, or untagged, is worth saying so.
+                for c in "$from" "$to"; do
+                  [ "$c" = "$empty" ] && continue
+                  tags=$(git -C "$sub" tag --points-at "$c" 2>/dev/null | head -5 | paste -sd' ' -)
+                  branches=$(git -C "$sub" branch -r --contains "$c" 2>/dev/null | grep -v -- '->' | head -8 | tr -d ' ' | paste -sd' ' -)
+                  echo "- ${c:0:12}: tags ${tags:-(none)}; on remote branches ${branches:-(none)}"
+                done
                 echo '```'
                 git -C "$sub" diff "${nd[@]}" --stat=100 "$from" "$to" 2>/dev/null | tail -80 | sed "$strip"
                 echo '```'
