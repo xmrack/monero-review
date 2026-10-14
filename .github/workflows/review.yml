@@ -1102,7 +1102,10 @@ jobs:
               # Named by the submodule's own path, so no two can collide.
               name=$sub
               mkdir -p "submodule-diffs/$(dirname "$sub")"
-              if ! git -C "$sub" diff --no-color --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
+              # --text and no conversions: the dependency's own .gitattributes
+              # must not turn its code into "Binary files differ".
+              nd=(--no-color --text --no-ext-diff --no-textconv)
+              if ! git -C "$sub" diff "${nd[@]}" --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
                      "$from" "$to" > "submodule-diffs/$name.diff" 2>/dev/null; then
                 rm -f "submodule-diffs/$name.diff"
                 echo "DIFF FAILED: one of the two pins could not be fetched." >> "$RUNNER_TEMP/submodule-diffs.md"
@@ -1111,16 +1114,22 @@ jobs:
               git -C "$sub" diff --name-only "$from" "$to" 2>/dev/null |
                 P="$sub" awk '{print ENVIRON["P"] "/" $0}' >> "$RUNNER_TEMP/submodule-files"
               if [ "$from" != "$empty" ]; then
+                # Not `git archive`, which honours export-ignore and so would
+                # let the dependency leave files out of the old tree.
                 mkdir -p "submodule-base/$sub"
-                git -C "$sub" archive "$from" 2>/dev/null | tar -x -C "submodule-base/$sub" 2>/dev/null \
+                idx="$RUNNER_TEMP/submodule-index"
+                rm -f "$idx"
+                { GIT_INDEX_FILE="$idx" git -C "$sub" read-tree "$from" \
+                  && GIT_INDEX_FILE="$idx" git -C "$sub" checkout-index -a -f --prefix="$PWD/submodule-base/$sub/"; } 2>/dev/null \
                   || echo "Old tree NOT unpacked; read the diff only." >> "$RUNNER_TEMP/submodule-diffs.md"
+                rm -f "$idx"
               fi
               {
                 echo "- full patch: submodule-diffs/$name.diff ($(wc -l < "submodule-diffs/$name.diff") lines)"
                 [ -d "submodule-base/$sub" ] && echo "- old tree: submodule-base/$sub/ (the head tree is $sub/)"
                 echo "- commits the new pin drops, if any, are the \`<\` lines above"
                 echo '```'
-                git -C "$sub" diff --stat=100 "$from" "$to" 2>/dev/null | tail -80 | sed "$strip"
+                git -C "$sub" diff "${nd[@]}" --stat=100 "$from" "$to" 2>/dev/null | tail -80 | sed "$strip"
                 echo '```'
               } >> "$RUNNER_TEMP/submodule-diffs.md"
             done
