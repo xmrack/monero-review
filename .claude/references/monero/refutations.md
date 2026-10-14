@@ -206,6 +206,19 @@ for it. The only checks left in `output_to_tuple` do not cover the case: the
 torsion re-check is a plain `assert` under `!defined(NDEBUG)` (see "An existing
 assertion covers it"), and the release-build check rejects only the identity.
 
+What a skipped check costs, in a release build: `point_to_ed_derivatives`
+in `src/fcmp_pp/fcmp_pp_crypto.cpp` rejects only `EC_I` and bytes that do
+not decode, and `ge_frombytes_vartime` in `src/crypto/crypto-ops.c` accepts
+x=0 with sign bit 0. So the order-2 point (0,-1) as a Carrot `O` or `C`
+passes with `one_minus_y_mul_x` zero. `CurveTrees::outputs_to_leaves` in
+`src/fcmp_pp/curve_trees.cpp` then fails `fe_batch_invert` (which returns
+-1 on a zero product) at a `CHECK_AND_ASSERT_THROW_MES` placed after the
+Step 1 per-output `try`/`catch`, so the throw aborts the whole
+`get_tree_extension` call. A Carrot point with other torsion is inserted
+silently. One constructor that skips the check therefore halts tree growth
+for every output in that call, and the other torsion classes go into the
+tree unnoticed.
+
 Nothing in the tree constructs a `CarrotOutputPairV1` -- check with
 `git grep -n CarrotOutputPairV1` -- so no untrusted point reaches the skip
 today. Two limits:
@@ -218,6 +231,20 @@ today. Two limits:
 - **Per "Not refutations" above, rate on the live path.** Once outputs flow
   into this type, an unchecked point is rated as the consensus or wallet
   defect it becomes, not as staged code.
+
+## `CurveTrees` chunk widths are not an input
+
+The `CurveTrees::CurveTrees` constructor in `src/fcmp_pp/curve_trees.h`
+checks `c1_width` and `c2_width` only with a plain `assert`, so in a release
+build a width of 0 or 1 divides by zero or loops in
+`CurveTrees::n_elems_per_layer` (`src/fcmp_pp/curve_trees.cpp`). That is not
+a reachable defect: `curve_trees_v1` defaults to the source constants
+`SELENE_CHUNK_WIDTH` and `HELIOS_CHUNK_WIDTH`, and no peer, RPC field, config
+or database value supplies a width -- list the constructions with
+`git grep -n 'curve_trees_v1(' -- src`. The widths are fixed by the FCMP++
+design, and changing one changes the consensus tree. A width-0/1 proposal
+against `CurveTrees` is hardening, not a finding; it becomes one only if a
+pull request lets a width arrive from outside the source.
 
 ## It is test-only code
 
