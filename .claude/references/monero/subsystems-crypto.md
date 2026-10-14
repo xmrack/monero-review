@@ -10,7 +10,7 @@ agree bit for bit. So the highest-value question about a change here is usually
 not "is this instruction correct" but **"do all the paths still produce the
 same bytes"**.
 
-Verified against master `160e21504`.
+Verified against master `8308dee67` (2026-10-13).
 
 ---
 
@@ -29,7 +29,12 @@ Verified against master `160e21504`.
    two and is called from `src/fcmp_pp/curve_trees.cpp`, so FCMP++ key images
    depend on this map too),
    `fe_batch_invert`, `ge_p3_is_point_at_infinity_vartime`, and newer
-   FCMP++/Carrot helpers at the end of the file.
+   FCMP++/Carrot helpers at the end of the file. `ge_p3_is_point_at_infinity_vartime`
+   is already consensus code: the legacy `check_ring_signature` uses it to
+   reject a key image with torsion (`l*I != identity`), and `multiexp.cc` uses
+   it to skip identity terms. The Carrot X25519 conversions
+   (`ge_p3_to_x25519`, `edwards_bytes_to_x25519_vartime`) have no callers
+   outside `crypto-ops.c` on master.
 2. **The CryptoNote key API**: `crypto.h` / `crypto.cpp`. Key derivation
    (`generate_key_derivation` = `r*A` then mul-by-8), `derive_public_key`,
    `derive_subaddress_public_key`, `derive_view_tag`, Schnorr signatures, tx
@@ -61,7 +66,9 @@ functions are swapped**: `monero_crypto_generate_key_derivation` and
 `crypto::wallet::generate_key_derivation` / `derive_subaddress_public_key`
 (`src/crypto/wallet/crypto.h`, called from `src/device/device_default.cpp`). So on a typical Linux release
 build the wallet's hot derivation path is hand-written assembly from
-`external/supercop`, not `crypto-ops.c` — and the two must agree. Note
+`external/supercop`, not `crypto-ops.c` — and the two must agree. (The
+generated `ops.h` also maps `monero_crypto_ge25519_scalarmult`; nothing in
+`src` uses it.) Note
 supercop's `generate_key_derivation` performs three doublings after the scalar
 multiplication to clear the cofactor, described in the source as
 "non-standard, monero specific".
@@ -136,12 +143,14 @@ reporting one.
   CLSAG `s[]` and `c1`, MLSAG `ss[][]` and `cc`, the Bulletproof and
   Bulletproof+ scalars via `is_reduced`.
 - Every group element is either decoded with `ge_frombytes_vartime` (which
-  rejects non-canonical encodings) or multiplied by the cofactor via
+  rejects `y >= p` and the `x = 0` encoding with the sign bit set, but does
+  **not** check subgroup membership) or multiplied by the cofactor via
   `rct::scalarmult8` before it can influence a decision.
 - Points that must not be the identity are checked explicitly: CLSAG `sig.I`
   and `D_8`, MLSAG `rv.II[i]`, each derived bulletproof generator.
-- Fiat-Shamir challenges must be non-zero; both provers loop rather than emit
-  a proof with a zero challenge.
+- Fiat-Shamir challenges must be non-zero; both provers jump back to a
+  `try_again:` label (`goto try_again`) rather than emit a proof with a zero
+  challenge, and both verifiers reject a zero challenge.
 - `get_pre_mlsag_hash` is the **single definition of what a signature covers** —
   the prefix, the rct base fields and the range-proof fields. A new proof type
   has to be folded in there.
@@ -173,8 +182,14 @@ reporting one.
 - `make_dummy_bulletproof`, `make_dummy_bulletproof_plus` and
   `make_dummy_clsag` (anonymous namespace at the top of `rctSigs.cpp`) produce
   structurally valid, cryptographically meaningless proofs for fee estimation.
-- `bulletproof_PROVE` has a `goto try_again` backwards jump for a zero
-  challenge.
+- **`RangeProofType` values are a file-format contract.** `RCTConfig`
+  (`rctTypes.h`) is persisted inside `tx_construction_data` (boost
+  `cryptonote_boost_serialization.h`, and `VARINT_FIELD` in its own
+  serializer), so unsigned-tx and multisig tx-set files depend on the
+  numeric values: `RangeProofBorromean = 0`, `RangeProofPaddedBulletproof = 3`
+  are pinned for compatibility with `release-v0.18`. Renumbering is a
+  wallet-interop break, not a refactor; `genRctSimple` tests
+  `range_proof_type > RangeProofBorromean`.
 - `bos_coster_heap_conv_robust` in `multiexp.cc` has no production caller — it
   is a reference implementation for tests.
 - `rct::zeroCommitVartime` is fast for 173 tabulated amounts and
@@ -199,21 +214,37 @@ What exists: `curve_trees.{h,cpp}`, `fcmp_pp_crypto.{h,cpp}`,
 C-compatibility probe), and `fcmp_pp_rust/` — a Rust crate.
 
 **Monero master builds Rust.** `src/fcmp_pp/CMakeLists.txt` links
-`libfcmp_pp_rust.a`, whose manifest pulls `ciphersuite 0.4.2` and
-`dalek-ff-group 0.5.0` from crates.io, `helioselene` and the FCMP++ crates
-(`ec-divisors`, `full-chain-membership-proofs`, `monero-fcmp-plus-plus*`) from
-one git revision of `github.com/monero-oxide/monero-oxide`, and patches
-`crypto-bigint` to a branch of a personal fork. Both profiles set
-`panic = "abort"` and `overflow-checks = true`. The Ubuntu CI jobs verify
-`rustup-init` by SHA-256 and installs toolchain `1.93`; `fcmp_pp_rust/CMakeLists.txt` maps each
-build target to a Rust target triple, and the Guix release build vendors the
-crates (`contrib/guix/rust/config.toml`). **A change under `fcmp_pp_rust/` is a
-supply-chain change**, whatever the diff looks like.
+`libfcmp_pp_rust.a`, whose manifest (`fcmp_pp_rust/Cargo.toml`) pulls
+`ciphersuite` and `dalek-ff-group` from crates.io, `helioselene` and the
+FCMP++ crates (`ec-divisors`, `full-chain-membership-proofs`,
+`monero-fcmp-plus-plus*`) from one git `rev` of
+`github.com/monero-oxide/monero-oxide`, and patches `crypto-bigint` to the
+`c-repr` branch of a personal fork (`kayabaNerve/crypto-bigint`; the exact
+commit is pinned only in `Cargo.lock`). Cargo runs with `--locked`. Both
+profiles set `panic = "abort"` and `overflow-checks = true`. The Ubuntu CI
+jobs verify `rustup-init` by SHA-256 and install a pinned toolchain (`grep -n
+default-toolchain .github/workflows/build.yml`); `fcmp_pp_rust/CMakeLists.txt`
+maps each build target to a Rust target triple, and the Guix release build
+vendors the crates (`contrib/guix/rust/config.toml`). **A change under
+`fcmp_pp_rust/` or to `Cargo.lock` is a supply-chain change**, whatever the
+diff looks like.
+
+**The FFI surface on master is tree hashing only.** `fcmp_pp_rust/src/lib.rs`
+exports the hash-init points, `hash_grow_helios` / `hash_grow_selene`
+(wrapping `full_chain_membership_proofs::tree::hash_grow`), Selene/Helios
+point-to-cycle-scalar conversion, `selene_scalar_from_bytes`, zero scalars and
+to-bytes helpers. There is no prove, verify, key-image or spend-authorization (SA/L) entry point.
+Functions return `-1` for a null out-pointer and `-2` for a Rust-side
+failure; `tower_cycle.cpp` is the only C++ caller. Input pointers other than
+the out-pointer are not null-checked (`selene_scalar_from_bytes` reads 32
+bytes unconditionally).
 
 **The C++ side hard-codes generators the Rust side also defines.**
 `src/crypto/generators.cpp` carries the FCMP++ generators `T`, `U` and `V` as
-raw constants, each with a `//Source:` comment naming where it came from; only
-debug-build `assert`s in `init_gens` reproduce them. They must equal
+raw constants, each with a `//Source:` comment naming where it came from;
+`init_gens` only `static_assert`s their first byte, and only debug-build
+`assert`s reproduce them in full (they matched monero-oxide at the pinned
+`rev` on `8308dee67`). They must equal
 monero-oxide's `CompressedPoint::T` (`monero-oxide/ed25519/src/compressed_point.rs`)
 and `FCMP_PLUS_PLUS_U` / `FCMP_PLUS_PLUS_V`
 (`monero-oxide/ringct/fcmp++/generators/src/lib.rs`) at the pinned revision.
@@ -243,15 +274,25 @@ which on master finds only the two CMake lines.
 
 `fcmp_pp_crypto.h` exports `mul8_is_identity_vartime`,
 `point_to_ed_derivatives`, `ed_derivatives_to_wei_x_y`, `point_to_wei_x_y` and
-`struct EdDerivatives`.
+`struct EdDerivatives`. **Precondition, checked only in debug builds:**
+`point_to_ed_derivatives` / `point_to_wei_x_y` require a torsion-free,
+non-identity point (the output of `get_valid_torsion_cleared_point_vartime`);
+release builds reject only the identity and an undecodable point, and the
+header calls a torsioned input undefined behaviour downstream. A new caller
+that skips torsion clearing is the thing to look for. `output_to_tuple`
+skips clearing for a `CarrotOutputPairV1` (`output_checked_for_torsion` in
+`fcmp_pp_types.cpp` returns true for that variant unconditionally), so it
+relies on Carrot outputs being torsion-checked before they reach the tree;
+`use_biased_hash_to_point` likewise selects the key-image generator by
+variant (legacy biased, Carrot unbiased).
 
 Treat FCMP++ as **new code**, not as an extension of `src/ringct/` — it brings
 a curve cycle with its own field implementations, divisor constructions, and a
 generalized Bulletproofs variant. Two notes from prior review of this area:
 apparent problems with divisor arithmetic modulo the field prime, and with
 point-versus-negation handling, are frequently refuted by the surrounding
-construction; and the wallet-side tree/state caching is ordinary memory-safety
-territory, distinct from the proof mathematics.
+construction; and wallet-side tree/state caching (not on master) is ordinary
+memory-safety territory, distinct from the proof mathematics.
 
 ---
 
@@ -282,13 +323,18 @@ directory, not here.
 ## Proof-of-work: `src/crypto/rx-slow-hash.c` and `external/randomx`
 
 **`rx-slow-hash.c` is the entire Monero side.** Everything under
-`external/randomx` is upstream `tevador/RandomX`, vendored as a submodule and
-held to upstream's standards.
+`external/randomx` is upstream `tevador/RandomX`, vendored as a submodule
+(pin: `git ls-tree HEAD external/randomx`; the submodule may be absent from a
+checkout) and held to upstream's standards.
 
 **Seed height arithmetic** is consensus:
 `rx_seedheight(height) = (height <= blocks + lag) ? 0 : (height - lag - 1) & ~(blocks - 1)`
 with `SEEDHASH_EPOCH_BLOCKS` 2048 and `SEEDHASH_EPOCH_LAG` 64. Both are
-overridable from the environment, and both change consensus-visible behaviour.
+overridable from the environment (`get_seedhash_epoch_blocks` /
+`get_seedhash_epoch_lag`), which accepts only a smaller power of two
+(`2 <= blocks <= 2048`, `lag <= 64`) and otherwise falls back silently; any
+override changes consensus-visible behaviour and is meant for test networks.
+`MONERO_RANDOMX_UMASK` masks RandomX flags off the same way.
 `rx_set_main_seedhash` is called by `Blockchain` on init, pop, reorg and new
 top block.
 
@@ -345,7 +391,7 @@ top block.
 - `slow_hash_allocate_state` / `slow_hash_free_state` are declared in **no
   header** — callers write a local `extern "C"` declaration.
 - The error strategy in `rx-slow-hash.c` is `local_abort()`: log, then
-  `_exit(1)` under NDEBUG. There is no error return.
+  `_exit(1)` under NDEBUG (`abort()` otherwise). There is no error return.
 
 ---
 

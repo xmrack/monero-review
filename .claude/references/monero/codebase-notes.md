@@ -7,17 +7,18 @@ substitute for reading the code.
 
 **This file is the judgement half.** For how the code actually works — the
 library graph, end-to-end traces, per-subsystem symbol maps, the macro
-families, the coding dialects, threading — see `.claude/references/monero/`,
-which every skill here shares. Read `macros.md` there before trusting any
-grep result.
+families, the coding dialects, threading — see the other files in this
+directory (`README.md` lists them). Read `macros.md` before trusting any grep
+result.
 
 ## Four serialization systems, not one
 
 This is the most important structural fact about the codebase, and the easiest
 to get wrong. Two of them carry most of the risk and are described below; the
 full set — including the newer epee `wire` layer (write-only on master) and
-`boost::serialization` for persisted local state — is in
-`.claude/references/monero/architecture.md`.
+`boost::serialization` for persisted local state — is in `architecture.md`.
+ZMQ RPC requests are a further parse path, rapidjson via
+`src/serialization/json_object.cpp`.
 
 **`contrib/epee/`** is a general-purpose library predating much of the project,
 with its own conventions. It carries `portable_storage` (the object
@@ -26,7 +27,8 @@ client and server. It is written in a different style from `src/` — heavier on
 macros, looser on error handling — and it sits directly on the network.
 
 **`src/serialization/`** is the template-based binary/JSON archive machinery
-used for blocks, transactions, and the wallet cache.
+used for blocks, transactions, and the wallet cache (which falls back to
+`boost::serialization`; see `trust-boundaries.md` section 7).
 
 Because both parse attacker-supplied bytes, both are worth checking, and a
 change to either has a blast radius much wider than the diff suggests. When a
@@ -36,7 +38,8 @@ the answer is usually "all of them".
 Recurring questions for either system:
 
 - Does a length, count, or size field read from the wire reach an allocation
-  before it is bounded? Bounds must exist in the read path, not in the caller.
+  before it is bounded? A bound in a caller protects only that caller; one in
+  the read path protects all of them.
 - Is the bound proportional to what actually arrived, or absolute? A count that
   is "checked" against a constant much larger than any real message still
   permits large allocation from a small input.
@@ -54,9 +57,10 @@ The question here is never only "does it crash". It is **"would a node running
 this code reach a different accept/reject verdict than the rest of the network
 on some input"**. That reframing catches changes that look like refactors.
 
-Fork heights live in `src/hardforks/hardforks.cpp`; the `HF_VERSION_*`
-constants that gate behaviour are in `src/cryptonote_config.h`. Any behaviour change must be gated to the correct version. Ask
-explicitly: if this node and an unpatched node both see the same block, do they
+Fork heights live in `src/hardforks/hardforks.cpp` (`mainnet_hard_forks` and
+the testnet/stagenet tables); the `HF_VERSION_*` constants that gate behaviour
+are in `src/cryptonote_config.h`. Any behaviour change must be gated to the
+correct version. Ask explicitly: if this node and an unpatched node both see the same block, do they
 agree? An ungated change to validation is a consensus split even when the new
 behaviour is more correct.
 
@@ -75,15 +79,23 @@ Questions that repeatedly matter:
 
 - **Point validation.** Is a point deserialized from the wire checked to be on
   the curve, and checked for torsion / small-subgroup membership where the
-  protocol requires it? Missing torsion checks are a recurring theme, and the
-  requirement is not uniform — some places legitimately do not need one.
+  protocol requires it? `crypto::check_key` only decodes (no torsion check);
+  `rct::isInMainSubgroup` is the subgroup check. Consensus checks key images
+  (`l*KI == identity`) in `core::check_tx_inputs_keyimages_domain`, reached
+  via `ver_non_input_consensus`. Missing torsion
+  checks are a recurring theme, and the requirement is not uniform — some
+  places legitimately do not need one.
 - **Consistency between wallet and consensus.** If the wallet and the daemon
   apply *different* validation to the same object, that divergence is itself the
   bug, independent of which one is stricter.
 - **Scalar range.** Is a scalar reduced, and is reduction checked rather than
   assumed?
-- **Constant time.** Comparison or branching on secret material. Note that
-  `memcmp` on key material is a finding even when the timing channel is small.
+- **Constant time.** Comparison or branching on secret material. `==` on
+  `crypto::secret_key` and `rct::key` uses `crypto_verify_32`
+  (`CRYPTO_MAKE_COMPARABLE_CONSTANT_TIME` in `src/crypto/generic-ops.h`, and
+  `rct::key::operator==`); on `public_key`, `key_image`, `key_derivation` (an
+  `ec_point`) and `hash` it is `memcmp`. That is fine for public data; secret data compared through one of
+  those types, or by raw `memcmp`, is a finding even when the channel is small.
 - **Degenerate inputs.** Identity, zero, and negated points. Can a proof be
   satisfied by a degenerate value that the verifier accepts?
 
@@ -93,8 +105,10 @@ reporting one.
 
 ## Proof-of-work
 
-RandomX is vendored under `external/`. Its defining property for review purposes
-is that **the same computation is implemented several ways** — interpreter and
+RandomX is the `external/randomx` git submodule (absent from a checkout made
+without `--recursive`); Monero's wrapper is `src/crypto/rx-slow-hash.c`, where
+the `MONERO_RANDOMX_UMASK` environment variable can clear RandomX flags. Its
+defining property for review purposes is that **the same computation is implemented several ways** — interpreter and
 JIT, with and without hardware AES, across architectures — and consensus
 requires that every path produce identical output for identical input.
 
@@ -117,8 +131,8 @@ consensus break — establish which paths ship before assigning severity.
   worse here than elsewhere.
 - **`wallet_api` / libwallet** (`src/wallet/api/`) — what the GUI and mobile
   wallets use. Threading behaviour differs from the CLI: background refresh
-  runs concurrently with user-driven calls, so state that the CLI touches
-  serially can be touched concurrently here.
+  (`WalletImpl::refreshThreadFunc`) runs concurrently with user-driven calls,
+  so state that the CLI touches serially can be touched concurrently here.
 - **`simplewallet`** — the CLI.
 
 A finding that is real in one of these may be unreachable in another. **State
@@ -150,8 +164,9 @@ missing that a refresh writer runs alongside an API reader understates it.
 
 ## Multisig
 
-`src/multisig/` and the messaging layer in `src/wallet/` handle multi-party key
-setup and signing. The security question is usually **authentication of
+`src/multisig/` and the Multisig Messaging System in `src/wallet/`
+(`message_store.cpp`, with `message_transporter.cpp` talking to PyBitmessage
+over HTTP) handle multi-party key setup and signing. The security question is usually **authentication of
 configuration**, not arithmetic: can a participant, or someone impersonating
 one, alter the set of signers, their addresses, or the threshold, and would the
 other participants notice?
@@ -177,17 +192,33 @@ consensus-reachable**. Get that right in both directions: `ringct` links the
 `fcmp_pp` target (`src/ringct/CMakeLists.txt`), but no code in `src/` outside
 the directory calls into it; its only callers are tests
 (`tests/unit_tests/curve_trees.cpp`, `tests/unit_tests/crypto.cpp`,
-`tests/crypto/main.cpp`). The related torsion check `rct::verPointsForTorsion`
-in `src/ringct/rctSigs.cpp` (built on `crypto::get_valid_torsion_cleared_point_vartime`,
-not on `fcmp_pp`) likewise has no production caller — only
-`tests/unit_tests/crypto.cpp`. `RCTType` still stops at
-`RCTTypeBulletproofPlus = 6`. A defect in it is still a finding, rated as it will run once live: see
-`refutations.md`, "Not refutations".
+`tests/crypto/main.cpp`). `rct::verPointsForTorsion` in
+`src/ringct/rctSigs.cpp` likewise has no production caller, only
+`tests/unit_tests/crypto.cpp`. The primitive under it,
+`crypto::get_valid_torsion_cleared_point_vartime` (`src/crypto/crypto.cpp`),
+**is** live through `crypto::pubkey_clear_torsion`: `wallet2` uses it for
+payment-ID decryption in `process_new_transaction` and in `get_tx_proof`, and
+`src/device_trezor/trezor/protocol.cpp` uses it on tx public keys. `RCTType`
+still stops at `RCTTypeBulletproofPlus = 6`. A defect in the dormant code is
+still a finding, rated as it will run once live: see `refutations.md`, "Not
+refutations".
+
+Carrot is present only as groundwork: `CarrotOutputPairV1` in
+`src/fcmp_pp/fcmp_pp_types.h` and the Ed25519-to-X25519 helpers
+`ge_p3_to_x25519` / `edwards_bytes_to_x25519_vartime` in
+`src/crypto/crypto-ops.c`, which nothing outside that file calls
+(`grep -rn x25519 src tests`). There is no Carrot address, output type or
+scanning code on master.
 
 **It also means Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
-staticlib crate linked as `libfcmp_pp_rust.a`, pulling `helioselene` from a git
-revision and patching `crypto-bigint` to a fork branch. A change under there is
-a supply-chain change whatever the diff looks like.
+staticlib crate linked as `libfcmp_pp_rust.a`. Its `Cargo.toml` pulls
+`helioselene`, `ec-divisors`, `full-chain-membership-proofs` and the
+`monero-fcmp-plus-plus` crates from `monero-oxide/monero-oxide` at a pinned
+git `rev`, and patches `crypto-bigint` to a fork **branch** (the exact commit
+is pinned only by `Cargo.lock`; the build passes `cargo build --locked`).
+The C ABI is `fcmp++.h`, checked for C compatibility by `ffi_api_c_compat.c`
+in `src/fcmp_pp/CMakeLists.txt`. A change under there is a supply-chain change
+whatever the diff looks like.
 
 If the branch under review touches Full-Chain Membership Proofs, it brings new
 curve arithmetic (a curve cycle with its own field implementations), divisor
@@ -207,7 +238,8 @@ considers untrusted, and which parsers are meant to be robust. Two useful
 readings:
 
 - A PR that touches a surface with an existing fuzz target is touching something
-  known to be attacker-reachable.
+  known to be attacker-reachable (`tests/fuzz/fuzz_rpc/` covers daemon HTTP and
+  ZMQ RPC endpoints).
 - A PR that *weakens* a harness — reduces coverage, stubs out a check, narrows
   the input space — is worth a LOW note even though it ships nothing, because
   it reduces the chance of catching the next bug.

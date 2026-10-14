@@ -5,34 +5,51 @@ Use this to answer the reachability question concretely: name the boundary, then
 trace the call sequence from it to the changed code.
 
 Verify locations against the checkout — this is a map, not a substitute for
-reading the tree. Use the symbol index (`readtags -t tags <sym>` for
-definitions, `cscope -d -L3 <fn>` for callers) rather than assuming.
+reading the tree. Where a symbol index has been built (see `navigation.md`),
+use it (`readtags -t tags <sym>` for definitions, `cscope -d -L3 <fn>` for
+callers) rather than assuming.
 
 ## 1. P2P messages — any peer, no authentication
 
-`src/cryptonote_protocol/cryptonote_protocol_handler.inl`
+`src/cryptonote_protocol/cryptonote_protocol_handler.inl`, `src/p2p/net_node.inl`
 
 Handlers named `handle_notify_*`, `handle_request_*` and `handle_response_*`
-receive structures that a peer fully controls: new blocks, new transactions,
-fluffy blocks, requests for our objects and chain, and responses to our own
-requests. Anyone can connect and send these.
+(map: `HANDLE_NOTIFY_T2` in `cryptonote_protocol_handler.h`) receive
+structures a peer fully controls: blocks, fluffy blocks, transactions,
+requests for our objects and chain, and responses to our requests. Before
+them, `net_node.inl` handles `handle_handshake`, `handle_timed_sync`,
+`handle_ping` and `handle_get_support_flags`; the first two carry a
+peer-supplied peerlist into `handle_remote_peerlist` (the eclipse surface).
+Transaction relay (Dandelion++, anonymity-network queues) is in
+`src/cryptonote_protocol/levin_notify.cpp`.
 
-The response handlers are worth particular attention: code often assumes a
-response corresponds to what was requested, and a malicious peer is under no
-obligation to comply. Mismatched counts, unexpected ordering, and absent
-entries are all reachable.
+Every protocol message is a one-way notification, so a "response" is whatever
+the peer chose to send. The two response handlers drop a peer whose message
+type does not match `context.m_expect_response`, but nothing forces the
+contents to match the request: mismatched counts, unexpected ordering, and
+absent entries are all reachable.
 
-Framing and message dispatch live in
-`contrib/epee/include/net/levin_protocol_handler_async.h`.
+Framing and dispatch: `contrib/epee/include/net/levin_protocol_handler_async.h`.
+Size caps: `LEVIN_INITIAL_MAX_PACKET_SIZE` before handshake,
+`LEVIN_DEFAULT_MAX_PACKET_SIZE` after (`levin_base.h`), and per command
+`cryptonote_connection_context::get_max_bytes`. Payload parse limits:
+`default_levin_limits` (`contrib/epee/include/storages/levin_abstract_invoke2.h`).
 
 ## 2. RPC — public or admin, and the difference matters
 
-`src/rpc/core_rpc_server.cpp`, handlers named `on_*`
+`src/rpc/core_rpc_server.cpp`, handlers named `on_*`; URI and JSON-RPC maps in
+`src/rpc/core_rpc_server.h`
 
 The server distinguishes **restricted** (public, what a remote wallet talks to)
 from **unrestricted** (full admin). Check which applies to the handler you are
-looking at before claiming remote reach — the gating is in the code, not
-inferable from the method name.
+looking at before claiming remote reach: admin-only entries carry
+`!m_restricted` in the `MAP_URI_AUTO_JON2_IF` / `MAP_JON_RPC_WE_IF` map, and
+shared handlers apply the `RESTRICTED_*` / `MAX_RESTRICTED_*` limits
+internally. It is not inferable from the method name. `--restricted-rpc`
+defaults to false; `--rpc-restricted-bind-port` adds a second, restricted
+server. The epee HTTP parser (`http_protocol_handler.inl`, digest auth in
+`contrib/epee/src/http_auth.cpp`) runs before any login check or
+restriction, so it is pre-authentication surface on every HTTP RPC server.
 
 A finding reachable only by an unrestricted client is usually not a finding,
 because that client is already trusted with far more. A finding on the
@@ -51,33 +68,58 @@ The case this exists for: an unauthenticated cross-site request reaching
 empty or whitespace-only body as `{}`, so a bodiless `GET` passes the JSON
 parse in `MAP_URI_AUTO_JON2_IF` and reaches `on_stop_daemon`, as it does any
 other handler whose request has no required fields. CORS headers do not stop
-the request executing.
+the request executing. The `Host` header is parsed into
+`http_header_info::m_host` but nothing in the daemon RPC path compares it to an
+allowlist (`grep -rn m_host contrib/epee src/rpc`), so DNS rebinding can make
+responses readable as well.
+
+**ZMQ RPC** (`src/rpc/zmq_server.cpp`, `daemon_handler.cpp`) is on unless
+`--no-zmq`, binds `127.0.0.1` by default (non-loopback needs
+`--confirm-zmq-rpc-external-bind`), has no authentication, and is unrestricted
+unless `--restricted-zmq-rpc`, which blocks `blocked_in_restricted_mode`
+(`zmq_restricted_methods.cpp`) and applies the `restricted_max_*` limits; its
+help text disclaims filtering of sensitive data. Requests are parsed by
+rapidjson (`src/rpc/message.cpp`, `src/serialization/json_object.cpp`). A
+browser cannot speak ZMTP; a co-resident process can.
+
+**`monero-wallet-rpc`** requires digest login unless `--disable-rpc-login`,
+generating a random password if none is set (`wallet_rpc_server::init`).
+Reach without that login is the finding.
 
 ## 3. Deserialization — the widest surface
 
-`src/serialization/`, `contrib/epee/include/serialization/`
+`src/serialization/`, `contrib/epee/include/serialization/`,
+`contrib/epee/include/storages/`
 
-Every P2P message, RPC body, and wallet cache passes through here. This is
-where attacker-chosen counts meet `resize()` and `reserve()`.
+Every P2P message, HTTP RPC body, and consensus blob passes through here
+(ZMQ RPC uses rapidjson, the wallet cache may fall back to
+`boost::serialization`; see section 7). This is where attacker-chosen counts
+meet `resize()` and `reserve()`.
 
 It is also where most memory-safety findings die: the layer imposes limits
-before application code runs. See `refutations.md` — trace the field's actual
-constraint before reporting.
+before application code runs (`portable_storage::limits_t`, the recursion
+limits in `portable_storage_from_bin.h` and `portable_storage_from_json.h`).
+See `refutations.md` — trace the field's actual constraint before reporting.
 
 ## 4. Daemon → wallet — the daemon is NOT trusted
 
 `src/wallet/wallet2.cpp`
 
 This boundary is easy to overlook and has repeatedly produced real bugs. A
-wallet connecting to a remote node treats that node's responses as untrusted
-input. `process_parsed_blocks`, `process_new_transaction`, and
+wallet connecting to a remote node must treat that node's responses as
+untrusted input. `process_parsed_blocks`, `process_new_transaction`, and
 `process_new_blockchain_entry` all parse data a malicious or compromised daemon
-chose.
+chose, after the epee HTTP client (`contrib/epee/include/net/http_client.h`)
+has parsed the response itself.
 
 The threat model that matters: a user runs a GUI wallet or `wallet-rpc` against
 a public remote node. Anything the node can say that corrupts wallet memory,
 crashes it, or induces a wrong spend is in scope, and severity is high because
-the wallet holds keys.
+the wallet holds keys. A network attacker is usually equivalent:
+`--daemon-ssl` defaults to `autodetect`, which falls back to plaintext when
+the TLS handshake fails (`blocked_mode_client::connect` in `net_helper.h`).
+`--trusted-daemon` (assumed for a local address in `make_basic`) enables
+daemon-reliant commands; it does not make a remote daemon's data safe to parse.
 
 `import_key_images` deserves the same treatment — key-image blobs arrive from
 outside and are parsed into wallet state.
@@ -137,30 +179,46 @@ Opening a wallet parses an on-disk cache. "The user opened a file they were
 given" is a realistic threat model for custodial and multi-user setups. Treat
 cache parsing as untrusted input, not as trusted local state.
 
+Knowing the wallet's keys is not a precondition. `wallet2::load_wallet_cache`
+decrypts with ChaCha20 (no MAC) and tries `binary_archive` (types in
+`src/wallet/wallet2_basic/`) then older `boost::archive` schemes; if all of
+those fail it parses the raw file as an **unencrypted**
+`portable_binary_iarchive`, then `binary_iarchive`. The post-load index
+checks against `m_transfers` are in the same function.
+
 ## 8. Consensus validation
 
 `src/cryptonote_core/blockchain.cpp`, `tx_pool.cpp`, `src/ringct/`,
 `src/crypto/`
 
-Block and transaction acceptance. Bugs here are consensus-critical by
-definition: the question is not just "does it crash" but "would a node running
-this code reach a different verdict than the rest of the network on the same
-input".
+Block and transaction acceptance, including `ver_non_input_consensus`
+(`src/cryptonote_core/tx_verification_utils.cpp`, called from
+`tx_memory_pool::add_tx` and the block paths), which runs
+`core::check_tx_semantic` and its key-image subgroup check
+`check_tx_inputs_keyimages_domain`. The question is not
+just "does it crash" but "would a node running this code reach a different
+verdict than the rest of the network on the same input".
 
-Fork gating lives in `src/hardforks/hardforks.cpp` and the `HF_VERSION_*`
-constants. Any behaviour change must be gated to the correct version, and you
-should ask explicitly whether an ungated change makes old and new nodes
-disagree.
+Fork heights live in `src/hardforks/hardforks.cpp`, the `HF_VERSION_*`
+constants in `src/cryptonote_config.h`. Any behaviour change must be gated to
+the correct version; ask explicitly whether an ungated change makes old and
+new nodes disagree.
+
+`src/fcmp_pp/` (FCMP++) is built and linked into `ringct` but has no caller in
+`src/` outside its own directory; see `codebase-notes.md`.
 
 ## 9. Build and CI
 
-`CMakeLists.txt` files, `.github/workflows/`, `contrib/depends/`
+`CMakeLists.txt` files, `.github/workflows/`, `contrib/depends/`,
+`contrib/guix/`, `.gitmodules`, `src/fcmp_pp/fcmp_pp_rust/Cargo.toml` and
+`Cargo.lock`
 
 Not consensus code, but a supply-chain surface. A change that alters what gets
 compiled in, disables a hardening flag, changes a dependency source or pinned
-hash, or weakens a release workflow is worth reporting even though it is not a
-memory-safety bug. Removal of a hardening flag (`-D_FORTIFY_SOURCE`, stack
-protector, RELRO, PIE) is a genuine finding.
+hash (including a submodule commit or a Cargo git `rev`), or weakens a release
+workflow is worth reporting even though it is not a memory-safety bug.
+Removal of a hardening flag (`-D_FORTIFY_SOURCE`, stack protector, RELRO, PIE)
+is a genuine finding.
 
 ## Severity anchoring by boundary
 

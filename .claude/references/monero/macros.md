@@ -7,6 +7,8 @@ found by grepping for their names.
 **Read this before believing a grep result**, and before saying "nothing calls
 this" or "this field is unvalidated".
 
+Verified against master `8308dee67` (2026-10-13).
+
 To count uses of a macro, run
 `grep -rhoP "(?<![A-Za-z_])NAME\(" src contrib tests | wc -l`; the count
 includes the macro's own definition line.
@@ -51,8 +53,16 @@ binds a wire byte to a C++ type.
   `if (!r || !ar.good()) return false;`.
 - `VERSION_FIELD(n)` **declares a local `version`** that escapes the macro so
   the lines below can branch on it, and it never bounds the value upward.
-- Grepping for `member_do_serialize` finds only four hand-written overloads in
-  `src/cryptonote_basic/tx_extra.h`.
+  `MAGIC_FIELD(m)` likewise declares a local `magic`.
+- **Allocation bounds.** Generic containers (`do_serialize_container`,
+  `src/serialization/container.h`) fail if the element count exceeds the cap
+  or `ar.remaining_bytes()`, i.e. they assume at least one byte per element.
+  `PREPARE_CUSTOM_VECTOR_SERIALIZATION` resizes to `size` after checking
+  `remaining_bytes() / size >= min_wire`; a `min_wire` of `0` (the v1
+  `signatures` outer vector in `transaction`'s serializer, sized from
+  `vin.size()`) skips the check.
+- Outside `src/serialization/`, grepping for `member_do_serialize` finds only
+  the four hand-written overloads in `src/cryptonote_basic/tx_extra.h`.
 
 ### 2. `contrib/epee/…/keyvalue_serialization.h` — RPC and P2P
 
@@ -63,8 +73,8 @@ try/catch logging "Exception on unserializing"), and
 `serialize_map<bool is_store, class t_storage>`.
 
 Field macros, most-used first: `KV_SERIALIZE`, `KV_SERIALIZE_OPT`,
-`KV_SERIALIZE_PARENT`, `KV_SERIALIZE_VAL_POD_AS_BLOB`,
-`KV_SERIALIZE_CONTAINER_POD_AS_BLOB`, and the `_N` and `_FORCE` variants.
+`KV_SERIALIZE_PARENT`, `KV_SERIALIZE_CONTAINER_POD_AS_BLOB`,
+`KV_SERIALIZE_VAL_POD_AS_BLOB`, and the `_N` and `_FORCE` variants.
 `KV_SERIALIZE(v)` → `KV_SERIALIZE_N(v, "v")` →
 `epee::serialization::selector<is_store>::serialize(this_ref.v, stg, hparent_section, "v")`.
 
@@ -89,24 +99,35 @@ Field macros, most-used first: `KV_SERIALIZE`, `KV_SERIALIZE_OPT`,
   (`unserialize_stl_container_t_obj` constructs `value_type()`), but a payload
   struct declared as a plain local (`T x;`) in handler code is not, so its
   scalars really are uninitialised.
+- **Only the top level catches.** The entry points (`load_t_from_json`,
+  `load_t_from_binary`, `buff_to_t_adapter`) call `load()`; nested objects
+  and container elements use `_load()`, so a throw anywhere inside fails the
+  whole parse. `unserialize_stl_container_t_obj` inserts every element even
+  when that element's `_load` returned false, and ORs the results.
 
 ### 3. `contrib/epee/…/serialization/wire/` — the newest, and write-only
 
-`WIRE_BEGIN_MAP` / `WIRE_END_MAP` / `WIRE_FIELD(name)` / `WIRE_DEFINE_OBJECT`
-generate `read_bytes` / `write_bytes` / `wire_map`. `WIRE_FIELD(name)` becomes
+`WIRE_BEGIN_MAP` / `WIRE_END_MAP` generate `read_bytes` / `write_bytes` /
+`wire_map` (`wire/fwd.h`); `WIRE_DEFINE_OBJECT` (`wire.h`) generates only
+`write_bytes`. `WIRE_FIELD(name)` becomes
 `::wire::field("name", std::ref(self.name))`, so a JSON key is findable only as
 the macro argument.
 
-Used by exactly **two** files under `src/`: `src/rpc/zmq_pub.cpp` and
-`src/cryptonote_core/cryptonote_tx_utils.cpp`. **`wire::json_reader` is
-forward-declared and never defined** — the read side does not exist on master.
+The only `.cpp` users under `src/` are `src/rpc/zmq_pub.cpp` (calls
+`wire::object` / `wire::field` directly) and
+`src/cryptonote_core/cryptonote_tx_utils.cpp` (`WIRE_FIELD`); headers
+`src/crypto/wire.h` and `cryptonote_tx_utils.h` declare the types.
+**`wire::reader` and `wire::json_reader` are forward-declared and never
+defined** (`contrib/epee/src/wire/json/` has only `write.cpp`) — the read side
+does not exist on master.
 
 ### 4. `boost::serialization` — persisted local state
 
-Hand-written `serialize()` free functions plus `BOOST_CLASS_VERSION` (about
-two dozen lines, `grep -rn BOOST_CLASS_VERSION src`: `tools::wallet2` = 31,
-`wallet2_basic::transfer_details` = 12, `address_book_row` = 18, `peerlist_entry` = 3, …). This is the **third**
-serializer for several of the same types.
+Hand-written `serialize()` free functions plus `BOOST_CLASS_VERSION`
+(`grep -rn BOOST_CLASS_VERSION src` for current versions; `tools::wallet2`,
+the `wallet2_basic::*` types in `wallet2_boost_serialization.h`, and
+`nodetool::peerlist_entry` among them). This is the **third** serializer for
+several of the same types.
 
 > **The multi-serializer trap, concretely.** `rct::rctSigBase` has a
 > `BEGIN_SERIALIZE_OBJECT()` block in `rctTypes.h` **and** the member template
@@ -126,23 +147,39 @@ serializer for several of the same types.
 | `BEGIN_URI_MAP2` / `MAP_URI_AUTO_JON2[_IF]` / `MAP_URI_AUTO_BIN2` | `contrib/epee/include/net/http_server_handlers_map2.h` | `handle_http_request_map()` — a chain of `else if` |
 | `BEGIN_JSON_RPC_MAP` / `MAP_JON_RPC` / `MAP_JON_RPC_WE[_IF]` | same | another `else if` chain on the method name |
 | `CHAIN_HTTP_TO_MAP2` | same | `handle_http_request()` |
-| `BEGIN_INVOKE_MAP2` / `HANDLE_INVOKE_T2` / `HANDLE_NOTIFY_T2` | `contrib/epee/include/storages/levin_abstract_invoke2.h` | `handle_invoke_map()`, dispatching on `CMD::ID == command` |
+| `BEGIN_INVOKE_MAP2` / `HANDLE_INVOKE_T2` / `HANDLE_NOTIFY_T2` / `CHAIN_INVOKE_MAP_TO_OBJ_FORCE_CONTEXT` | `contrib/epee/include/storages/levin_abstract_invoke2.h` | `handle_invoke_map()`, a run of `if (… ID == command) return …` checked against `is_notify` |
 | `BEGIN_RPC_MESSAGE_CLASS` / `_REQUEST` / `_RESPONSE` | `src/rpc/daemon_messages.h` | the ZMQ `Request` / `Response` classes |
 
 Consequences:
 
-- **A URI string or JSON-RPC method name appears exactly once**, in the table.
-  Grepping for the handler finds its declaration and definition but not the
-  URI.
+- **A URI string or JSON-RPC method name appears once on the server side**, in
+  the table (client call sites in `wallet2.cpp` / `node_rpc_proxy.cpp` may
+  repeat it). Grepping for the handler finds its declaration and definition
+  but not the URI.
 - **The method-level restricted-mode gate is the `_IF` suffix.**
   `MAP_URI_AUTO_JON2_IF(..., !m_restricted)` versus `MAP_URI_AUTO_JON2(...)`.
   Dropping the `_IF` and its condition from a table line silently exposes a
-  method. (Handlers additionally trim output and cap request sizes in their
-  bodies via `const bool restricted = m_restricted && ctx;`.)
-- **The chains are opened by `if (false) return true;` and order matters.** An
-  entry added after a matching one is dead code that compiles cleanly.
-- A Levin command with no `HANDLE_NOTIFY_T2` entry logs "Unknown command" and
-  returns `LEVIN_OK` for notifies — a silent no-op.
+  method. A false condition falls through: a URI ends in 404, a JSON-RPC
+  method in "Method not found". There is **no `MAP_URI_AUTO_BIN2_IF`**, so
+  every `.bin` endpoint is reachable in restricted mode and any restriction is
+  in the handler body (`const bool restricted = m_restricted && ctx;`, which
+  is also how handlers trim output and cap request sizes).
+- `MAP_URI_AUTO_BIN2` calls `load_t_from_binary` with **no `limits_t`**, unlike
+  the Levin adapters (`default_levin_limits`) and the client side
+  (`default_http_bin_limits`).
+- Exceptions from a handler are caught inside the map entry (HTTP 500 /
+  JSON-RPC error), and `CHAIN_HTTP_TO_MAP2` catches anything else as 500.
+- **The HTTP chains are opened by `if (false) return true;` and order
+  matters.** An entry added after a matching one is dead code that compiles
+  cleanly. The Levin map returns on the first match, with the same effect.
+- `node_server`'s map (`src/p2p/net_node.h`) first returns early for
+  `is_filtered_command`, handles the four P2P commands, then chains into the
+  protocol handler's map (`cryptonote_protocol_handler.h`).
+- A Levin command with no matching entry logs "Unknown command" and returns
+  `LEVIN_OK` for notifies (a silent no-op) or
+  `LEVIN_ERROR_CONNECTION_HANDLER_NOT_DEFINED` for invokes. All protocol
+  handler commands are notifies, so an invoke carrying one of their IDs is
+  unhandled.
 - `class Request` / `class Response` appear in `daemon_messages.h` only
   inside the `BEGIN_RPC_MESSAGE_REQUEST` / `_RESPONSE` macro bodies, never at
   a message class.
@@ -158,8 +195,10 @@ Most-used first:
 | `CHECK_AND_ASSERT_THROW_MES(expr, msg)` | log then **throw `std::runtime_error`** |
 | `CHECK_AND_ASSERT_MES(expr, ret, msg)` | `LOG_ERROR` then **`return ret`** |
 | `THROW_WALLET_EXCEPTION_IF(cond, type, …)` | throw a typed `tools::error` with `__FILE__:__LINE__` |
+| `ASSERT_MES_AND_THROW(msg)` | no condition: log then `throw std::runtime_error` |
 | `CHECK_AND_NO_ASSERT_MES*` | logs at `LOG_PRINT_L0/L1` instead, still returns |
 | `CHECK_AND_ASSERT(expr, ret)` | **silent** return, no log |
+| `CHECK_AND_ASSERT_MES_NO_RET(expr, msg)` | logs then bare `return;` |
 | `CHECK_AND_ASSERT_MES2` | logs and does **not** return (defined, no callers) |
 | `MONERO_PRECOND` / `MONERO_CHECK` / `MONERO_THROW` / `MONERO_UNWRAP` | `expect<T>` dialect |
 
@@ -179,7 +218,9 @@ mostly `CHECK_AND_ASSERT_MES`; `ringct` mixes it with
 `CHECK_AND_ASSERT_THROW_MES`; `multisig` and `fcmp_pp` are almost entirely
 `CHECK_AND_ASSERT_THROW_MES`; `wallet` is dominated by
 `THROW_WALLET_EXCEPTION_IF`; `blockchain_db` uses none of the three (it uses
-`throw0`/`throw1`). Per-subtree counts:
+`throw0`/`throw1`). In `src/fcmp_pp/tower_cycle.cpp`, `CHECK_FFI_RES` wraps
+`CHECK_AND_ASSERT_THROW_MES(r == 0, …)` on a local `r`, so those FFI throw
+sites do not match a grep for the inner macro. Per-subtree counts:
 `grep -rhoP "(?<![A-Za-z_])CHECK_AND_ASSERT_MES\(" src/<dir> | wc -l`.
 **`src/crypto` uses none of them** — no epee check or log macros, dozens of
 raw `assert(`.
@@ -190,8 +231,10 @@ The `expect<T>` dialect lives only in `src/common`, `src/net`, `src/lmdb`,
 
 `TRY_ENTRY()` / `CATCH_ENTRY(location, ret)` / `CATCH_ENTRY_L0..L4` /
 `CATCH_ENTRY_SWALLOW_EX` are an **unbalanced brace pair split across two
-macros** — a diff hunk showing only one looks syntactically broken. The
-`_L0..L4` suffix suggests a log level and controls nothing.
+macros** — a diff hunk showing only one looks syntactically broken. They catch
+`std::exception` and `...`, log at error, and `return ret` (or, for
+`_SWALLOW_EX`, continue). The `_L0..L4` suffix suggests a log level and
+controls nothing.
 
 ---
 
@@ -202,11 +245,16 @@ macros** — a diff hunk showing only one looks syntactically broken. The
 
 - The `#define` has **two spaces** after it, so `grep '^#define CRITICAL_REGION_LOCAL'`
   misses it.
-- **The lock variable always has the same name**, so two in one scope is a
-  redefinition error, and grepping for a lock variable is useless.
+- **The lock variable always has the same name** (`critical_region_var`), so
+  two in one scope is a redefinition error, and grepping for a lock variable
+  is useless. `CRITICAL_REGION_LOCAL1` names its variable
+  `critical_region_var1`, which is how a second lock coexists in one scope.
 - `CRITICAL_REGION_LOCAL1` and `CRITICAL_REGION_BEGIN` insert a
   `g_test_dbg_lock_sleep()` debug delay; plain `CRITICAL_REGION_LOCAL` does
-  not.
+  not. `CRITICAL_REGION_BEGIN` opens a brace that `CRITICAL_REGION_END()`
+  closes.
+- Not every acquisition is a macro: `blockchain.cpp` also calls
+  `m_tx_pool.lock()` and `m_blockchain_lock.lock()` / `unlock()` directly.
 - It relies on C++17 CTAD — there is no template argument.
 
 **Logging.** `MERROR` / `MWARNING` / `MINFO` / `MDEBUG` / `MTRACE` →
@@ -246,28 +294,37 @@ one scope collide.
   and older review comments still reach for it. The key types it used to
   declare are now plain `struct`s inside `#pragma pack(push, 1)` in
   `src/crypto/crypto.h` — `ec_point`, `ec_scalar`, `ec_coord`,
-  `public_key`, `key_derivation`, `key_image`, `signature`, `view_tag`. The
+  `public_key`, `key_derivation`, `key_image`, `signature`, `view_tag` — and
+  `src/crypto/hash.h` (`hash`, `hash8`). The
   packing is what makes them wire-shaped, so a field added inside that region,
   or a `pop` moved, changes serialized layout with nothing warning about it.
 - **`CRYPTO_MAKE_COMPARABLE` / `_CONSTANT_TIME` / `CRYPTO_MAKE_HASHABLE` /
   `CRYPTO_DEFINE_HASH_FUNCTIONS`** (`src/crypto/generic-ops.h`) generate the
   `operator==`, `std::hash` and `hash_value` (for `boost::hash`) for the key
   types. **None of those exist as text anywhere.** The plain form is `memcmp`; the
-  `_CONSTANT_TIME` form is libsodium's `crypto_verify_32`.
+  `_CONSTANT_TIME` form is libsodium's `crypto_verify_32` (used for
+  `secret_key` and `public_key_memsafe`, see the bottom of `crypto.h`). The
+  hash is keyed SipHash-2-4 (`siphash_to_size_t`) with a per-process random
+  key from `get_static_siphash_key()` in `src/crypto/random.c`, not a copy of
+  the key bytes; bear that in mind before claiming hash-flooding.
 - **`INITIALIZER` / `FINALIZER`** (`src/crypto/initializer.h`) → GCC
   `__attribute__((constructor))` / `((destructor))`. `INITIALIZER` has no
   user; `src/crypto/random.c` uses `FINALIZER(deinit_random)` and
-  `FINALIZER(deinit_sip)` to wipe RNG state at exit. The RNG is seeded lazily:
+  `FINALIZER(deinit_sip)` to wipe RNG and SipHash-key state at exit. The RNG is seeded lazily:
   `init_random` has no direct caller and runs only as the callback in
   `CTHR_ONCE_CALL(&init_random_once, init_random)` on the first
   `generate_random_bytes_not_thread_safe` / `add_extra_entropy_not_thread_safe`.
-- **`CHECKED_GET_SPECIFIC_VARIANT(v, T, name, ret)`** both returns from the
-  function on a type mismatch **and declares `name`**. Grepping the enclosing
-  function for that variable's declaration finds nothing.
+- **`CHECKED_GET_SPECIFIC_VARIANT(v, T, name, ret)`**
+  (`cryptonote_format_utils.h`) both returns from the function on a type
+  mismatch **and declares `name`**. Grepping the enclosing function for that
+  variable's declaration finds nothing. It is two statements with no
+  `do { } while(0)`.
 - **LMDB member-renaming macros**: `src/blockchain_db/lmdb/db_lmdb.h` defines
-  18 of the form `#define m_cur_blocks m_cursors->m_txc_blocks`, plus
+  a set (`grep '^#define m_cur_' src/blockchain_db/lmdb/db_lmdb.h`) of the
+  form `#define m_cur_blocks m_cursors->m_txc_blocks`, plus
   `CURSOR(name)` / `RCURSOR(name)` (about a hundred call sites) and
-  `TXN_PREFIX*` (over fifty), all in `db_lmdb.cpp`.
+  `TXN_PREFIX*` / `TXN_BLOCK_PREFIX` (over fifty), all in `db_lmdb.cpp`;
+  each can `throw0(DB_ERROR(...))`.
   `m_cur_blocks` looks like a member and is a macro; the real member
   `m_txc_blocks` never appears at a use site. `CURSOR` declares a `result`
   local inside its own `if` block.

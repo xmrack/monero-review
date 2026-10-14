@@ -3,15 +3,16 @@
 The build system and the test topology, from the point of view of somebody
 who has to judge whether a change to either is safe.
 
-Measured at master `160e21504`.
+Measured at master `8308dee67` (2026-10-13).
 
 ---
 
 # The build
 
 `cmake_minimum_required(VERSION 3.10)`, `CMAKE_CXX_STANDARD 17`
-(`REQUIRED ON`), `CMAKE_EXPORT_COMPILE_COMMANDS ON`, compiler cache
-autodetected (sccache then ccache).
+(`REQUIRED ON`), `CMAKE_EXPORT_COMPILE_COMMANDS ON`, compiler cache chosen
+by `COMPILER_CACHE` (`auto` prefers sccache, which is also set as
+`RUSTC_WRAPPER`, then ccache). An unset `CMAKE_BUILD_TYPE` becomes `Release`.
 
 ## How targets are declared
 
@@ -27,7 +28,10 @@ under `src/` names its `<name>_sources` by hand
 **So a new `.cpp` needs a `CMakeLists.txt` edit and a new `.h` does not.** A
 new-file PR touching no CMake file is fine if it is header-only, and broken if
 it is not. The two exceptions: `src/cryptonote_protocol` and `src/p2p` use
-`file(GLOB …)`, so a new file there is picked up automatically.
+`file(GLOB …)`, so a new file there is picked up automatically. Test
+binaries list their sources by hand too (`unit_tests_sources` in
+`tests/unit_tests/CMakeLists.txt`), so a new test `.cpp` that is not listed
+never runs.
 
 The resulting library dependency graph is in `architecture.md`.
 
@@ -35,20 +39,22 @@ The resulting library dependency graph is in `architecture.md`.
 
 | option | default | why it matters |
 |---|---|---|
-| `PER_BLOCK_CHECKPOINT` | **ON** | when on, a matching embedded block hash makes `handle_block_to_main_chain` skip PoW, `ver_non_input_consensus` **and** per-tx `check_tx_inputs` |
+| `PER_BLOCK_CHECKPOINT` | **ON** | when on, a matching embedded block hash (`m_blocks_hash_check`, loaded from `src/blocks/*.dat` by `Blockchain::load_compiled_in_block_hashes` only if `--fast-block-sync`, default 1, and not FAKECHAIN) makes `handle_block_to_main_chain` skip PoW, `ver_non_input_consensus` **and** per-tx `check_tx_inputs` |
 | `BUILD_TESTS` | OFF | gates the whole of `tests/` |
 | `STATIC` | OFF | static linking |
 | `BUILD_SHARED_LIBS` | ON for a non-`STATIC` debug build, else OFF | internal libraries as shared |
 | `SANITIZE` | OFF | `-fsanitize=address,undefined` |
 | `NO_AES` | OFF | selects a different `cn_slow_hash` implementation |
-| `USE_DEVICE_TREZOR` | on where deps exist | builds `src/device_trezor` |
-| `BUILD_GUI_DEPS` | OFF | gates `libwallet_api_tests`, the only thing that pulls `wallet_api` (`EXCLUDE_FROM_ALL`) into a normal build |
+| `USE_DEVICE_TREZOR` | ON (env-overridable, `cmake/CheckTrezor.cmake`) | builds `src/device_trezor`; **silently switched off** if protobuf is missing unless `USE_DEVICE_TREZOR_MANDATORY` (set by CI and Guix) |
+| `BUILD_GUI_DEPS` | OFF | gates `libwallet_api_tests`; it and `trezor_tests` (`TREZOR_DEBUG`) are the only targets that link `wallet_api` (`EXCLUDE_FROM_ALL`) |
 | `ENABLE_FUZZ_TEST` | OFF | adds `tests/fuzz` to a normal build |
-| `STACK_TRACE` | OFF in release, else platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** |
+| `STACK_TRACE` | OFF in release, else platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** (`--wrap` when static, `dlsym(RTLD_NEXT)` otherwise); Guix forces it OFF on `*linux-gnu*` |
 | `COVERAGE`, `STRIP_TARGETS`, `MANUAL_SUBMODULES`, `BUILD_DEBUG_UTILITIES`, `USE_READLINE`, `BOOST_IGNORE_SYSTEM_PATHS` | | |
 
-`MONERO_WALLET_CRYPTO_LIBRARY` defaults to `auto` and silently selects
-supercop assembly on x86_64 UNIX — see `subsystems-crypto.md`.
+`MONERO_WALLET_CRYPTO_LIBRARY` (`src/crypto/wallet/CMakeLists.txt`) defaults
+to `auto`, which takes whatever `monero_crypto_autodetect`
+(`external/supercop/functions.cmake`) reports as best — the supercop
+assembly where available — falling back to `cn`. See `subsystems-crypto.md`.
 
 ## Hardening flags, and where they are set
 
@@ -57,16 +63,21 @@ removing one is a real finding even though it is not a memory-safety bug:
 
 - `-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=2`, appended with a plain `set` — note the level is
   **2**, and note the guard around it: `if(CMAKE_BUILD_TYPE STREQUAL "Release"
-  AND NOT OPENBSD)`, so it is not set in a debug build at all. A diff that
-  changes that condition removes the flag from real builds without touching
-  the flag.
+  AND NOT OPENBSD)`, so it is not set in a debug build at all. `STREQUAL` is
+  case-sensitive: `-DCMAKE_BUILD_TYPE=release` gets no FORTIFY, and
+  `contrib/depends/toolchain.cmake.in` sets lowercase `release` for
+  `ARCHITECTURE` `arm` (armv7). A diff that changes that condition removes
+  the flag from real builds without touching the flag.
 - `-fstack-protector` and `-fstack-protector-strong`, via
   `add_c_flag_if_supported`, likewise inside an `if` that excludes
   OpenBSD and Windows/GCC < 9.1
 - `-pie` / `-Wl,-pie`, with documented exclusions: PIE crashes
   under ASAN, and Windows binaries die with PIE under GCC < 9 or when
   dynamically linked
-- `-Wl,-z,relro`
+- `-Wl,-z,relro`, `-Wl,-z,now`, `-z noexecstack`/`noexecheap`; on Windows
+  `--dynamicbase`, `--nxcompat`, `--high-entropy-va`
+- `-fcf-protection=full`, `-fstack-clash-protection` (not Windows/OpenBSD),
+  and `-Werror=` for `switch`, `return-type` and `format-security`
 
 Every one of those except `_FORTIFY_SOURCE` uses `add_*_flag_if_supported`, which **silently does
 nothing when the compiler rejects the flag**. "The flag is in CMakeLists" is
@@ -75,10 +86,18 @@ not the same claim as "the flag is in the build".
 Also set tree-wide: **`-fno-strict-aliasing`** (appended twice, before and
 after the hardening block) and `-ftemplate-depth=900`.
 
+**`external/` is configured before any of this** (`add_subdirectory(external)`
+precedes the flag block), so its targets — LMDB, easylogging++, qrcodegen,
+RandomX — compile without `C_SECURITY_FLAGS`. Only `polyseed_static` and
+`utf8proc` get them, via an explicit `set_property` after the block. Linker
+flags still apply at the final executable link. Submodule pins are checked at
+configure time by `check_submodule` unless `MANUAL_SUBMODULES`; a submodule
+bump in a diff is a vendored-code change.
+
 ## `contrib/depends` — the cross-build dependency tree
 
 A self-contained make-based builder: `packages/` (boost, openssl, sodium,
-unbound, zeromq, protobuf, hidapi, libusb, readline, ncurses, plus
+unbound, zeromq, protobuf, native_protobuf, hidapi, libusb, readline, ncurses, plus
 `android_ndk`, `darwin_sdk`, `freebsd_base`), `hosts/` (android, darwin,
 freebsd, linux, mingw32, default), `patches/`, `builders/`, and
 `toolchain.cmake.in`.
@@ -93,19 +112,39 @@ mechanism.
 `libexec/`, `patches/`, and — notably — **`rust/`**. This is what produces the
 binaries people actually download, so a change here changes what ships.
 
+Rust in the release build: `rust/cargo.sh` runs `cargo vendor --locked`
+against `src/fcmp_pp/fcmp_pp_rust/Cargo.lock` and fails if the result differs
+from `rust/config.toml`; the vendored archive is pinned by `RUST_DEPS_HASH`
+in `guix-build`. The compiler is Guix's `rust` package (not CI's version),
+and `libexec/build.sh` builds `std` from source with `-Zbuild-std` under
+`RUSTC_BOOTSTRAP=1`. It also sets `USE_DEVICE_TREZOR_MANDATORY=1`. The
+default `HOSTS` list in `guix-build` is what is released.
+
 ## CI: three workflows
 
-- **`.github/workflows/build.yml`** — the matrix build. The Ubuntu jobs install
-  a **pinned Rust toolchain** (`INSTALL_RUST`): it fetches `rustup-init`
-  1.29.0, checks it against a hardcoded SHA-256, and installs toolchain `1.93`.
-  The macOS, MSYS2 and Arch jobs use the platform's Rust.
+- **`.github/workflows/build.yml`** — the matrix build; every compile job but
+  `build-docker` uses `BUILD_DEFAULT` (`BUILD_TESTS`, `BUILD_GUI_DEPS` and `ENABLE_FUZZ_TEST`
+  ON, `Release`), so fuzz targets are compiled but not run. The Debian/Ubuntu
+  jobs install a **pinned Rust toolchain** (`INSTALL_RUST`): it fetches
+  `rustup-init` 1.29.0, checks it against a hardcoded SHA-256, and installs
+  toolchain `1.93`. The macOS, MSYS2 and Arch jobs use the platform's Rust.
+  Tests run only in `test-ubuntu` (full `ctest`; on pull requests
+  `core_tests` is rebuilt with `MONERO_CRYPTO_SLOW_HASH_ITER=20`) and, reduced
+  by `CTEST_EXCLUDE_SLOW`, on macOS and Windows. The Debian 12, Ubuntu 22.04
+  and Arch jobs only build.
 - **`.github/workflows/depends.yml`** — cross builds through
   `contrib/depends`, one job per host triple, each carrying a `rust_host`
   (`riscv64gc-unknown-linux-gnu`, `aarch64-*`, `i686-*`,
-  `x86_64-pc-windows-gnu`, darwin, freebsd, android, …).
+  `x86_64-pc-windows-gnu`, darwin, freebsd, android, …), using the same
+  pinned `rustup-init`.
 - **`.github/workflows/guix.yml`** — the reproducible build.
 
-**Rust is a hard build dependency** because of `src/fcmp_pp/fcmp_pp_rust`.
+**Rust is a hard build dependency** because of `src/fcmp_pp/fcmp_pp_rust`,
+built by `cargo build --locked` (so `Cargo.lock` is authoritative). Its
+`Cargo.toml` pins the monero-oxide crates to one git `rev`, patches
+`crypto-bigint` from a git branch (the lock file fixes the commit), and sets
+`overflow-checks = true` and `panic = "abort"` in both profiles. A change to
+`Cargo.toml` or `Cargo.lock` is a supply-chain change.
 
 ---
 
@@ -121,7 +160,7 @@ runners, different assertion vocabularies and different build gates.
 |---|---|
 | `unit_tests` | the only large gtest binary (count: `grep -hcE '^\s*TEST(_F)?\(' tests/unit_tests/*.cpp`) |
 | `core_tests` | the chain-generator harness — one active test per `GENERATE_AND_PLAY(` line in `chaingen_main.cpp` |
-| `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries |
+| `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries (`functional_tests`, i.e. `transactions_flow_test`, and `cpu_power_test`) |
 | `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp`) + 4 OSS-Fuzz-only RPC/ZMQ ones under `if(OSSFUZZ)` |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
@@ -129,7 +168,7 @@ runners, different assertion vocabularies and different build gates.
 | `libwallet_api_tests` | gated on `BUILD_GUI_DEPS` |
 | `net_load_tests` | manual two-process socket exhaustion, **no CTest entry** |
 | `trezor` | gated on `TREZOR_DEBUG` |
-| `data` | fixtures — block 202612 per network, tx blobs under `txs/`, two wallets, fuzz seed corpora |
+| `data` | fixtures — block 202612 per network, tx blobs under `txs/`, two wallets, fuzz seed corpora, test TLS key/cert under `ssl/`, a ban list under `node/` |
 
 ## Why `core_tests` matters more than it looks
 
@@ -158,9 +197,13 @@ be visible through `chaingen_tests_list.h`.
 `requests`, `zmq` and `deepdiff`), `libwallet_api_tests` and `trezor_tests`.
 
 **Not covered**: any fuzz target, `performance_tests`,
-`net_load_tests_clt/srv`, and the `functional_tests` C++ binary
-(`transactions_flow_test`). A change to one of those is not exercised by CI's
-test step.
+`net_load_tests_clt/srv`, and the `functional_tests` and `cpu_power_test`
+C++ binaries. A change to one of those is not exercised by CI's test step.
+
+**FCMP++ coverage** is `tests/unit_tests/curve_trees.cpp`, the `fcmp_pp`
+cases in `tests/unit_tests/crypto.cpp`, and the `cncrypto` vectors below; no
+`core_tests` class, functional test or fuzz target exercises `src/fcmp_pp`
+(`git grep -il 'fcmp\|curve_trees' -- tests`).
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
 narrows **only its `add_subdirectory` list** to `tests/fuzz` — the
@@ -197,11 +240,12 @@ despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
 - **`tests/data` is copied by `file(COPY …)` at CMake *configure* time.**
   Editing a fixture or adding a fuzz seed and then running `make && ctest`
   tests the **stale** copy under `build/tests/data`. Re-run cmake.
-- **Production headers friend gtest-generated class names.**
-  `class wallet2` in `src/wallet/wallet2.h` has
-  `friend class ::Serialization_portability_wallet_Test;` — the class
-  `TEST(Serialization, portability_wallet)` expands to. Renaming that test
-  breaks the build of `src/`.
+- **Production headers friend test classes.**
+  `class wallet2` in `src/wallet/wallet2.h` befriends
+  `::Serialization_portability_wallet_Test` — the class
+  `TEST(Serialization, portability_wallet)` expands to — and the test helpers
+  `::wallet_accessor_test` and `::wallet_pool_test`. Renaming one breaks the
+  build of `src/`, and those tests can reach `wallet2` private state.
 - **`IN_UNIT_TESTS` changes access control** in
   `src/cryptonote_core/blockchain.h` for the three translation units that
   define it.
@@ -211,8 +255,8 @@ despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
 - `tests/core_tests/double_spend.inl` is a template implementation `#include`d
   from the bottom of `double_spend.h`, listed under headers.
 - `tests/crypto/{crypto-ops,crypto-ops-data,hash,random}.c` and `crypto.cpp`
-  `#include` the corresponding `src/crypto` file (the `.c` files do nothing
-  else; `crypto.cpp` adds test wrappers) — `cncrypto-tests` **recompiles crypto
+  `#include` the corresponding `src/crypto` file (`hash.c` also pulls in
+  `keccak.c`; `crypto.cpp` adds test wrappers) — `cncrypto-tests` **recompiles crypto
   internals** rather than linking `cncrypto`, so it can reach static functions.
   `tests/crypto/main.cpp` likewise `#include`s
   `src/fcmp_pp/fcmp_pp_crypto.cpp`; the `cncrypto` ctest exercises only its
@@ -223,8 +267,9 @@ despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
   `LLVMFuzzerTestOneInput` under OSS-Fuzz, and a `SimpleFuzzer::run(filename)`
   member otherwise.
 - `tests/difficulty/CMakeLists.txt` registers `wide_difficulty` with
-  `${PYTHON_EXECUTABLE}`, a variable nothing in the project sets — everything
-  else uses `Python3_EXECUTABLE`.
+  `${PYTHON_EXECUTABLE}`, a variable nothing in the project's CMake sets, so it
+  expands empty and the scripts run via their shebangs — everything else uses
+  `Python3_EXECUTABLE`.
 - `tests/difficulty/gen_wide_data.py` and `tests/block_weight/block_weight.py`
   are **independent reimplementations of consensus rules** in Python. A change
   to `next_difficulty` or to the long-term-weight algorithm needs the

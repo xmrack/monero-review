@@ -4,8 +4,9 @@ What the `monero-project/monero` tree is, how its parts fit together, and how
 to read it without being misled. **Shared by every skill in this repository** —
 this directory belongs to no one skill.
 
-Written against master `160e21504` (2026-10-02). Every path and symbol here was
-confirmed against a checkout. Cite files and symbols, never line numbers or
+Written against master `8308dee67` (2026-10-13). Where a file names its own
+verification commit, that commit is what it was last checked against. Every
+path and symbol was confirmed against a checkout. Cite files and symbols, never line numbers or
 counts that drift; give the grep that finds them instead. When something disagrees with the tree in front of you, **the tree
 wins** — and fix the file.
 
@@ -13,9 +14,9 @@ wins** — and fix the file.
 
 | file | read it when |
 |---|---|
-| **`architecture.md`** | you need the shape: what ships, the library graph, the four serialization systems, where the consensus fence is |
+| **`architecture.md`** | you need the shape: what ships, the layer graph, the four serialization systems, vendored code and the Rust boundary, where the consensus fence is |
 | **`flows.md`** | a change sits somewhere in one of six end-to-end paths and you need to know what happens before and after it |
-| **`subsystems-node.md`** | the diff touches epee, serialization, p2p, the protocol handler, core, blockchain, the DB, rpc, the daemon or `src/common` |
+| **`subsystems-node.md`** | the diff touches epee, serialization, p2p or `src/net`, the protocol handler, core, blockchain, the DB, rpc, the daemon or `src/common` |
 | **`subsystems-wallet.md`** | the diff touches `wallet2`, wallet-rpc, `wallet_api`, simplewallet or the device layer |
 | **`subsystems-crypto.md`** | the diff touches `src/crypto`, `src/ringct`, `src/fcmp_pp`, multisig or proof-of-work |
 | **`macros.md`** | **before believing any grep result**, and before saying "nothing calls this" or "this field is unvalidated" |
@@ -43,8 +44,8 @@ suspect of it and what has already been refuted:
 ## The five facts most likely to save you
 
 1. **`.inl` files are implementations.** `src/p2p/net_node.inl` and
-   `src/cryptonote_protocol/cryptonote_protocol_handler.inl` are about 3000
-   lines each of production networking code. A search that skips `*.inl` misses the
+   `src/cryptonote_protocol/cryptonote_protocol_handler.inl` are roughly three
+   thousand lines each (`wc -l` them) of production networking code. A search that skips `*.inl` misses the
    two most attacker-exposed files in the daemon.
 2. **Four serialization systems, not two** — epee `portable_storage` (RPC and
    P2P payloads), `src/serialization` (consensus blobs), the newer epee `wire`
@@ -57,7 +58,7 @@ suspect of it and what has already been refuted:
    member throws. The consensus serializer is the opposite — it fails closed.
 4. **Most control flow is macro-generated.** `CHECK_AND_ASSERT_MES` is a
    `return`; `THROW_WALLET_EXCEPTION_IF` is a `throw` — and a bare `if`.
-   `grep 'throw '` finds about a quarter of the raise sites.
+   `grep 'throw '` finds only a fraction of the raise sites (see `macros.md`).
 5. **"Affects the wallet" is not specific enough.** `monero-wallet-rpc`,
    `wallet_api` and `monero-wallet-cli` have different threat models and
    different concurrency. Name the one you mean.
@@ -69,10 +70,6 @@ Most of this directory describes **what the code is**. `trust-boundaries.md`,
 Use both: the first half to understand the code, the second to judge it. A
 finding that skips the first is usually a category error; one that skips the
 second has usually already been refuted.
-
-They lived under the single-reviewer skill until that reviewer was removed.
-Nothing about them was ever skill-specific — every agent in the fleet reads
-them — so they are here now, where the rest of the shared references are.
 
 ## Keeping it honest
 
