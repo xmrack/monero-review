@@ -1078,6 +1078,12 @@ jobs:
                 echo
                 echo "### $sub: ${old:0:12} -> ${new:0:12}"
               } >> "$RUNNER_TEMP/submodule-diffs.md"
+              # The path comes from the pull request: nothing outside this set
+              # reaches a command line below.
+              if ! [[ $sub =~ ^[A-Za-z0-9._/-]+$ && $sub != *..* && $old =~ ^[0-9a-f]{40}$ && $new =~ ^[0-9a-f]{40}$ ]]; then
+                echo "SKIPPED: the path or a pin is not in the expected form." >> "$RUNNER_TEMP/submodule-diffs.md"
+                continue
+              fi
               if ! [ -d "$sub" ] || ! { [ -d "$sub/.git" ] || [ -f "$sub/.git" ]; }; then
                 echo "NOT FETCHED: the submodule is not checked out." >> "$RUNNER_TEMP/submodule-diffs.md"
                 continue
@@ -1099,7 +1105,7 @@ jobs:
                 continue
               fi
               git -C "$sub" diff --name-only "$from" "$to" 2>/dev/null |
-                sed "s|^|$sub/|" >> "$RUNNER_TEMP/submodule-files"
+                P="$sub" awk '{print ENVIRON["P"] "/" $0}' >> "$RUNNER_TEMP/submodule-files"
               if [ "$from" != "$empty" ]; then
                 mkdir -p "submodule-base/$sub"
                 git -C "$sub" archive "$from" 2>/dev/null | tar -x -C "submodule-base/$sub" 2>/dev/null \
@@ -1163,7 +1169,7 @@ jobs:
             echo "Its paths are in PR_FILES.md like any other change. git diff"
             echo "origin/base...HEAD shows only the gitlink, so read the patch below"
             echo "for the change and the old tree for the before."
-            cat "$RUNNER_TEMP/submodule-diffs.md"
+            sed "$strip" "$RUNNER_TEMP/submodule-diffs.md"
             echo "----- END AUTHOR-SUPPLIED TEXT -----"
           } > PR_SUBMODULES.md
           echo "submodules: $(wc -l < PR_SUBMODULES.md) lines written"
