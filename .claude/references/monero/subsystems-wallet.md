@@ -163,8 +163,16 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - **`THROW_WALLET_EXCEPTION_IF` is a bare `if (cond) { … }`** with no
   `do { } while(0)` wrapper — unlike `THROW_WALLET_EXCEPTION`, which has one.
   An `else` after it binds to the macro's hidden `if`.
-- **`encrypt_keys(key)` encrypts the *spend* key and decrypts the *view* key**;
-  `decrypt_keys` does the reverse. The names describe the spend key only.
+- **`wallet2::encrypt_keys(key)` and `wallet2::decrypt_keys(key)` act on the
+  *spend* key only; the view key is plaintext before and after both.**
+  `decrypt_keys` does not leave the view key encrypted. Both first call
+  `wallet2::verify_password_with_cached_key` and throw
+  `error::invalid_password` when `key` does not derive `m_cache_key`. The
+  `account_base::encrypt_keys` / `decrypt_keys` that `setup_keys`,
+  `get_keys_file_data` and `load_keys_buf` call directly perform no such
+  check. See `src/wallet/wallet2.cpp` (those functions) and
+  `src/cryptonote_basic/account.cpp` (`account_keys::encrypt_viewkey`,
+  `account_keys::decrypt`).
 - **`hashchain::size()` is a height, not a container size** — it returns
   `m_blockchain.size() + m_offset`, and `operator[]` subtracts the offset.
 - **`m_global_output_index` comes from the daemon and is stored unverified.**
