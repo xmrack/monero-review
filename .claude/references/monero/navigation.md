@@ -27,7 +27,12 @@ Four facts change what a search means in this tree:
    `utf8proc` are separate repositories — use `rg` or `find` there. The last
    two are the `.gitmodules` entries `external/polyseed`
    (`https://github.com/tevador/polyseed.git`) and `external/utf8proc`
-   (`https://github.com/JuliaStrings/utf8proc.git`).
+   (`https://github.com/JuliaStrings/utf8proc.git`). Once
+   monero-project/monero PR 10964 merges, `external/mx25519`
+   (`https://github.com/tevador/mx25519.git`) joins them: its
+   `.gitmodules` entry `[submodule "external/mx25519"]`,
+   `check_submodule(external/mx25519)` in the root `CMakeLists.txt`, and
+   `add_subdirectory(mx25519 EXCLUDE_FROM_ALL)` in `external/CMakeLists.txt`.
 4. **Spelling.** The consensus verdict flag is **`m_verifivation_failed`**
    (and `m_verifivation_impossible`). The correct spelling matches nothing.
 
