@@ -45,6 +45,13 @@ against master returns the whole branch divergence instead of the change
   it at all, so on a local run there is nothing here either way. Settle it
   from the diff -- `git diff origin/base...HEAD --submodule=log` -- rather
   than reading an absent file as an answer.
+- `submodule-diffs/` and `submodule-base/`: written with `PR_SUBMODULES.md`.
+  A path inside a moved submodule is in `PR_FILES.md`, but `git diff
+  origin/base...HEAD` shows only the gitlink. Its change is
+  `submodule-diffs/<submodule path>.diff`, its old version is
+  `submodule-base/<same path>`, and its new version is the path itself. Use
+  those wherever you would use `git show origin/base:<path>` or a `+` line in
+  the diff.
 - `PR_COMMITS.md`: the patch of each commit *within* this pull request, taken
   from the GitHub API. This is a blobless clone: `git log` lists the PR's own
   commits but `git show <intermediate-sha>` dies with `upload-pack: not our

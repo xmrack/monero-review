@@ -768,7 +768,8 @@ jobs:
 
           # Names this job writes at the top level start out absent.
           rm -rf diffstat.txt differr.txt PR_*.md TOOLING.md RUST_DEPS.md \
-            rust-deps deps-include tags cscope.* tests.out review.md \
+            rust-deps deps-include submodule-base submodule-diffs \
+            tags cscope.* tests.out review.md \
             workflow-updates.json exec-pass1.json
 
           # Fixed 12 chars, not --short: `select` compares against this prefix
@@ -1058,6 +1059,90 @@ jobs:
             exit 0
           fi
           strip='s/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g'
+
+          # The CODE a bump changes, which the commit log alone does not show:
+          # run 668 on PR 10038 read the RandomX bump "as a new tree only",
+          # because the old pin's objects were absent and no agent can run git
+          # inside a submodule. Two dots, old..new, so a pin moved to a branch
+          # that dropped commits still shows exactly what the shipped tree
+          # loses. The changed paths join PR_FILES.md, so the mapper must
+          # place each one and coverage must account for it.
+          empty=$(git hash-object -t tree /dev/null)
+          : > "$RUNNER_TEMP/submodule-files"
+          : > "$RUNNER_TEMP/submodule-diffs.md"
+          # -z, so a path is exactly what git means by it: each record is the
+          # meta field, NUL, the path, NUL.
+          git diff origin/base...HEAD --raw --no-abbrev -z 2>/dev/null |
+            while IFS= read -r -d '' meta && IFS= read -r -d '' sub; do
+              read -r omode nmode old new _ <<< "${meta#:}"
+              [ "$omode" = 160000 ] || [ "$nmode" = 160000 ] || continue
+              zero='^0+$'
+              {
+                echo
+                echo "### $sub: ${old:0:12} -> ${new:0:12}"
+              } >> "$RUNNER_TEMP/submodule-diffs.md"
+              # The path comes from the pull request: nothing outside this set
+              # reaches a command line below.
+              if ! [[ $sub =~ ^[A-Za-z0-9._/-]+$ && $sub != *..* && $old =~ ^[0-9a-f]{40}$ && $new =~ ^[0-9a-f]{40}$ ]]; then
+                echo "SKIPPED: the path or a pin is not in the expected form." >> "$RUNNER_TEMP/submodule-diffs.md"
+                continue
+              fi
+              if ! [ -d "$sub" ] || ! { [ -d "$sub/.git" ] || [ -f "$sub/.git" ]; }; then
+                echo "NOT FETCHED: the submodule is not checked out." >> "$RUNNER_TEMP/submodule-diffs.md"
+                continue
+              fi
+              from=$old; to=$new
+              [[ $old =~ $zero ]] && from=$empty
+              [[ $new =~ $zero ]] && to=$empty
+              for c in "$from" "$to"; do
+                [ "$c" = "$empty" ] && continue
+                git -C "$sub" cat-file -e "$c^{commit}" 2>/dev/null \
+                  || git -C "$sub" fetch -q --filter=blob:none origin "$c" 2>/dev/null || true
+              done
+              # Named by the submodule's own path, so no two can collide.
+              name=$sub
+              mkdir -p "submodule-diffs/$(dirname "$sub")"
+              # --text and no conversions: the dependency's own .gitattributes
+              # must not turn its code into "Binary files differ".
+              nd=(--no-color --text --no-ext-diff --no-textconv)
+              if ! git -C "$sub" diff "${nd[@]}" --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
+                     "$from" "$to" > "submodule-diffs/$name.diff" 2>/dev/null; then
+                rm -f "submodule-diffs/$name.diff"
+                echo "DIFF FAILED: one of the two pins could not be fetched." >> "$RUNNER_TEMP/submodule-diffs.md"
+                continue
+              fi
+              git -C "$sub" diff --name-only "$from" "$to" 2>/dev/null |
+                P="$sub" awk '{print ENVIRON["P"] "/" $0}' >> "$RUNNER_TEMP/submodule-files"
+              if [ "$from" != "$empty" ]; then
+                # Not `git archive`, which honours export-ignore and so would
+                # let the dependency leave files out of the old tree.
+                mkdir -p "submodule-base/$sub"
+                idx="$RUNNER_TEMP/submodule-index"
+                rm -f "$idx"
+                { GIT_INDEX_FILE="$idx" git -C "$sub" read-tree "$from" \
+                  && GIT_INDEX_FILE="$idx" git -C "$sub" checkout-index -a -f --prefix="$PWD/submodule-base/$sub/"; } 2>/dev/null \
+                  || echo "Old tree NOT unpacked; read the diff only." >> "$RUNNER_TEMP/submodule-diffs.md"
+                rm -f "$idx"
+              fi
+              {
+                echo "- full patch: submodule-diffs/$name.diff ($(wc -l < "submodule-diffs/$name.diff") lines)"
+                [ -d "submodule-base/$sub" ] && echo "- old tree: submodule-base/$sub/ (the head tree is $sub/)"
+                echo "- commits the new pin drops, if any, are the \`<\` lines above"
+                # Provenance, which no agent can read: a pin on no branch of the
+                # configured remote, or untagged, is worth saying so.
+                for c in "$from" "$to"; do
+                  [ "$c" = "$empty" ] && continue
+                  tags=$(git -C "$sub" tag --points-at "$c" 2>/dev/null | head -5 | paste -sd' ' -)
+                  branches=$(git -C "$sub" branch -r --contains "$c" 2>/dev/null | grep -v -- '->' | head -8 | tr -d ' ' | paste -sd' ' -)
+                  echo "- ${c:0:12}: tags ${tags:-(none)}; on remote branches ${branches:-(none)}"
+                done
+                echo '```'
+                git -C "$sub" diff "${nd[@]}" --stat=100 "$from" "$to" 2>/dev/null | tail -80 | sed "$strip"
+                echo '```'
+              } >> "$RUNNER_TEMP/submodule-diffs.md"
+            done
+          echo "submodules: $(wc -l < "$RUNNER_TEMP/submodule-files") changed file(s) inside moved submodules"
+
           {
             echo "This pull request changes one or more git submodules."
             echo
@@ -1099,6 +1184,13 @@ jobs:
               git -C "$sub" for-each-ref --format='  %(refname:short) %(objectname:short)' 2>/dev/null | head -20 | sed "$strip"
               echo '```'
             done
+            echo
+            echo "## Code changed inside each moved submodule"
+            echo
+            echo "Its paths are in PR_FILES.md like any other change. git diff"
+            echo "origin/base...HEAD shows only the gitlink, so read the patch below"
+            echo "for the change and the old tree for the before."
+            sed "$strip" "$RUNNER_TEMP/submodule-diffs.md"
             echo "----- END AUTHOR-SUPPLIED TEXT -----"
           } > PR_SUBMODULES.md
           echo "submodules: $(wc -l < PR_SUBMODULES.md) lines written"
@@ -1365,6 +1457,12 @@ jobs:
               echo "  use rg or find under rust-deps/."
               echo
             fi
+            if [ -d submodule-diffs ]; then
+              echo "Moved submodules (see PR_SUBMODULES.md):"
+              echo "- submodule-diffs/  (the full patch between each old and new pin)"
+              echo "- submodule-base/   (each old pin's tree, at its own path)"
+              echo
+            fi
             if [ -d deps-include ]; then
               echo "System headers readable from inside the tree:"
               echo "- deps-include/   (a copy of /usr/include: boost, openssl,"
@@ -1492,9 +1590,12 @@ jobs:
           set -euo pipefail
           {
             echo "# Files changed by this pull request, from"
-            echo "# git diff --name-only origin/base...HEAD"
+            echo "# git diff --name-only origin/base...HEAD, plus the paths changed"
+            echo "# inside each moved submodule"
             echo "# Lines starting with # are not paths."
             git diff --name-only origin/base...HEAD
+            # Paths inside a moved submodule: see PR_SUBMODULES.md.
+            cat "$RUNNER_TEMP/submodule-files" 2>/dev/null || true
           } > PR_FILES.md
           # `|| true`: grep -c exits 1 on a zero count, which `set -e` would
           # take as a step failure on an empty diff.

@@ -528,6 +528,12 @@ const CONTEXT = [
   '  Three dots. Never inside $(...), which is refused. Use origin/base, never',
   '  master -- a backport targets release-v0.18 and master would give you the',
   '  whole branch divergence instead of the change.',
+  'A path inside a moved submodule (external/<name>/...) is NOT in that diff,',
+  '  which shows only the gitlink. Its change is submodule-diffs/<submodule',
+  '  path>.diff, its old version is under submodule-base/<same path>, and its new',
+  '  version is the path itself. Wherever these instructions say git show',
+  '  origin/base:<path> or a "+" line in git diff origin/base...HEAD, use those',
+  '  instead for such a path. PR_SUBMODULES.md lists them per submodule.',
   // Never the `owner/repo#number` form, and never a github.com pull URL.
   // Whatever an agent echoes can reach a published issue body, and GitHub
   // files a cross-reference on the upstream pull request from either shape --
