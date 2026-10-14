@@ -20,7 +20,14 @@ Verified against master `160e21504`.
 
 1. **Ed25519 group and scalar arithmetic**, plain C: `crypto-ops.c` and
    `crypto-ops-data.c` (precomputed tables, no functions). SUPERCOP `ref10` with Monero-specific additions grafted on —
-   `ge_fromfe_frombytes_vartime` (the legacy hash-to-point),
+   `ge_fromfe_frombytes_vartime` (the map under both hash-to-point
+   functions in `crypto.cpp`, not only the legacy one: the file-static
+   `biased_hash_to_ec` applies it once to `cn_fast_hash(pub)`;
+   `crypto_ops::unbiased_hash_to_ec` applies it to each 32-byte half of a
+   64-byte `blake2b_monero` digest, multiplies each by 8 and adds them.
+   `crypto_ops::derive_key_image_generator(pub, biased)` picks between the
+   two and is called from `src/fcmp_pp/curve_trees.cpp`, so FCMP++ key images
+   depend on this map too),
    `fe_batch_invert`, `ge_p3_is_point_at_infinity_vartime`, and newer
    FCMP++/Carrot helpers at the end of the file.
 2. **The CryptoNote key API**: `crypto.h` / `crypto.cpp`. Key derivation
@@ -202,6 +209,18 @@ one git revision of `github.com/monero-oxide/monero-oxide`, and patches
 build target to a Rust target triple, and the Guix release build vendors the
 crates (`contrib/guix/rust/config.toml`). **A change under `fcmp_pp_rust/` is a
 supply-chain change**, whatever the diff looks like.
+
+**The C++ side hard-codes generators the Rust side also defines.**
+`src/crypto/generators.cpp` carries the FCMP++ generators `T`, `U` and `V` as
+raw constants, each with a `//Source:` comment naming where it came from; only
+debug-build `assert`s in `init_gens` reproduce them. They must equal
+monero-oxide's `CompressedPoint::T` (`monero-oxide/ed25519/src/compressed_point.rs`)
+and `FCMP_PLUS_PLUS_U` / `FCMP_PLUS_PLUS_V`
+(`monero-oxide/ringct/fcmp++/generators/src/lib.rs`) at the pinned revision.
+So **a monero-oxide pin bump that leaves `generators.cpp` unchanged can desync
+C++ from Rust** — compare the constants against the new revision, not just the
+manifest. Upstream has already had to correct them once: commit `25a7c97bb`,
+"fix T,U,V generator raw values".
 
 CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
 FFI API header 'fcmp++.h' has broken compatibility with C" if the checked-in,

@@ -20,9 +20,12 @@ line numbers are not given because they rot fastest. Find a symbol with
 The path a block at the chain tip actually takes. It is the single most
 attacker-exposed sequence in the daemon.
 
-1. **`connection<T>::handle_read`** — `contrib/epee/include/net/abstract_tcp_server2.inl`.
-   ASIO delivers bytes into a fixed-size buffer. No validation; only throttle
-   and timeout accounting.
+1. **`connection<T>::start_read` → `connection<T>::handle_read`** — `contrib/epee/include/net/abstract_tcp_server2.inl`.
+   ASIO delivers bytes into a fixed-size buffer. No validation. Throttle
+   (`handle_trafic_exact`) and timeout (`start_timer`) accounting happen in
+   the `on_read` lambda inside `start_read`; `handle_read` only sets
+   `m_state.socket.handle_read` and posts `handle_recv` to
+   `connection_basic::strand_`.
 2. **`async_protocol_handler::handle_recv`** — `contrib/epee/include/net/levin_protocol_handler_async.h`.
    Appends to a per-connection cache and runs a head/body state machine.
    Cumulative buffered bytes are bounded by `m_max_packet_size`, which is
@@ -72,9 +75,11 @@ attacker-exposed sequence in the daemon.
    `src/serialization/container.h`). `tx_hashes.size() <= CRYPTONOTE_MAX_TX_PER_BLOCK`
    is checked **after** the vector is deserialized — it is a consensus bound,
    not the memory bound.
-8. **`make_pool_supplement_from_block_entry`** — after the handler has
+8. **`make_pool_supplement_from_block_entry`** —
+   `src/cryptonote_protocol/block_entry_utils.h`. After the handler has
    rejected duplicate txids in the block, every bundled blob must be unpruned,
-   parse, and hash to a txid the block itself names. No stowaways.
+   parse, and hash to a txid the block itself names. No stowaways. A repeated
+   blob is rejected via the `pool_supplement::add_tx` result.
 9. **`core::handle_single_incoming_block` → `core::handle_incoming_block`** —
    `src/cryptonote_core/cryptonote_core.cpp`. Opens the LMDB write batch,
    records `m_writer` as this thread id, re-checks the blob size.
@@ -289,8 +294,12 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
 1. **`daemonize::t_rpc::run`** — `src/daemon/rpc.h`. `m_server.run(2, false)`:
    **exactly two io_context worker threads per RPC server.** A handler that
    blocks removes half the capacity.
-2. **`boosted_tcp_server::handle_accept`** → per-IP and total connection caps
-   (`is_host_limit`). No content validation.
+2. **`boosted_tcp_server::handle_accept` → `connection<T>::start_internal`** →
+   per-IP and total connection caps (`is_host_limit`,
+   `contrib/epee/include/net/http_server_impl_base.h`). The counters are
+   incremented later, in `simple_http_connection_handler::after_init_connection`:
+   check and increment are separate critical sections on `config.m_lock`, not
+   one atomic step. No content validation.
 3. **`simple_http_connection_handler::handle_recv`** —
    `contrib/epee/include/net/http_protocol_handler.inl`. The one place total
    request size is bounded: `MAX_RPC_CONTENT_LENGTH = 1048576`

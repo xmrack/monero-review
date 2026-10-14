@@ -46,10 +46,12 @@ opened for it. Reach of that shape is a finding at the severity its effect
 earns, and the `Unrestricted-RPC-only` row below does not apply.
 
 The case this exists for: an unauthenticated cross-site request reaching
-`/stop_daemon` on a default daemon. It needs a JSON body (e.g. a CORS-simple
-`text/plain` POST of `{}`); a bodiless `GET` fails the JSON parse in
-`MAP_URI_AUTO_JON2_IF` with 400 before `on_stop_daemon` runs. Ask which one
-you have before you lean on the paragraph above.
+`/stop_daemon` on a default daemon. `json::load_from_json`
+(`contrib/epee/include/storages/portable_storage_from_json.h`) accepts an
+empty or whitespace-only body as `{}`, so a bodiless `GET` passes the JSON
+parse in `MAP_URI_AUTO_JON2_IF` and reaches `on_stop_daemon`, as it does any
+other handler whose request has no required fields. CORS headers do not stop
+the request executing.
 
 ## 3. Deserialization — the widest surface
 
