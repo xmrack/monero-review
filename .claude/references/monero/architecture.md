@@ -4,7 +4,7 @@ How the Monero tree fits together: the layers, what depends on what, and the
 handful of structural facts that explain most of what looks strange when you
 open a file here.
 
-Measured against `monero-project/monero` master at `160e21504`, 2026-10-02.
+Verified against `monero-project/monero` master `8308dee67` (2026-10-13).
 Line counts and link edges move; the shape does not. Re-check anything you are
 about to put in a finding.
 
@@ -94,7 +94,7 @@ machinery itself is header-only and every user just includes it.
 
 ## Where the weight is
 
-Nine files carry a disproportionate share of the risk, and all of them are
+Ten files carry a disproportionate share of the risk, and all of them are
 over 2,000 lines (approximate counts; `wc -l` for current ones):
 
 | lines | file | why it matters |
@@ -107,10 +107,11 @@ over 2,000 lines (approximate counts; `wc -l` for current ones):
 |  ~4100 | `src/crypto/crypto-ops.c` | Ed25519 arithmetic, C, `ref10`-derived |
 |  ~3200 | `src/p2p/net_node.inl` | the node; a `.inl`, not a `.cpp` |
 |  ~3200 | `src/rpc/core_rpc_server.cpp` | the daemon's HTTP surface |
-|  ~2900 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
+|  ~2850 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
+|  ~2100 | `contrib/epee/include/net/abstract_tcp_server2.inl` | the TCP connection layer under both P2P and HTTP RPC |
 
-The two `.inl` files are implementations, not inline helpers. Grep that
-skips `*.inl` misses the two most attacker-exposed files in the daemon.
+The `.inl` files are implementations, not inline helpers. Grep that
+skips `*.inl` misses the most attacker-exposed code in the daemon.
 
 ## Four serialization systems, not two
 
@@ -123,7 +124,10 @@ is four, not the two that older notes claim.
    on attacker bytes.
 2. **`src/serialization/`** — the template archive machinery for blocks,
    transactions, and the wallet cache. Driven by `BEGIN_SERIALIZE_OBJECT` and
-   `FIELD`. Consensus-defining: the serialization *is* the format.
+   `FIELD`. Consensus-defining: the serialization *is* the format. The
+   `serialization` *target* is something else: `src/serialization/json_object.cpp`,
+   the rapidjson `toJsonValue`/`fromJsonValue` layer that parses ZMQ RPC
+   requests (`src/rpc/message.cpp`) — a separate parser from epee's JSON.
 3. **`contrib/epee/include/serialization/wire/`** plus the `wire` and
    `wire-json` targets — the newest system, a typed writer built around
    `wire::object` and `WIRE_FIELD`. **Write-only on master**: `json_reader` is
@@ -134,7 +138,9 @@ is four, not the two that older notes claim.
    `src/cryptonote_core/cryptonote_tx_utils.cpp`.
 4. **`boost::serialization`** — persisted local state, in a dozen-plus
    headers (`git grep -lE 'boost/serialization|boost::serialization|BOOST_CLASS_VERSION' -- src`): the peer list (`src/p2p/net_peerlist_boost_serialization.h`), the
-   wallet cache types (`src/wallet/wallet2_basic/wallet2_boost_serialization.h`),
+   wallet cache types (`src/wallet/wallet2_basic/wallet2_boost_serialization.h`;
+   `wallet2::load_wallet_cache` reads the current cache with `binary_archive` and falls
+   back to Boost `portable_binary_iarchive` only for older caches),
    the multisig message store, and a second full description of the tx and
    block types in `src/cryptonote_basic/cryptonote_boost_serialization.h`.
    The wallet *keys* file is not Boost: it is a binary `keys_file_data`
@@ -152,8 +158,8 @@ Two consequences worth carrying:
 - A transaction has **two independent serialization descriptions** — the
   consensus one in `src/cryptonote_basic/cryptonote_basic.h` and the Boost one
   in `cryptonote_boost_serialization.h`. They are maintained by hand and can
-  drift. The Boost one is not consensus, but it is what the wallet cache and
-  `tests/core_tests` round-trip through.
+  drift. The Boost one is not consensus, but legacy wallet caches and
+  `tests/core_tests` (`chaingen_serialization.h`) round-trip through it.
 - "Which serializer" is usually the first question to settle about a change to
   a wire-facing struct, because the macro family tells you which parser an
   attacker reaches.
@@ -164,8 +170,13 @@ their bounds.
 ## Vendored code, and the Rust boundary
 
 `external/` is other people's code held to a different standard than `src/`:
-`randomx` (proof-of-work), `supercop` (assembly Ed25519 for the wallet),
-`db_drivers/liblmdb` (a *patched* LMDB, not upstream), `easylogging++`,
+`randomx` (proof-of-work), `supercop` (assembly Ed25519 behind the
+`wallet-crypto` target, chosen by `MONERO_WALLET_CRYPTO_LIBRARY`, default
+`auto`, in `src/crypto/wallet/CMakeLists.txt`), `db_drivers/liblmdb` (a
+vendored LMDB carrying Monero-local commits:
+`git log -- external/db_drivers/liblmdb`), `boost/archive` (an in-tree
+`portable_binary_iarchive`/`oarchive` that reads the peer list and legacy
+wallet caches — a parser of local files), `easylogging++`,
 `rapidjson`, `gtest`, `qrcodegen`, and — added for the polyseed seed scheme,
 in `external/CMakeLists.txt` — `polyseed` and `utf8proc`. Those last two
 reach `src/` through one edge only: `target_link_libraries` in
@@ -173,8 +184,8 @@ reach `src/` through one edge only: `target_link_libraries` in
 `src/mnemonics/polyseed/CMakeLists.txt` make `mnemonics` link
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
 `cryptonote_basic`. `contrib/epee/` is Monero's own but
-predates most of `src/` and follows different conventions — treat it as a
-fifth dialect, not as part of `src/`.
+predates most of `src/` and follows its own conventions (the epee dialect
+in `coding-style.md`).
 
 **Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
 `crate-type = ["staticlib"]` crate that `src/fcmp_pp/CMakeLists.txt` links as
@@ -182,11 +193,15 @@ fifth dialect, not as part of `src/`.
 `dalek-ff-group 0.5.0` from crates.io, `helioselene` and the FCMP++ crates
 (`ec-divisors`, `full-chain-membership-proofs`, `monero-fcmp-plus-plus*`) from
 one git revision of `github.com/monero-oxide/monero-oxide`, and patches
-`crypto-bigint` to a branch of a personal fork. The Ubuntu CI jobs install a
-pinned toolchain (`.github/workflows/build.yml` verifies `rustup-init` by SHA-256 and installs
-`1.93`); `src/fcmp_pp/fcmp_pp_rust/CMakeLists.txt` maps each build target to a
-Rust target triple, and the Guix release build vendors the crates
-(`contrib/guix/rust/config.toml`). A
+`crypto-bigint` to a branch of a personal fork. Both cargo profiles set
+`panic = "abort"` and `overflow-checks = true`, so a Rust panic or integer
+overflow reached through the FFI terminates the whole process — a
+remotely reachable panic is a DoS, not a caught error. The build runs
+`cargo build --locked`. The Ubuntu CI jobs verify `rustup-init` by SHA-256
+and install a pinned toolchain (`grep -n default-toolchain
+.github/workflows/build.yml`); `src/fcmp_pp/fcmp_pp_rust/CMakeLists.txt`
+maps each build target to a Rust target triple, and the Guix release build
+vendors the crates (`contrib/guix/rust/config.toml`). A
 change under `fcmp_pp_rust/` is a supply-chain change even when the diff looks
 like arithmetic.
 
@@ -196,11 +211,16 @@ The C++ side guards the boundary: CMake `try_compile`s
 the checked-in, hand-written header `src/fcmp_pp/fcmp_pp_rust/fcmp++.h` stops
 being C-compatible.
 
-**FCMP++ is staged, not live.** Nothing outside `src/fcmp_pp/` calls into
-it; `src/ringct` links the library but includes none of its headers. Torsion
-clearing is not part of it: `crypto::get_valid_torsion_cleared_point_vartime`
-is in `src/crypto/` and reaches live wallet paths through
-`crypto::pubkey_clear_torsion` (see `subsystems-crypto.md`).
+**FCMP++ is staged, not live.** Nothing in `src/` outside `src/fcmp_pp/`
+calls into it (only `tests/unit_tests` and `tests/crypto` do); `src/ringct`
+links the library but includes none of its headers, and there is no
+`HF_VERSION_*` for it. Carrot is likewise absent from master beyond
+helpers such as `ge_p3_to_x25519` in `src/crypto/crypto-ops.h` and
+comments. Torsion clearing is not part of FCMP++:
+`crypto::get_valid_torsion_cleared_point_vartime` is in `src/crypto/`, is
+used by `src/fcmp_pp/curve_trees.cpp`, and reaches shipped code only
+through `crypto::pubkey_clear_torsion` in the Trezor signing protocol
+(`src/device_trezor/trezor/protocol.cpp`; see `subsystems-crypto.md`).
 `rct::verPointsForTorsion` has no production caller: it appears in
 `rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
 consensus-reachable today is wrong; describing the code as absent is also
@@ -213,13 +233,19 @@ The line that matters for severity is not "which directory" but "does a node
 running this reach a different accept/reject verdict".
 
 Inside the fence: `src/cryptonote_basic/` (the types and their serialization,
-`get_block_longhash`, difficulty), `src/cryptonote_core/blockchain.cpp`,
+`get_block_longhash`, difficulty, `HardFork` in `hardfork.cpp`),
+`src/cryptonote_core/blockchain.cpp`, `src/cryptonote_core/tx_verification_utils.cpp`
+(`ver_non_input_consensus`, used for both pool and block transactions),
+`core::check_tx_semantic` in `cryptonote_core.cpp` (called from it),
 `src/ringct/`, `src/crypto/` where it is on a verification path,
 `src/hardforks/`, the consensus constants in `src/cryptonote_config.h`, and
 RandomX in `external/randomx/`.
 
 Outside it, but still shipped: the pool's *relay* policy (accepting a
-transaction into the pool is local, mining it is not), `src/p2p/`,
+transaction into the pool is local, mining it is not — but
+`tx_memory_pool::add_tx` runs the same `ver_non_input_consensus` and
+`Blockchain::check_tx_inputs` as block validation, so a defect found via
+the pool may still be a consensus defect), `src/p2p/`,
 `src/rpc/`, the wallet, `src/cryptonote_basic/miner.cpp` — mining is not
 verification — and all of `tests/`.
 

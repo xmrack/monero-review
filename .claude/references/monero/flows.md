@@ -9,9 +9,14 @@ Read the flow that covers whatever a diff touches before forming a theory. A
 change that looks local usually sits somewhere in one of these six, and its
 blast radius is whatever comes after it in the list.
 
-Traced against master `160e21504`. Symbols were confirmed by reading the code;
-line numbers are not given because they rot fastest. Find a symbol with
-`git grep -n`, not with a remembered line.
+Traced against master `8308dee67` (2026-10-13). Symbols were confirmed by
+reading the code; line numbers are not given because they rot fastest. Find a
+symbol with `git grep -n`, not with a remembered line.
+
+None of these flows reaches FCMP++ or Carrot code on master: `src/fcmp_pp` is
+built, but only `tests/unit_tests` links it (`grep -rn fcmp_pp
+--include=CMakeLists.txt`). Consensus, wallet and RPC paths below are
+CLSAG/RingCT only.
 
 ---
 
@@ -43,16 +48,21 @@ attacker-exposed sequence in the daemon.
    `REQUEST_GET_OBJECTS` 2 MB, `REQUEST_CHAIN` 512 kB,
    `RESPONSE_CHAIN_ENTRY` 4 MB, `NEW_FLUFFY_BLOCK` 4 MB,
    `REQUEST_FLUFFY_MISSING_TX` 1 MB, `GET_TXPOOL_COMPLEMENT` 4 MB,
-   **default `SIZE_MAX`**. A new command with no table entry is uncapped.
-   Two notes. The comparison is `m_current_head.m_cb > min(max_packet_size,
+   **default `SIZE_MAX`**. A new command with no table entry is capped only by
+   `m_max_packet_size`. Fragmented messages (no request/response flag) are
+   reassembled in `m_fragment_buffer` and the inner header is re-checked
+   against the same `min`. Two notes. The comparison is `m_current_head.m_cb > min(max_packet_size,
    max_bytes)` — **the whole Levin body**, so for a fluffy block the bundled
    transaction blobs *do* count against the 4 MiB, despite the in-source
    comment on that case reading "4 MB, but it does not includes transaction
    data". And `m_max_packet_size` is raised to 100 MB on the initiating side
    the moment the handshake is *sent*, before any response arrives.
-4. **Macro dispatch.** `CHAIN_LEVIN_NOTIFY_MAP2` in `node_server` chains to
-   `HANDLE_NOTIFY_T2` in `t_cryptonote_protocol_handler`. There is no runtime
-   table; see `macros.md`.
+4. **Macro dispatch.** `CHAIN_LEVIN_NOTIFY_MAP2` routes into `node_server`'s
+   `BEGIN_INVOKE_MAP2`, which forwards unmatched commands through
+   `CHAIN_INVOKE_MAP_TO_OBJ_FORCE_CONTEXT(m_payload_handler, ...)` to the
+   `HANDLE_NOTIFY_T2` entries in `t_cryptonote_protocol_handler`
+   (`src/p2p/net_node.h`, `src/cryptonote_protocol/cryptonote_protocol_handler.h`).
+   There is no runtime table; see `macros.md`.
 5. **`buff_to_t_adapter` → `portable_storage::load_from_binary`** —
    `contrib/epee/include/storages/levin_abstract_invoke2.h`. First allocation
    proportional to attacker input. On this path the count caps
@@ -63,8 +73,13 @@ attacker-exposed sequence in the daemon.
    `src/cryptonote_protocol/cryptonote_protocol_handler.inl`. Returns
    immediately unless `context.m_state == state_normal` and the node believes
    itself synchronized. Then the blob size is checked against
-   `get_current_cumulative_block_weight_limit() + 100` **before the blob is
-   parsed**. `handle_notify_new_block` (the legacy full-block command) does no
+   `get_current_cumulative_block_weight_limit() + BLOCK_SIZE_SANITY_LEEWAY`
+   (100, `core::check_incoming_block_size`) **before the blob is parsed**.
+   On verification failure the peer is dropped with
+   `P2P_IP_FAILS_BEFORE_BLOCK` fail points if `bvc.m_bad_pow`, else 1;
+   `bvc.m_missing_txs` (reachable only after PoW passed) instead sends
+   `NOTIFY_REQUEST_FLUFFY_MISSING_TX`.
+   `handle_notify_new_block` (the legacy full-block command) does no
    validation of its own: it converts to a fluffy request and tail-calls this
    handler — but the two commands carry *different* per-command caps in
    step 3.
@@ -77,22 +92,34 @@ attacker-exposed sequence in the daemon.
    not the memory bound.
 8. **`make_pool_supplement_from_block_entry`** —
    `src/cryptonote_protocol/block_entry_utils.h`. After the handler has
-   rejected duplicate txids in the block, every bundled blob must be unpruned,
-   parse, and hash to a txid the block itself names. No stowaways. A repeated
-   blob is rejected via the `pool_supplement::add_tx` result.
+   rejected duplicate txids in the block, every bundled blob must be unpruned
+   (`allow_pruned=false` here; the sync path in flow 6 uses
+   `make_full_pool_supplement_from_block_entry`, which allows pruned blobs
+   when the entry is marked pruned), parse, and hash to a txid the block itself
+   names. No stowaways. A repeated blob is rejected via the
+   `pool_supplement::add_tx` result.
 9. **`core::handle_single_incoming_block` → `core::handle_incoming_block`** —
-   `src/cryptonote_core/cryptonote_core.cpp`. Opens the LMDB write batch,
-   records `m_writer` as this thread id, re-checks the blob size.
+   `src/cryptonote_core/cryptonote_core.cpp`. Takes `m_incoming_tx_lock`, then
+   `Blockchain::prepare_handle_incoming_block_no_preprocess` locks the txpool
+   and blockchain and spins until `batch_start` succeeds (LMDB records
+   `m_writer` as this thread id). `handle_incoming_block` re-checks the blob
+   size. Lock order on every block path: `m_incoming_tx_lock` → txpool →
+   `m_blockchain_lock`.
 10. **`Blockchain::add_new_block`** — `src/cryptonote_core/blockchain.cpp`.
     Takes **the txpool lock first, then the blockchain lock** — that order,
-    deliberately. `have_block(id)` consults the invalid-block cache;
-    `prev_id == get_tail_id()` decides main chain versus alternative.
+    deliberately. `have_block(id)` checks main chain, `alt_blocks` and
+    `m_invalid_blocks`; `prev_id == get_tail_id()` decides main chain versus
+    alternative.
 11. **`Blockchain::handle_block_to_main_chain`** — the validation body.
     Re-reads the tail under the lock (it can move between 10 and 11), consults
-    `HardFork::check`, then: timestamp `<= now + 2h` and `>=` the median of the
-    last 60; difficulty non-zero; `check_hash(proof_of_work, difficulty)`;
-    `prevalidate_miner_transaction`; `ver_non_input_consensus` over the
-    supplement; per-tx `check_tx_inputs`; `validate_miner_transaction`.
+    `HardFork::check`, then: timestamp `<= now + CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT`
+    (2h) and `>=` the median of the last `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW`
+    (60); difficulty non-zero; `check_hash(proof_of_work, difficulty)`;
+    `m_checkpoints.check_block`; `prevalidate_miner_transaction`;
+    `ver_non_input_consensus` over the supplement; per tx, `tx_exists`, then
+    `m_tx_pool.take_tx` or the supplement, then `check_tx_inputs`;
+    `validate_miner_transaction`. Only a `check_tx_inputs` failure calls
+    `add_block_as_invalid`; other failures leave the id uncached.
 12. **`BlockchainLMDB::add_block`** — `src/blockchain_db/lmdb/db_lmdb.cpp`,
     inside the still-open batch. Throws `BLOCK_EXISTS`, `BLOCK_PARENT_DNE`,
     `KEY_IMAGE_EXISTS` on conflict.
@@ -109,11 +136,15 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 **Traps.**
 
 - **`fast_check` disables three things at once.** When `PER_BLOCK_CHECKPOINT`
-  is compiled in (`option(PER_BLOCK_CHECKPOINT ... ON)`) and the height falls
-  inside the embedded hash list with a matching hash, the node skips the PoW
-  hash, skips `ver_non_input_consensus`, and skips `check_tx_inputs`. A
-  reviewer reading only the non-fast path is reading the branch most nodes do
-  not take during sync.
+  is compiled in (`option(PER_BLOCK_CHECKPOINT ... ON)`), `--fast-block-sync`
+  is on (default 1), and `m_blocks_hash_check[height]` holds a non-null hash
+  equal to the block id, the node skips the PoW hash, skips
+  `ver_non_input_consensus`, and skips `check_tx_inputs`.
+  `m_blocks_hash_check` is filled by `prevalidate_block_hashes` from
+  *peer-supplied* hashes that hash to a compiled-in hash-of-hashes entry
+  (flow 6, step 4). Pruned blocks in that range take their weight from the
+  same table. A reviewer reading only the non-fast path is reading the branch
+  most nodes do not take during sync.
 - **`check_tx_inputs` can skip ring verification entirely** on an
   input-verification-id cache hit. The key is a hash of the txid *and the
   dereferenced mix ring* (`make_input_verification_id`,
@@ -129,8 +160,9 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
   a later abort removes.
 - Everything from the socket read to the LMDB commit runs on one of the
   **ten** epee ASIO worker threads (`int thrds_count = 10;` in
-  `node_server::run`, `src/p2p/net_node.inl`). RandomX hashing and ring verification happen
-  inline on a network thread.
+  `node_server::run`, `src/p2p/net_node.inl`), shared by every network zone
+  (Tor/I2P zones reuse the public zone's `io_context`). RandomX hashing and
+  ring verification happen inline on a network thread.
 
 ---
 
@@ -142,13 +174,16 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 2. **`wallet2::create_transactions_2`** — takes
    `boost::unique_lock<hw::device>` plus `hw::reset_mode`, buckets unlocked
    outputs per subaddress, aims for 1- or 2-in/2-out.
-3. **`wallet2::transfer_selected_rct`** — assembles `tx_source_entry` records,
-   overwriting the ring entry that matches the real global output index.
-4. **`wallet2::get_rct_distribution`** — asks the daemon for the RCT output
-   distribution over `/get_output_distribution.bin`. **The wallet checks only
-   that it is monotonic, long enough, and covers its own max output index.**
-   There is no cross-source or cryptographic check. A hostile distribution
-   biases decoy selection.
+3. **`wallet2::transfer_selected_rct`** — calls `get_outs` (steps 4–5), then
+   assembles `tx_source_entry` records, overwriting the ring entry that
+   matches the real global output index.
+4. **`wallet2::get_rct_distribution`** — asks the daemon for the per-block
+   (non-cumulative) RCT output distribution over
+   `/get_output_distribution.bin` and accumulates it locally. **The checks are
+   in `wallet2::get_outs` and cover only length (`>=
+   CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE`), monotonicity, and that the total
+   exceeds the wallet's own max RCT output index.** There is no cross-source
+   or cryptographic check. A hostile distribution biases decoy selection.
 5. **`wallet2::get_outs` → `tools::gamma_picker::pick`** — decoys drawn from a
    gamma distribution over that distribution, then fetched via `/get_outs.bin`
    in chunks of 1000. Offsets are **sorted ascending per ring before the
@@ -166,22 +201,30 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 7. **`rct::genRctSimple` → `rct::proveRctCLSAGSimple`** — `src/ringct/rctSigs.cpp`.
    The last pseudo-out mask is derived as `sumout - sumpouts`, so commitment
    balance is a construction invariant on the sending side.
-8. **`wallet2::commit_tx`** — POSTs to `/sendrawtransaction`. On a non-OK
-   status it throws `error::tx_rejected` **before mutating any wallet state**,
-   so the inputs stay unspent.
+8. **`wallet2::commit_tx`** — first records the rings in the ringdb
+   (`add_rings`, best effort), then POSTs to `/sendrawtransaction` with
+   `do_sanity_checks = true`. On a non-OK status it throws
+   `error::tx_rejected` before `add_unconfirmed_tx` and `set_spent`, so the
+   inputs stay unspent; the ringdb entries persist.
 9. **`core_rpc_server::on_send_raw_tx`** — `src/rpc/core_rpc_server.cpp`.
    `CHECK_CORE_READY()`, hex decode, optional `tx_sanity_check`.
 10. **`core::handle_incoming_tx`** — `src/cryptonote_core/cryptonote_core.cpp`.
     Note the name: **`handle_incoming_txs` (plural) does not exist on master.**
     Holds `CRITICAL_REGION_LOCAL(m_incoming_tx_lock)` for its whole duration,
     so no two transactions race into the pool with conflicting key images.
+    Rejects blobs over `get_max_tx_size()` before parsing. P2P
+    `handle_notify_new_transactions` enters here too.
 11. **`core::add_new_tx` → `tx_memory_pool::add_tx`** —
     `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first
     (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, non-zero
     `unlock_time`, key-image conflicts), then `ver_non_input_consensus` and
-    `Blockchain::check_tx_inputs`.
-12. **`levin::notify::send_txs` → Dandelion++** —
-    `src/cryptonote_protocol/levin_notify.cpp`. Stem or fluff by epoch.
+    `Blockchain::check_tx_inputs`. With `relay_method::block`
+    (`kept_by_block`) the four cheap checks are skipped, and a tx whose
+    inputs fail is still inserted with `m_verifivation_impossible`.
+12. **`levin::notify::send_txs`** — `src/cryptonote_protocol/levin_notify.cpp`,
+    via `relay_transactions` → `node_server::send_txs`. A zone with noise
+    enabled (Tor/I2P) sends fixed-size fragmented covert messages; otherwise
+    the public zone uses Dandelion++ stem or fluff by epoch.
 13. **`tx_memory_pool::fill_block_template`** — walks
     `m_txs_by_fee_and_receive_time`. **A tx is skipped unless
     `meta.matches(category)`**, where `category` is `relay_category::legacy`
@@ -196,9 +239,10 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
 - **`add_new_tx` returns `true` for a transaction already in the pool or
   already on chain.** The field that means "newly accepted" is
   `tvc.m_added_to_pool`.
-- **`tvc.m_no_drop_offense` decides whether a peer is banned** for a rejected
-  transaction. Any new rejection added before the expensive checks must set it,
-  or a fee-policy disagreement becomes a ban.
+- **`tvc.m_no_drop_offense` decides whether a peer is disconnected** for a
+  rejected transaction (`handle_notify_new_transactions` calls
+  `drop_connection` with no fail score). Any new rejection added before the
+  expensive checks must set it, or a fee-policy disagreement drops peers.
 - **Two `Blockchain::check_tx_inputs` overloads** — the six-argument one takes
   the blockchain lock and handles the per-block-checkpoint fast path; the
   four-argument one does the rule work. Likewise two `create_block_template`
@@ -229,21 +273,29 @@ control. The daemon is untrusted and the keys are in the process.
    `default_http_bin_limits = 65536*3` each
    (`invoke_http_bin`, `contrib/epee/include/storages/http_abstract_invoke.h`).
 3. **`wallet2::parse_block_round`** → `parse_and_validate_block_from_blob`.
-   The wallet **recomputes each block id from the blob** and chains `prev_id`.
-   **There is no proof-of-work check anywhere in the wallet.** `prev_id`
-   chaining proves internal consistency of whatever the node made up, not chain
-   validity.
+   The wallet **recomputes each block id from the blob** and
+   `process_parsed_blocks` chains `prev_id`. **There is no proof-of-work check
+   anywhere in the wallet.** `prev_id` chaining proves internal consistency of
+   whatever the node made up, not chain validity. Transactions are parsed with
+   `parse_and_validate_tx_base_from_blob` (prefix only).
 4. **`check_block_hard_fork_version`** — the block's major version must fall in
    the height range this wallet's compiled tables expect. A coarse local
-   consistency check, not a chain check.
+   consistency check, not a chain check, and skipped entirely when
+   `m_allow_mismatched_daemon_version` is set.
 5. **Pre-scan, on the compute threadpool**: `cache_tx_data` collects tx public
    keys from `tx_extra`; then `8*a*R` derivations via `hw::device`; then view
    tag filtering and `is_out_to_acc_precomp`.
 6. **`wallet2::process_new_transaction` → `wallet2::scan_output`** — the part
    that makes a malicious node unable to forge a receive:
+   `is_out_to_acc_precomp` (pre-scan) maps the output key back to a known
+   subaddress spend key;
    `generate_key_image_helper_precomp` requires the regenerated ephemeral
-   public key to equal the on-chain output key, and `rct::decodeRct` requires
-   the ECDH-decrypted `(amount, mask)` to reopen the Pedersen commitment.
+   public key to equal the on-chain output key (skipped for multisig and
+   background-sync wallets, which have no spend key); and `rct::decodeRct`
+   throws unless the ECDH-decrypted `(amount, mask)` reopens the Pedersen
+   commitment. The static `decodeRct` wrapper in `wallet2.cpp` catches that
+   and returns 0, and `scan_output` then skips the output (logged, not
+   recorded).
 7. **Spend detection** is a purely local key-image lookup in `m_key_images`.
    The node is never consulted. (`rescan_spent` is a *different* operation that
    does consult it — and sends the wallet's key images to the node.)
@@ -266,12 +318,15 @@ control. The daemon is untrusted and the keys are in the process.
 **Traps.**
 
 - `wallet2` is **not internally thread-safe** for refresh state. Serialization
-  is the front end's job — `LOCK_IDLE_SCOPE()` in simplewallet, the handler
-  structure in wallet-rpc. The only lock inside `wallet2` on this path is
-  `m_daemon_rpc_mutex`.
+  is the front end's job — `LOCK_IDLE_SCOPE()` in simplewallet; in wallet-rpc,
+  `wallet_rpc_server::run` serves HTTP and the auto-refresh idle handler on a
+  single thread (`run(1, true)`). The only `wallet2` member mutex is
+  `m_daemon_rpc_mutex`; the `hw::device` lock and a function-static password
+  lock in `scan_output` are the other locks on this path.
 - `threadpool::submit` runs a non-leaf job **inline on the caller's thread**
-  when the pool is saturated, and `waiter::wait()` drains the queue on the waiting
-  thread. "This runs on a worker thread" is not guaranteed.
+  when the pool is saturated or when called from inside a pool job
+  (`depth > 0`), and `waiter::wait()` drains the queue on the waiting thread.
+  "This runs on a worker thread" is not guaranteed.
 - `process_parsed_blocks` calls `hwdev.generate_key_derivation` from several
   pool threads **without** holding the `hw::device` lock, unlike
   `process_new_transaction`, which holds it around its own derivations and
@@ -296,15 +351,24 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
    blocks removes half the capacity.
 2. **`boosted_tcp_server::handle_accept` → `connection<T>::start_internal`** →
    per-IP and total connection caps (`is_host_limit`,
-   `contrib/epee/include/net/http_server_impl_base.h`). The counters are
+   `contrib/epee/include/net/http_server_impl_base.h`; keyed by
+   `get_rpc_connection_limit_key`, which groups IPv6 by /64). The counters are
    incremented later, in `simple_http_connection_handler::after_init_connection`:
    check and increment are separate critical sections on `config.m_lock`, not
-   one atomic step. No content validation.
+   one atomic step. No content validation. Idle timeouts shrink as the server
+   fills (`http_server_config::get_timeout_shift`); an expiring timer never
+   stops a running handler — for RPC connections with a write pending it is
+   renewed once per completed write (see the timer lambda in
+   `connection<T>::start_timer`).
 3. **`simple_http_connection_handler::handle_recv`** —
    `contrib/epee/include/net/http_protocol_handler.inl`. The one place total
-   request size is bounded: `MAX_RPC_CONTENT_LENGTH = 1048576`
-   (`src/cryptonote_config.h`). Request line ≤ 9000 bytes, header block
-   ≤ 100000 bytes.
+   request size is bounded: `handle_buff_in` counts all bytes of the request,
+   headers included, against `m_max_content_length` =
+   `MAX_RPC_CONTENT_LENGTH` (1048576, `src/cryptonote_config.h`; wallet-rpc
+   uses 100×). Request line ≤ `HTTP_MAX_URI_LEN` (9000), header block ≤
+   `HTTP_MAX_HEADER_LEN` (100000). `parse_cached_header` rejects any
+   `Transfer-Encoding`, non-digit or conflicting `Content-Length` values, and
+   a header block that does not end exactly at the matched blank line.
 4. **`http_custom_handler::handle_request`** → optional HTTP digest auth.
    **If `--rpc-login` is not set — the default — this boundary does not
    exist.**
@@ -313,10 +377,13 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
    against the raw request target**. `/get_height?x=1` and `/get_height/` both
    404.
 6. **Body parse**, by macro:
-   - `MAP_URI_AUTO_JON2` → `load_t_from_json`, recursion limit 100.
+   - `MAP_URI_AUTO_JON2` → `load_t_from_json`, recursion limit 100. An
+     all-whitespace body parses as an empty object. Parse failure → 400.
    - `MAP_URI_AUTO_BIN2` → `load_t_from_binary` **with no limits argument**.
    - `BEGIN_JSON_RPC_MAP` → one parse into a `portable_storage`, then a second
-     `else if` chain on `method`.
+     `else if` chain on `method`. Every outcome here, including handler
+     failure and unknown method (`-32601`), is a JSON-RPC error body with
+     HTTP 200.
 7. **Handler** → `core` → `Blockchain`, each call taking `m_blockchain_lock`
    independently. Some hot accessors (`get_current_blockchain_height`,
    `get_block_id_by_height`) deliberately take **no** lock and say so in
@@ -325,16 +392,21 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
    backstop is a 25 MiB queued-byte soft limit applied *after* the whole
    response is built in memory.
 9. **ZMQ**, in parallel: one `boost::thread` running `ZmqServer::serve` on a
-   `ZMQ_REP` socket, dispatching through `DaemonHandler`. 10 MiB frame cap, no
-   auth, no TLS, no per-IP limit — only the bind address separates trust
-   domains.
+   `ZMQ_REP` socket, dispatching through `DaemonHandler`. 10 MiB frame cap
+   (`net::zmq::max_message_size`), no auth, no TLS, no per-IP limit — only the
+   bind address separates trust domains. A non-loopback bind is refused
+   without `--confirm-zmq-rpc-external-bind` (`verify_zmq_rpc_bind`,
+   `src/daemon/daemon.cpp`); restriction is the separate
+   `--restricted-zmq-rpc` flag, independent of `--restricted-rpc`.
 
 **Restricted mode is enforced in two independent places with different
 semantics:**
 
 - **At dispatch**, as an `else if` condition (`MAP_URI_AUTO_JON2_IF(...,
-  !m_restricted)`). The whole method is hidden, and a refused method is
-  **indistinguishable from a nonexistent one — 404, never 403.**
+  !m_restricted)`, and `MAP_JON_RPC_WE_IF` under `/json_rpc`).
+  The whole method is hidden, and a refused method is **indistinguishable
+  from a nonexistent one — 404 for a URI endpoint, `-32601 Method not found`
+  under `/json_rpc`, never 403.**
 - **Inside handlers**, as `const bool restricted = m_restricted && ctx;`,
   gating caps and redaction. `ctx` is NULL for in-process callers, so
   restrictions are skipped for them by design.
@@ -350,8 +422,9 @@ are two *different* `core_rpc_server` objects on two different ports.
   only the method names in `blocked_in_restricted_mode`
   (`src/rpc/zmq_restricted_methods.cpp`; count with
   `grep -c '^      "' src/rpc/zmq_restricted_methods.cpp`).
-- Any HTTP 500 closes the connection, and a handler that throws or returns
-  false produces a 500.
+- Any HTTP 500 closes the connection (`m_want_close` in
+  `handle_request_and_send_response`). A URI-mapped handler that throws or
+  returns false produces a 500; a `/json_rpc` handler does not (see step 6).
 - The ZMQ `handlers[]` table and the restricted blocklist must stay
   lexicographically sorted; `DaemonHandler`'s constructor throws
   `std::logic_error` otherwise.
@@ -365,25 +438,33 @@ order.
 
 **Up:** `main()` (`src/daemon/main.cpp`) → `tools::on_startup()` → option
 parsing → config file parsed into the *same* `variables_map` (command line
-wins, `po::store` is first-wins) → network type and data dir →
+wins, `po::store` is first-wins; `get_config_file_path` uses
+`<data-dir>/bitmonero.conf` if `--data-dir` is given without
+`--config-file` and that file exists) → network type and data dir →
 `mlog_configure` (**everything logged before this goes to console only**) →
 `daemonizer::daemonize` → `t_daemon` → `t_internals`.
 
 `struct t_internals` (`src/daemon/daemon.cpp`) declares
 `protocol, core, p2p, rpcs, zmq` — and **member declaration order is the real
 construction order**, not the order in the mem-initializer list, which reads
-`core, protocol, p2p, zmq`. Then two lines wire the cycle:
-`protocol.set_p2p_endpoint(p2p.get())` and `core.set_protocol(protocol.get())`.
-Before those, the protocol handler points at `m_p2p_stub` and core at
-`m_protocol_stub`.
+`core, protocol, p2p, zmq`. So `t_protocol` is constructed (and its
+`init(vm)` run) holding a reference to a `t_core` that has not been
+constructed yet; this is safe only because neither the protocol
+constructor nor `t_cryptonote_protocol_handler::init` uses the core. Then two
+lines wire the cycle: `protocol.set_p2p_endpoint(p2p.get())` and
+`core.set_protocol(protocol.get())`. Before those, the protocol handler
+points at `m_p2p_stub` and core at `m_protocol_stub`.
 
 Inside `t_core`: `new_db()` always returns a `BlockchainLMDB` (there is no
-runtime DB choice) → `BlockchainLMDB::open` → `Blockchain::init` →
-`load_compiled_in_block_hashes` → `tx_memory_pool::init` (re-parses each
-stored pool tx's prefix and rebuilds the key-image and fee indices; no
-consensus re-validation) →
+runtime DB choice) → `BlockchainLMDB::open` → `Blockchain::init` (adds
+genesis to an empty DB, pops top blocks whose version disagrees with the
+ideal hard-fork version, `load_compiled_in_block_hashes`) →
+`tx_memory_pool::init` (re-parses each stored pool tx's prefix and rebuilds
+the key-image and fee indices; no consensus re-validation unless the
+hard-fork version changed during init, which calls `tx_memory_pool::validate`) →
 `core::update_checkpoints` → `miner::init` (parses flags; **does not start
-mining**).
+mining** — `--start-mining` takes effect in `miner::on_synchronized`) →
+`drop_alt_blocks()` unless `--keep-alt-blocks`.
 
 `t_daemon::run` then starts a stop-flag polling thread, `core.run()`, each `rpc->run()`,
 the ZMQ server, and finally `p2p.run()`, **which blocks until the node stops**.
@@ -406,15 +487,20 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 - **RPC and ZMQ ports are bound during construction but only served in
   `run`.** The kernel queues connections in between.
   `check_core_ready()` gates *responses*, not connections.
-- **Durability is off by default for the whole initial sync.** `MDB_NOSYNC`
-  stays set until `on_connection_synchronized` calls `safesyncmode(true)` — and
-  that is a no-op if the user pinned `--db-sync-mode`.
+- **Commits are not fsynced by default during initial sync.** The default
+  `fast:async:1` opens LMDB with `MDB_NOSYNC` (`DBF_FAST`) and instead dispatches
+  `store_blockchain` to `m_async_service` after each block, so a crash can
+  lose recent commits. `MDB_NOSYNC` stays set until
+  `on_connection_synchronized` calls `safesyncmode(true)` — a no-op if the
+  user pinned `--db-sync-mode` (`m_db_default_sync` false).
 - `mlog_configure` sets `DisableApplicationAbortOnFatalLog`, so **`MFATAL` does
   not terminate**. Several init failures rely on an explicit `return false`
   right after the `MFATAL`; dropping that return turns a fatal into a warning.
 - `Blockchain::init` has an empty `else { }` with a TODO to verify a loaded
-  chain against checkpoints. An existing DB is adopted with no genesis or
-  nettype cross-check.
+  chain against checkpoints. That check happens later, in `core::init` →
+  `update_checkpoints` → `check_against_checkpoints(m_checkpoints, true)`,
+  which rolls back past a mismatching checkpoint. There is no explicit
+  genesis or nettype check of an existing DB.
 - `node_server::init_config` swallows peerlist load failures, so a corrupt
   `p2pstate.bin` degrades to an empty peerlist rather than an error.
 - `BlockchainLMDB::close` carries `FIXME: not yet thread safe!!!`; its
@@ -429,14 +515,16 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 1. **Peer selection** — `node_server::connections_maker` on the 1-second idle
    handler. Chooses *who* to talk to; validates nothing about honesty.
 2. **`process_payload_sync_data`** — the peer's claimed height is **taken at
-   face value as the sync target**; its claimed cumulative difficulty is not
-   read. Only the hard-fork
-   version, the pruning seed shape and a downward height revision are checked.
+   face value as the sync target** (`set_target_blockchain_height`); its
+   claimed cumulative difficulty is not read. Only the hard-fork version and
+   the pruning seed shape are checked; a downward height revision costs one
+   score point (`hit_score`), not a disconnect.
 3. **`NOTIFY_REQUEST_CHAIN` / `handle_response_chain_entry`** — the densest
    validation point in the flow. Unsolicited response, response past the
-   expected height, empty id list, more than 25000 ids, duplicates, a first
-   hash we do not know, a known main-chain hash at the wrong height: each drops
-   the peer. **The size cap is checked before `reserve()`.**
+   expected height, empty id list, more than `BLOCKS_IDS_SYNCHRONIZING_MAX_COUNT`
+   (25000) ids, inconsistent start/total heights, duplicates, a first hash we
+   do not know, a known main-chain hash at the wrong height: each drops the
+   peer. **The size cap is checked before `reserve()`.**
 4. **`Blockchain::prevalidate_block_hashes`** — checks against the compiled-in
    hash-of-hashes (one per `HASH_OF_HASHES_STEP` = 512 blocks). **Beyond the
    compiled table it returns "all fine" unconditionally.** It is not a general
@@ -449,31 +537,45 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 7. **`try_add_next_blocks`** — `m_sync_lock` is taken with `try_to_lock`.
    Whoever wins becomes the single block-adding thread; it is **whichever
    connection strand won the race**, not a dedicated thread.
-8. **`prepare_handle_incoming_blocks`** — opens an LMDB write batch **sized by
-   the peer-supplied span**, parses in parallel, precomputes RandomX hashes.
+8. **`prepare_handle_incoming_blocks`** — takes `m_incoming_tx_lock` (held
+   until `cleanup_handle_incoming_blocks`), opens one LMDB write batch **sized
+   by the peer-supplied span**, parses in parallel, precomputes RandomX hashes
+   outside the hash-check zone. Then per block:
+   `make_full_pool_supplement_from_block_entry` → `core::handle_incoming_block`.
+   The whole span commits in one `batch_stop`; a block failing verification
+   drops the peer but does not abort blocks already added in that batch.
 9. **`Blockchain::handle_alternative_block`** — full PoW is verified for every
    alt block, which is what makes a deep reorg expensive. The main-chain
-   `fast_check` path does not apply here.
+   `fast_check` path does not apply here. A checkpoint height in the alt
+   chain forces the switch regardless of difficulty.
 10. **`switch_to_alternative_blockchain`** — pops main-chain blocks one at a
     time, replaying their transactions into the mempool with
     `relay_method::block`, then reapplies the alt chain through
-    `handle_block_to_main_chain`.
+    `handle_block_to_main_chain`. Popped main-chain blocks are re-submitted
+    as alt blocks unless `discard_disconnected_chain`.
 
 **Facts that correct a common mental model:**
 
 - **There is no in-memory alternative chain map.** `m_alternative_chains` does
   not exist; alt blocks live in the LMDB `alt_blocks` table
-  (`add_alt_block` / `get_alt_block` / `remove_alt_block`).
+  (`add_alt_block` / `get_alt_block` / `remove_alt_block`), which `core::init`
+  empties on every start unless `--keep-alt-blocks`.
 - **There is no maximum reorg depth.** No constant in `cryptonote_config.h`
   bounds it. `checkpoints::is_alternative_block_allowed` is the only depth
   bound, and only up to the last checkpoint at or below the current tip.
   (`m_max_reorg_depth` is a *wallet* setting.)
 - **The cumulative-difficulty comparison is strict less-than**, so an alt chain
   with exactly equal difficulty does not win — first seen keeps the chain.
-- `rollback_blockchain_switching` is misnamed and the code says so: the pops
-  have already happened; it only re-applies.
-- `handle_alternative_block` inserts the alt block's transactions into the
-  **real mempool** before deciding whether a reorg happens.
+- `rollback_blockchain_switching`: the call-site comment says to treat it as
+  apply-only "because the rollback was done above", but it also pops any alt
+  blocks already applied back to `split_height` before re-adding the original
+  chain through `handle_block_to_main_chain`; a failure there logs
+  `PANIC!` and returns false with the chain partially restored.
+- `handle_alternative_block` inserts the alt block's supplement transactions
+  into the **real mempool** (after PoW and `ver_non_input_consensus`) before
+  deciding whether a reorg happens. They enter as `relay_method::block`, so
+  `add_tx` skips the fee, extra-size, unlock-time and key-image-conflict
+  checks.
 - Sync is refused entirely on non-public zones: `process_payload_sync_data`
   returns early for Tor and I2P peers.
 
@@ -500,6 +602,7 @@ What still bounds the uncapped path: `read(void*, count)` refuses to read past
 the buffer; `read_ae<T>()` refuses an element count greater than
 `m_count / ps_min_bytes<T>::strict`, i.e. **proportional to the bytes that
 actually arrived**, before `reserve()`; and `RECURSION_LIMITATION()` caps
-nesting at 100. So memory stays proportional to input size on every path. It
+nesting at 100. So memory stays proportional to input size on every path (on
+daemon RPC, input is at most `MAX_RPC_CONTENT_LENGTH`). It
 is the *counts* that differ — do not state the 8192/16384/16384 numbers as a
 property of "epee parsing".

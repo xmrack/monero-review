@@ -8,7 +8,7 @@ Wallet subsystems are in `subsystems-wallet.md`; crypto in
 `subsystems-crypto.md`; the end-to-end paths through all of these are in
 `flows.md`.
 
-Verified against master `160e21504`. Symbols confirmed by grep; cited by file
+Verified against master `8308dee67` (2026-10-13). Symbols confirmed by grep; cited by file
 and enclosing function or symbol, not line number.
 
 ---
@@ -53,7 +53,8 @@ throw rather than return:
 - **`store()` is declared `const` and is not** — it `const_cast`s `*this` and
   runs the same non-const `serialize_map` body.
 - **`load_from_binary` does not check that the input was consumed.** The body
-  ends `buf_reader.read(m_root); return true;//TODO:`. Trailing bytes after a
+  (`contrib/epee/src/portable_storage.cpp`) ends
+  `buf_reader.read(m_root); return true;//TODO:`. Trailing bytes after a
   valid message are ignored.
 - **Duplicate keys are rejected on the binary path and accepted on the JSON
   path** (a repeated scalar key: last one wins; a repeated object key is
@@ -64,7 +65,9 @@ throw rather than return:
 - On a 32-bit build, `read_varint`'s `v` is a `size_t`, so the 64-bit marker
   branch truncates before the shift.
 - epee's JSON parser is hand-written. Do **not** assume rapidjson semantics
-  (number handling, duplicate keys, depth limits, UTF-8 validation).
+  (number handling, duplicate keys, UTF-8 validation). It has its own depth
+  bound, `EPEE_JSON_RECURSION_LIMIT_INTERNAL` (100) in `run_handler`, and no
+  object/field/string limits at all.
 
 ---
 
@@ -87,9 +90,14 @@ posts to the second strand specifically so queued writes cannot deadlock
 against it; the comment says so.
 
 **The HTTP server** (`http_protocol_handler.inl`) is a hand-written state
-machine. It is where total request size is bounded — `m_max_content_length`,
-set to `MAX_RPC_CONTENT_LENGTH` (1048576) for the daemon — plus a 9000-byte
-request line and a 100000-byte header block.
+machine. It is where total request size is bounded — `m_bytes_read` against
+`m_max_content_length` in `handle_buff_in`, set to `MAX_RPC_CONTENT_LENGTH`
+(1048576) for the daemon (`core_rpc_server::init`) and 100× that for
+wallet-rpc — plus `HTTP_MAX_URI_LEN` (9000) and `HTTP_MAX_HEADER_LEN`
+(100000). Request bodies are framed only by `Content-Length`:
+`parse_cached_header` rejects any `Transfer-Encoding` header, and
+`get_len_from_content_lenght` rejects repeated or comma-listed
+`Content-Length` values that disagree.
 
 **Traps.** The connection filter (`is_remote_host_allowed`) and connection
 limit (`is_host_limit`) are virtuals called from
@@ -97,7 +105,11 @@ limit (`is_host_limit`) are virtuals called from
 are read; the daemon implements both in `node_server`. The RPC server's limit
 is `http_server_impl_base::is_host_limit`; it has no filter of its own —
 `core_rpc_server::init` installs the `node_server`
-(`set_connection_filter(&m_p2p)`). Any HTTP 500 sets `m_want_close`, so a handler that throws also kills the connection.
+(`set_connection_filter(&m_p2p)`). Any HTTP 500 sets `m_want_close`
+(`handle_request_and_send_response`), so a URI-mapped handler that throws or
+returns false also closes the connection. JSON-RPC methods are different:
+`MAP_JON_RPC_WE_IF` catches the exception and answers a JSON-RPC error with
+status 200.
 
 ---
 
@@ -129,7 +141,7 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   `false` (`cryptonote_format_utils.h`), so it **tolerates trailing bytes by
   default**. Every caller takes the default except the pruned-blob branch of
   `make_pool_supplement_from_block_entry`
-  (`src/cryptonote_protocol/cryptonote_protocol_handler.inl`), which passes
+  (`src/cryptonote_protocol/block_entry_utils.h`), which passes
   `require_eof=true`.
 - Varints must be **canonical**: `tools::read_varint` returns
   `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
@@ -161,7 +173,8 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   `txin_to_script` and `txout_to_script` are `0x0`. Tags are scoped to their
   own variant's type list.
 - `std::list` and `std::forward_list` are **not** serializable, despite
-  `serialization.h` including `<list>` — `is_container` lists only deque, map,
+  `serialization.h` including `<list>` — `is_container` (`containers.h`)
+  lists only deque, map,
   multimap, set, unordered_map, unordered_multimap, unordered_set, vector.
 - `ar.begin_array()` and `ar.begin_array(cnt)` are different functions: the
   no-arg form emits no count.
@@ -198,9 +211,14 @@ and the `//TODO: validate tx` just before `get_transaction_hash` is literal —
 does carry chain-wide ceilings derived from `CRYPTONOTE_MAX_TX_SIZE`:
 `transaction_prefix::deserialize_vin` caps the input count (`MAX_VIN_COUNT`)
 and total key offsets (`MAX_TOTAL_KEY_OFFSETS`), `txin_to_key` uses
-`CONTAINER_FIELD_CAPPED(key_offsets, …)`, and `vout` is capped by
-`MAX_VOUT_COUNT`. Fork-specific limits (ring size etc.) live in consensus
-checks, not here.
+`CONTAINER_FIELD_CAPPED(key_offsets, …)`, and `vout` is capped by a local
+`MAX_VOUT_COUNT` that is `MAX_NON_COINBASE_VOUT_COUNT` (from
+`CRYPTONOTE_MAX_TX_SIZE`) or, for coinbase or input-less transactions,
+`MAX_COINBASE_VOUT_COUNT` (from the 100 MB Levin packet size). Fork-specific
+limits (ring size etc.) live in consensus checks, not here. Every
+`parse_and_validate_tx_*` and `parse_and_validate_block_from_blob` body is
+wrapped in `TRY_ENTRY`/`CATCH_ENTRY`, so a throw during parsing returns
+`false` rather than propagating.
 `calculate_transaction_hash` is v1 = hash of the whole blob, v2 =
 `cn_fast_hash` over three sub-hashes (prefix, base-rct slice, prunable hash).
 `get_block_hashing_blob` is the **PoW preimage** and is distinct from what
@@ -213,14 +231,19 @@ checks, not here.
   `true`.
 - **`parse_and_validate_block_from_blob` has no size parameter at all.** The
   only block-level structural bound is `CRYPTONOTE_MAX_TX_PER_BLOCK` inside the
-  serializer, checked *after* the vector is deserialized.
+  serializer, checked *after* the vector is deserialized. Blob size is checked
+  by the caller: `core::handle_incoming_block` runs
+  `check_incoming_block_size` (cumulative weight limit plus
+  `BLOCK_SIZE_SANITY_LEEWAY`) before parsing.
 - **`get_transaction_unprunable_summary` is a second, hand-rolled byte
   parser** built from local `READ_VARINT`/`READ_BYTE`/`SKIP` macros that are
   `#undef`'d at the end of the function. It must accept exactly the same
   layout as the DSL serializer; a change to one needs a change to both.
 - **`outPk[n].dest` and the bulletproof `V[i]` are not on the wire.**
-  `expand_transaction_1` synthesises them after parsing, so they are not
-  covered by the transaction hash.
+  `expand_transaction_1` synthesises them after parsing — `dest` from the
+  output public key, `V[i]` from `outPk[i].mask` times `INV_EIGHT` — so their
+  bytes are not hashed directly; they are bound only through the hashed
+  fields they are derived from.
 - **Two separate hardcoded exceptions for block 202612**, in two functions,
   with different constants: one substitutes the block id in
   `calculate_block_hash`, the other short-circuits `get_block_longhash`.
@@ -235,6 +258,12 @@ checks, not here.
 - `verification_context`'s fields are misspelled **`m_verifivation_failed`**
   and `m_verifivation_impossible`, consistently across the whole tree.
   `m_verification_failed` matches nothing.
+- **No FCMP++ or Carrot consensus code on master.** The RingCT type enum
+  (`rctTypes.h`) ends at `RCTTypeBulletproofPlus`; `src/fcmp_pp` is linked by
+  `ringct` and the unit tests, and the node directories mention FCMP++ only in
+  TODO comments (`grep -rni fcmp src/cryptonote_* src/blockchain_db src/rpc`).
+  A finding that assumes an FCMP++ transaction reaches node validation on
+  master is describing a different branch.
 
 ---
 
@@ -335,15 +364,19 @@ consumes).
 - **`handle_alternative_block` returns `true` for an orphan** (setting
   `bvc.m_marked_as_orphaned`). Read `bvc`, not the return value.
 - **`handle_alternative_block` does not run `check_tx_inputs`.** Only
-  `ver_non_input_consensus`. Input validity is checked when the alt chain is
-  reapplied through the main-chain path.
-- **`fast_check`** (under `PER_BLOCK_CHECKPOINT`, on by default) skips the PoW
-  hash, `ver_non_input_consensus` and per-tx `check_tx_inputs`. Any new
-  consensus check placed in the non-fast branch is skipped during sync.
+  `ver_non_input_consensus` over the pool supplement, whose transactions are
+  then inserted into the mempool with `relay_method::block`. Input validity
+  is checked when the alt chain is reapplied through the main-chain path.
+- **`fast_check`** (under `PER_BLOCK_CHECKPOINT`, on by default) is set when
+  the block's id matches the compiled-in `m_blocks_hash_check` entry for its
+  height; it then skips the PoW hash, `ver_non_input_consensus` and per-tx
+  `check_tx_inputs`. Any new consensus check placed in the non-fast branch
+  is skipped during sync below that height.
 - **`goto leave`** — several jump sites in `handle_block_to_main_chain`
   (`grep -c 'goto leave' src/cryptonote_core/blockchain.cpp`), one label
-  sitting inside the first `if` block immediately before `return false`. One of them (the pruned-block
-  branch) jumps backwards past declarations.
+  sitting inside the first `if` (the `prev_id` check) immediately before
+  `return false`. Every jump is backwards to that label, so any cleanup
+  must be done before the `goto`; locals are destroyed, nothing else runs.
 - `check_for_double_spend` exists but its only call site is commented out; the
   DB's duplicate-key-image error catches it instead.
 - `add_block_as_invalid` inserts into `m_invalid_blocks`, which is **unbounded**
@@ -362,13 +395,15 @@ backend choice, so LMDB's behaviour is effectively consensus-relevant: an
 output index returned wrong is a chain split.
 
 **Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
-`migrate_4_5` ladder run from `open()`. 19 sub-databases are opened
-(`maxdbs` 32). The DUPFIXED tables use a dummy 8-byte all-zero key
+`migrate_4_5` ladder run from `open()` via `migrate()`. `open()` opens the
+sub-databases (`grep -n 'lmdb_db_open(txn, LMDB_' db_lmdb.cpp`; two are
+conditional) under `mdb_env_set_maxdbs(m_env, 32)`. The DUPFIXED tables use a dummy 8-byte all-zero key
 (`zerokval`), so the logical key is the first field of the *data*.
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
 `batch_commit` / `batch_stop` / `batch_abort` all re-check it. `do_resize`
-throws if a write txn is open, and its barrier is
+throws if a write txn is open (and returns silently, without resizing, when
+free disk space is under 1 GiB), and its barrier is
 `prevent_new_txns()` → `wait_no_active_txns()` → `mdb_env_set_mapsize` →
 `allow_new_txns()`, implemented as **lock-free spins** on a `std::atomic_flag`
 and an atomic counter.
@@ -452,7 +487,17 @@ the wrong id.
 **The handler** is `cryptonote_protocol_handler.inl`, the real
 implementation. `cryptonote_protocol_handler-base.cpp` contains just a
 vestigial network-throttle base class (the directory's other `.cpp` files are
-`block_queue.cpp` and `levin_notify.cpp`).
+`block_queue.cpp` and `levin_notify.cpp`). `block_entry_utils.h` holds
+`make_pool_supplement_from_block_entry`, which turns the transaction blobs
+in a `block_complete_entry` into a `pool_supplement` (count checked against
+the block's tx hashes, pruned blobs only when allowed, `max_size_check`
+on); the fluffy handler calls it with `allow_pruned=false`, and
+`make_full_pool_supplement_from_block_entry` (sync path in
+`try_add_next_blocks`, and `blockchain_import`) parses the block, rejects
+duplicate tx hashes and passes `allow_pruned = blk_entry.pruned`.
+`handle_request_get_objects` rejects more than
+`CURRENCY_PROTOCOL_MAX_OBJECT_REQUEST_COUNT` (now in `cryptonote_config.h`)
+blocks.
 
 **Invariants.** Every `NOTIFY_` id needs an entry in **three** places: the
 struct's `ID`, `cryptonote_connection_context::get_max_bytes`, and the
@@ -478,8 +523,11 @@ the comment says so.
   against a `crypto::hash`; `boost::none` compares unequal, so an out-of-range
   height silently fails closed.
 - **`m_expected_heights` is a vector of hashes, not heights.**
-- `relay_method::forward` exists in `enums.h` but the switch in
-  `handle_notify_new_transactions` treats it as "not supposed to happen here".
+- `handle_notify_new_transactions` passes `relay_method::forward` as the
+  incoming relay method for non-public zones (`stem` for public), but
+  `tx_memory_pool::add_tx` never copies `forward` into `tvc.m_relay`, so the
+  later switch on `tvc.m_relay` treats `forward` as "not supposed to happen
+  here" and relays nothing for it.
 - In the noise (I2P/Tor) mode, `relay_method::stem` is silently downgraded to
   `local` with an `MWARNING`.
 - **Dandelion++ state is strand-confined, not mutex-protected.** Every mutator
@@ -516,7 +564,9 @@ connections and returns the same peer id. `last_seen` from a remote peer is
 never trusted — `sanitize_peerlist` zeroes it.
 
 **Lock order inside the node:** `m_host_fails_score_lock` →
-`m_blocked_hosts_lock` → `m_peerlist_lock`.
+`m_blocked_hosts_lock` → `m_peerlist_lock`. No comment states it; it is the
+order the code takes them (`add_host_fail` → `block_host`;
+`handle_remote_peerlist` → `merge_peerlist`).
 
 **Traps.**
 
@@ -534,8 +584,9 @@ never trusted — `sanitize_peerlist` zeroes it.
   `is_ping` marks them.
 - `get_random_index_with_fixed_probability` is deliberately **not uniform** —
   a cubic bias toward the most recently seen white peer.
-- `block_subnet` and `unblock_subnet` are asymmetric: unblock recursively
-  splits stored subnets around the removed range.
+- `block_subnet` and `unblock_subnet` are asymmetric: unblock erases blocked
+  hosts inside the range and splits each stored subnet around it
+  (`subtract_ipv4_subnet`), keeping the remainder blocked.
 - `--igd` / `--no-igd` are accepted and do nothing; UPnP was removed.
 - `i2p_address::store` writes port **1**, not 0, for compatibility.
 - In `src/net/parse.cpp`, `get_network_address` returns
@@ -556,14 +607,19 @@ target**. Three codecs chosen by macro: `MAP_URI_AUTO_JON2` (epee JSON),
 threads (`m_server.run(2, false)`, `src/daemon/rpc.h`).
 
 **ZMQ** (`daemon_handler.cpp`, `zmq_server.cpp`, `daemon_messages.cpp`): one
-thread on a `ZMQ_REP` socket, rapidjson-based, 10 MiB frame cap, no auth, no
-TLS, no per-IP limit. Its `handlers[]` table and its restricted blocklist must
-both stay lexicographically sorted — the constructor throws
-`std::logic_error` otherwise.
+thread on a `ZMQ_REP` socket, rapidjson-based, 10 MiB frame cap
+(`net::zmq::max_message_size`, applied as `ZMQ_MAXMSGSIZE`), no auth, no
+TLS, no per-IP limit. Its `handlers[]` table and its restricted blocklist
+(`zmq_restricted_methods.h`, `check_blocked_methods_sorted`) must both stay
+lexicographically sorted — the `DaemonHandler` constructor throws
+`std::logic_error` otherwise. The same `ZmqServer` optionally runs a
+`ZMQ_XPUB` socket (`init_pub`, `zmq_pub.cpp`) that publishes chain,
+miner-data and txpool events.
 
 **Restricted mode has two forms**, and a new endpoint needs both considered:
-the dispatch-level `MAP_..._IF(..., !m_restricted)` (whole method hidden, and
-a refusal is a **404, never a 403**), and the in-handler
+the dispatch-level `MAP_..._IF(..., !m_restricted)` (whole method hidden: a
+URI endpoint answers **404**, a JSON-RPC method answers JSON-RPC `-32601`
+"Method not found" from `END_JSON_RPC_MAP`; never a 403), and the in-handler
 `const bool restricted = m_restricted && ctx;` (caps and redaction; `ctx` is
 NULL for in-process callers). The restricted and unrestricted HTTP servers are
 two *different* `core_rpc_server` objects on two different ports.
@@ -578,9 +634,12 @@ throws "restricted RPC mode is required" unless restriction is already on
 
 **Traps.** `/get_transaction_pool_hashes.bin` is mapped with
 `MAP_URI_AUTO_JON2` — a JSON endpoint despite the suffix. The `.bin` request
-bodies are parsed with **no** portable_storage count limits. Response
-serialization has no size limit; the only backstop is a 25 MiB queued-byte
-soft limit applied after the response is already built in memory.
+bodies are parsed with **no** portable_storage count limits
+(`MAP_URI_AUTO_BIN2` calls `load_t_from_binary` without `limits`). Response
+serialization has no size limit; the only backstop is the queued-byte soft
+limit (`--rpc-response-soft-limit`, default `DEFAULT_RPC_SOFT_LIMIT_SIZE`
+= 25 MiB) checked in `connection<T>::send` after the response is already
+built in memory.
 `rpc_handler.cpp`'s `get_output_distribution` keeps a process-wide
 function-local static cache behind a mutex, shared by the HTTP and ZMQ paths.
 

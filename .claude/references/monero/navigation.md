@@ -2,7 +2,7 @@
 
 How to find things here, and the specific ways a search misleads you.
 
-Every recipe below was run against master `160e21504`. Paths are relative to
+Every recipe below was run against master `8308dee67` (2026-10-13). Paths are relative to
 the Monero checkout root.
 
 ---
@@ -20,14 +20,19 @@ Four facts change what a search means in this tree:
    text. See `macros.md`; the short version is that
    `member_do_serialize`, `store`/`load`/`serialize_map`,
    `handle_http_request_map`, `handle_invoke_map`, `operator==` on key types,
-   `class Request`, `struct request`, and every `m_cur_*` in the LMDB backend
-   are all invisible to grep.
+   `class Request`, nearly every RPC `request` type (a `struct_init` typedef of
+   `request_t`), and every `m_cur_*` in the LMDB backend are all invisible to
+   grep.
 3. **`git grep` and `git ls-files` cannot see inside submodules.**
    `external/randomx`, `supercop`, `rapidjson`, `gtest`, `polyseed` and
    `utf8proc` are separate repositories — use `rg` or `find` there. The last
    two are the `.gitmodules` entries `external/polyseed`
    (`https://github.com/tevador/polyseed.git`) and `external/utf8proc`
    (`https://github.com/JuliaStrings/utf8proc.git`).
+   The FCMP++ prover/verifier is not in the tree at all: `src/fcmp_pp/fcmp_pp_rust`
+   is a C-ABI shim (`lib.rs`, `fcmp++.h`) over `monero-oxide` crates pinned by
+   `rev` in its `Cargo.toml`. Read those under `~/.cargo/git/checkouts/` (or a
+   clone at that rev).
 4. **Spelling.** The consensus verdict flag is **`m_verifivation_failed`**
    (and `m_verifivation_impossible`). The correct spelling matches nothing.
 
@@ -87,9 +92,13 @@ See the three-regime table in `flows.md` — the answer is not uniform.
 
 **What is the complete set of P2P commands, their ids and their size caps?**
 ```
+rg -n 'P2P_COMMANDS_POOL_BASE' src/p2p/p2p_protocol_defs.h
 rg -n 'BC_COMMANDS_POOL_BASE' src/cryptonote_protocol/cryptonote_protocol_defs.h
-rg -n -A1 'case cryptonote::NOTIFY' src/cryptonote_basic/connection_context.cpp
+rg -n -A1 'case (nodetool|cryptonote)::' src/cryptonote_basic/connection_context.cpp
 ```
+The caps are `cryptonote_connection_context::get_max_bytes`, enforced in
+`contrib/epee/include/net/levin_protocol_handler_async.h`; an ID not listed
+there gets `SIZE_MAX`.
 
 **Where is every protocol handler defined?**
 ```
@@ -104,15 +113,18 @@ rg -n 'drop_connection|drop_connection_with_score|drop_connections' src/cryptono
 **Where is a lock taken, and in what order?**
 ```
 rg -n 'Order of locking' src/                    # the one documented statement
-rg -n 'CRITICAL_REGION_LOCAL1?\(|m_sync_lock|m_incoming_tx_lock|m_blockchain_lock' src/cryptonote_core src/cryptonote_protocol
+rg -n 'CRITICAL_REGION_(LOCAL1?|BEGIN)\(|\.(un)?lock\(\)|m_sync_lock|m_incoming_tx_lock|m_blockchain_lock' src/cryptonote_core src/cryptonote_protocol
 ```
+The documented order (`blockchain.cpp`, in `prepare_handle_incoming_blocks`) is
+`m_incoming_tx_lock`, then the txpool lock, then `m_blockchain_lock`.
 
 **Which functions in `blockchain.cpp` exist, in file order?**
 ```
-grep -n "^[a-z_:<>, ]*Blockchain::" src/cryptonote_core/blockchain.cpp
+grep -nE '^[^ /#].*\bBlockchain::~?\w+\(' src/cryptonote_core/blockchain.cpp
 ```
 `db_lmdb.cpp` and `wallet2.cpp` respond to the same trick with
-`BlockchainLMDB::` and `wallet2::`.
+`BlockchainLMDB::` and `wallet2::`. (A character class without digits, such
+as `[a-z_:<>, ]*`, silently drops every `uint64_t`-returning function.)
 `cryptonote_format_utils.cpp` puts a `//---` separator before most (not all)
 functions, so `grep -n '^\s*//---'` enumerates most of it.
 
@@ -123,7 +135,8 @@ rg -n 'HF_VERSION_|hf_version|get_current_hard_fork_version|get_ideal_version' <
 Remember `RX_BLOCK_VERSION` lives in `src/crypto/hash-def.h`, not in
 `cryptonote_config.h` and not in `hash-ops.h` either. It is a bare `#define`,
 so it does not answer to the `HF_VERSION_` grep above; a RandomX gating change
-is invisible to that pattern.
+is invisible to that pattern. The per-network fork heights are tables in
+`src/hardforks/hardforks.cpp`.
 
 **Where does the wallet talk to the daemon?**
 ```
@@ -159,8 +172,10 @@ ls tests/fuzz/
 ```
 grep -n 'HF_VERSION_\|^#define ' src/cryptonote_config.h
 ```
-Remember the same names are declared three times, in `namespace config`,
-`config::testnet` and `config::stagenet`.
+The address prefixes, default ports, `NETWORK_ID` and genesis constants are
+declared three times, in `namespace config`, `config::testnet` and
+`config::stagenet`; the other `config::` constants (fees, `HASH_KEY_*`
+domain separators, `MULTISIG_MAX_SIGNERS`) only once.
 
 **Expand the macros when reading is not enough.**
 ```
@@ -187,7 +202,8 @@ enormous — always pipe through `grep`.
 | `parse_hash256` | the **global** namespace, bottom of `cryptonote_basic_impl.h` |
 | the C++ LMDB wrapper (`lmdb::database`) | `src/lmdb/` — **not** the block store, which is `src/blockchain_db/lmdb/` |
 | the RandomX shim | `src/crypto/rx-slow-hash.c`; there is no `rx-slow-hash.h`, the declarations are in `hash-ops.h` |
-| `slow_hash_allocate_state` | declared in no header at all — callers write a local `extern "C"` |
+| `slow_hash_allocate_state` | declared in no header at all — callers (`blockchain.cpp`, `miner.cpp`) write a local `extern "C"` |
+| FCMP++ / curve trees | `src/fcmp_pp/` (`curve_trees`, `tower_cycle`, `fcmp_pp_crypto`) over the Rust FFI. On master nothing outside `src/fcmp_pp` and `tests/` includes it; `ringct` only links it. Carrot has no code yet (one comment in `cryptonote_format_utils.cpp`) |
 
 ## Things that look like one thing and are another
 
@@ -200,15 +216,17 @@ enormous — always pipe through `grep`.
   suffix.
 - **`LOG_PRINT_L0`** is a warning, not level 0.
 - **`DISABLE_VS_WARNINGS(x)`** expands to nothing on every compiler.
-- **`t_core::run()`** returns true and does nothing.
+- **`daemonize::t_core::run()`** (`src/daemon/core.h`) returns true and does nothing.
 - **`i18n_translate`** (`src/common/i18n.h`) returns its argument unchanged;
-  every `tr()` in the tree, simplewallet's included, is a no-op.
+  every `tr()` in the tree (the per-class wrappers, `src/wallet/api`'s
+  `#define tr(x) (x)`, simplewallet's) is a no-op.
 - **`rx_slow_hash_allocate_state`** is an empty function.
 - **`hashchain::size()`** returns a height, not a count.
 - **`m_expected_heights`** is a vector of hashes.
 - **`is_rct_bulletproof()`** is false for `RCTTypeBulletproofPlus`.
-- **`add_new_tx` returns true** for a transaction that was already there.
-- **`checkBackgroundSync()` returns true** when the operation must be refused.
+- **`core::add_new_tx` returns true** for a transaction already in the pool or
+  the chain, without verifying it.
+- **`WalletImpl::checkBackgroundSync()` returns true** when the operation must be refused.
 - **An engaged `boost::optional<std::string>`** from `node_rpc_proxy` is the
   *error*.
 

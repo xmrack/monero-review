@@ -5,7 +5,7 @@ a licence header and almost nothing else**, plus vendored code that follows
 nobody's rules but its own. Carrying a rule from one dialect into another is
 the most common way to be wrong about style here.
 
-All counts measured at master `160e21504`.
+All counts measured at master `8308dee67` (2026-10-13).
 
 ---
 
@@ -16,8 +16,16 @@ All counts measured at master `160e21504`.
 | **cryptonote core** | `src/cryptonote_*`, `src/p2p`, `src/rpc`, `src/wallet/wallet2.*`, `src/blockchain_db` | 2 | `#pragma once` | `CHECK_AND_ASSERT_MES` | `lower_snake_case`, `m_` members |
 | **epee** | `contrib/epee/` | 2, tabs mixed in | `#pragma once` | `CHECK_AND_ASSERT_*`, `TRY_ENTRY` | `t_` template params, `m_` on *public* wire members |
 | **crypto (C)** | `src/crypto/` | 2, C89-ish | mixed: `#ifndef` in the hash-function C headers, `#pragma once` elsewhere | raw `assert` | hyphenated filenames |
-| **"new" C++** | `src/net`, `src/lmdb`, `src/rpc/zmq*`, `src/fcmp_pp`, `src/device`, `src/wallet/api`, `src/wallet/wallet2_basic` | **4** (except `src/rpc/zmq*`, `src/net/http.*` and `src/net/resolve.*`: 2) | `#pragma once` | `expect<T>`, `MONERO_CHECK` | CamelCase more common |
+| **"new" C++** | `src/net`, `src/lmdb`, `src/rpc/zmq*`, `src/fcmp_pp`, `src/device`, `src/wallet/api`, `src/wallet/wallet2_basic` | **4** (except `src/rpc/zmq*`, `src/net/http.*`, `src/net/resolve.*` and `src/wallet/api/subaddress*.cpp`: 2) | `#pragma once`; most `src/wallet/api` headers have none | `expect<T>`/`MONERO_CHECK` in `src/net`, `src/lmdb`, `src/rpc/zmq*`; `CHECK_AND_ASSERT_THROW_MES` in `src/fcmp_pp` and `src/device`; status codes (`setStatusError`) in `src/wallet/api` | `lower_snake_case` in `src/net`/`src/lmdb`; CamelCase in `src/wallet/api` |
 | **vendored** | `external/*`, `src/crypto/crypto_ops_builder/` | upstream's | upstream's | upstream's | upstream's |
+
+**The Rust FFI** (`src/fcmp_pp/fcmp_pp_rust`) is a boundary of its own: a
+hand-written C header `fcmp++.h` (copied into the build, not generated;
+`ffi_api_c_compat.c` only checks it compiles as C) declaring `extern "C"`
+functions in `src/lib.rs` that return `int` (0 on success, -1 on error). The
+C++ side calls them only from `src/fcmp_pp/tower_cycle.cpp`, checking each
+with `CHECK_FFI_RES`, which throws. The crate builds with `panic = "abort"` in both profiles, so a
+Rust panic terminates the process rather than unwinding into C++.
 
 **Indentation is a reliable fingerprint**: 2 spaces in the core, 4 in most
 of the newer subsystems. `src/wallet` is split exactly down the
@@ -32,29 +40,41 @@ documented local patch.
 
 ## What is actually settled
 
-Four conventions hold with no meaningful exceptions:
+Four conventions hold for nearly all first-party code:
 
 1. **A 3-clause BSD licence block starting on line 1** — line 1 is
    `// Copyright (c) <years>, The Monero Project`, then a fixed 26-line body.
+   Exceptions are third-party C in `src/crypto`, the mnemonic word lists, a few
+   files that open with a Doxygen block, and a handful with no Monero header
+   at all (e.g. `src/blocks/blocks.*`, `src/lmdb/table.h`, `src/net/host.h`,
+   `src/common/powerof.h`).
    Older files add "Parts of this file are originally copyright (c) 2012-2013
    The Cryptonote developers" (`git grep -l 'Parts of this file are originally'
    -- src ':!src/crypto'`).
 2. **No `using namespace` in a header.** Zero occurrences in `src/*.h` and
    zero in `contrib/epee` headers and `.inl` files. In `.cpp` files it is
-   common in `src/`, overwhelmingly `using namespace epee;` and
-   `using namespace cryptonote;`. **This is the one convention with no
+   common in `src/`, mostly `using namespace epee;`, `cryptonote;`, `std;`
+   and `crypto;`. **This is the one convention with no
    exceptions — reject a header that breaks it.**
 3. **A new `.cpp` must be added by name** to its directory's `CMakeLists.txt`
-   `<name>_sources` list. A new `.h` need not be — headers are globbed by
-   `monero_find_all_headers`.
+   `<name>_sources` list (`src/p2p` and `src/cryptonote_protocol` glob instead).
+   A new `.h` need not be: most directories glob headers with
+   `monero_find_all_headers`, and where headers are listed by hand
+   (`src/rpc`, `src/device`, `src/wallet/api`) the list only affects IDE
+   grouping and installation, not compilation.
 4. **Per-translation-unit log category**: `#undef MONERO_DEFAULT_LOG_CATEGORY`
    then `#define` its own, after the includes
-   (`git grep -l '^#undef MONERO_DEFAULT_LOG_CATEGORY' -- src`).
+   (`git grep -l '^#undef MONERO_DEFAULT_LOG_CATEGORY' -- src`). Not
+   universal: a number of logging TUs (most of `src/wallet/api`,
+   `src/p2p/net_node.cpp`, `src/fcmp_pp/curve_trees.cpp`) define none, and
+   log under whatever the last included header left defined — epee headers
+   set their own (`net`, `serialization`, …). List them with `git grep -L MONERO_DEFAULT_LOG_CATEGORY
+   $(git grep -lE '\b(MINFO|MERROR|MWARNING|MDEBUG|LOG_PRINT_L[0-4])\(' -- 'src/*.cpp' 'src/*.inl')`.
 
 ## What is not settled, and should not be a finding on its own
 
 - **Brace style.** Control statements: next-line braces are the majority
-  (roughly 4:1 in `src/`, more in `contrib/epee`), but same-line is common.
+  (roughly 5:1 in `src/`, more in `contrib/epee`), but same-line is common.
   Namespaces: mostly next-line. There is **no `.clang-format`**
   in the tree, and `docs/CONTRIBUTING.md` asks for local consistency only.
 - **Reference binding.** `src/` leans to `const T &x`, with `const T& x`
@@ -62,12 +82,12 @@ Four conventions hold with no meaningful exceptions:
 - **Header guards.** `#pragma once` dominates in `src/`, and some headers
   (most of `src/wallet/api`'s) have **no guard at all**
   (`grep -L 'pragma *once' $(git ls-files 'src/*.h')`); `src/crypto` is mixed.
-- **Include order.** There is no convention. Only a little over half of the
-  `src/` `.cpp` files with a matching header include it first.
+- **Include order.** There is no convention. About three in five `src/`
+  `.cpp` files with a matching header include it first.
 - **The copyright year.** It is bumped by hand, per file, on touch, with no
-  automation anywhere in `utils/`. The tree simultaneously carries 2024, 2025
-  and 2026 end years, and many files still say `2014-2024`
-  (`git grep -l '2014-2024, The Monero Project'`). Neither presence nor absence of a bump in a diff means anything.
+  automation anywhere in `utils/`. Most files still end in 2024
+  (`git grep -l '2014-2024, The Monero Project'`), alongside 2025, 2026 and a
+  few older end years. Neither presence nor absence of a bump in a diff means anything.
 - **Blank comment lines in the licence header** are written `// ` with a
   trailing space in about half the tree and `//` in the other half, and a
   handful of files carry CRLF there. A "whitespace-only" hunk in a licence header is
@@ -79,17 +99,21 @@ Four conventions hold with no meaningful exceptions:
 
 - **Types**: mostly `lower_snake_case`, then `ALL_CAPS` (nearly all of them
   `COMMAND_` or `NOTIFY_` — wire message types), then `CamelCase` (the newer
-  and API-facing subsystems). `src/ringct/rctTypes.h` mixes all three in one file.
+  and API-facing subsystems). `src/ringct/rctTypes.h` mixes `lower_snake`
+  (`multisig_out`), lowerCamel (`rctSig`, `ctkey`) and CamelCase
+  (`Bulletproof`) in one file.
 - **`m_` marks a member of a class that has behaviour.** Structs describing a
   wire or disk format use plain names — **because those names *are* the
   serialised keys**. Plain member declarations outnumber `m_` ones in `src/`
   headers, concentrated in the two RPC commands-defs headers.
   **The exception that bites**: some *serialised* structs keep `m_` —
   `account_public_address` (`src/cryptonote_basic/cryptonote_basic.h`),
-  `account_keys` (`src/cryptonote_basic/account.h`) and the `m_block_ids` /
+  `account_keys` and `account_base` (`src/cryptonote_basic/account.h`), epee's
+  network-address types (`m_ip`, `m_port`, `m_mask` in
+  `contrib/epee/include/net/net_utils_base.h`) and the `m_block_ids` /
   `m_block_weights` chain-entry fields — so `m_spend_public_key` really is the
   wire key there. Check
-  `grep -rc "KV_SERIALIZE\w*(m_"` before assuming.
+  `git grep -n 'KV_SERIALIZE\w*(m_'` before assuming.
 - Only four `m_Uppercase` identifiers exist in the tree: `m_L`, `m_LR`,
   `m_R`, and epee's `m_URI`.
 - **Constants**: consensus and protocol constants are `ALL_CAPS #define`s in
@@ -157,7 +181,8 @@ Five basenames collide between `src/` and
 
 **Forward-declaration headers** are `fwd.h` per subsystem, except
 `src/common/common_fwd.h`. Two epee files named `fwd.h` are *not* pure forward
-declarations — `serialization/wire/fwd.h` defines macros.
+declarations: `serialization/wire/fwd.h` and `serialization/wire/json/fwd.h`
+both define declaration macros.
 
 ---
 
@@ -171,7 +196,8 @@ common than `std::unique_ptr`; `reinterpret_cast` is far more common than
 
 **Scope guards**: the current idiom is `epee::scope_guard` and, rarely,
 `epee::unique_scope_guard` (`contrib/epee/include/scope_guard.h`), which adds
-`.reset()` (run the action now) and `.release()` (disarm). **`tools::scope_leave_handler` and
+`.reset()` (run the action now) and `.release()` (disarm). Both destructors
+swallow any exception the action throws. **`tools::scope_leave_handler` and
 `epee::misc_utils::auto_scope_leave_caller` do not exist any more** — zero
 occurrences. Older notes naming them are describing a previous tree.
 
@@ -188,17 +214,19 @@ occurrences. Older notes naming them are describing a previous tree.
 
 **Secret lifetime.** `memwipe` (`contrib/epee/src/memwipe.c`) has three
 mutually exclusive implementations selected by `HAVE_MEMSET_S` /
-`HAVE_EXPLICIT_BZERO`, and **every one ends with the `SCARECROW` inline-asm
-barrier** — without it the compiler may elide the clear. `epee::wipeable_string`
+`HAVE_EXPLICIT_BZERO`, each followed by the `SCARECROW` inline-asm barrier;
+the barrier is what keeps the plain-`memset` fallback from being elided. A
+`memset_s` failure exits the process. `epee::wipeable_string`
 routes every size change through `grow()`, which wipes the discarded tail on
 shrink and both buffers on reallocation. `tools::scrubbed<T>` static_asserts
 that `T` is POD and trivially destructible. Note **all of this lives in
 `contrib/epee`, not `src/common`**, despite being conceptually part of the
 utility layer.
 
-The tree is built with **`-fno-strict-aliasing`** (`CMakeLists.txt`), which is
-a standing acknowledgement that the POD/`reinterpret_cast` idioms at the wire
-boundary would otherwise be undefined.
+The tree is built with **`-fno-strict-aliasing`** (`CMakeLists.txt`; the
+comment cites a GCC 6.1.1 aliasing miscompile), so type-punning through
+`reinterpret_cast` at the wire boundary is not exploited by the optimiser in
+this build. That does not make it portable to a build without the flag.
 
 ---
 
@@ -230,12 +258,13 @@ Almost never on its own. The cases that are real:
 - A `using namespace` added to a header.
 - A member renamed inside a `BEGIN_KV_SERIALIZE_MAP`, `BEGIN_SERIALIZE_OBJECT`
   or `WIRE_FIELD` map — **that renames a wire or on-disk key**.
-- A field added to a `request_t`/`response_t` that is *not* wrapped by
-  `struct_init`, so it is genuinely uninitialised.
+- A new RPC or P2P command whose `request`/`response` typedef bypasses
+  `epee::misc_utils::struct_init` (every existing one uses it), so members
+  without initialisers are genuinely uninitialised.
 - A new `.cpp` missing from its `CMakeLists.txt`.
-- A `THROW_WALLET_EXCEPTION_IF` placed before an `else` without braces.
-- Two `CRITICAL_REGION_LOCAL`, or two `PERF_TIMER` with the same name, in
-  one scope (name collision).
+- An FFI call into `fcmp_pp_rust` whose `int` result is not checked, or a
+  change to `fcmp++.h` that does not match `src/lib.rs` (no build step compares
+  the two).
 - A rule imported from the wrong dialect — suggesting `expect<T>` in
   `cryptonote_core` (0 uses there), or `CHECK_AND_ASSERT_MES` in `src/net`.
 

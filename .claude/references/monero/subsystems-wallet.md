@@ -11,7 +11,10 @@ deanonymises the user directly.
 genuinely different threat models, and a finding real in one is often
 unreachable in another. Always name the one you mean.
 
-Verified against master `160e21504`.
+Verified against master `8308dee67` (2026-10-13).
+
+No FCMP++ or Carrot code is in the wallet on master: `grep -rli 'fcmp\|carrot' src/wallet src/simplewallet src/device`
+finds nothing. Wallet-side FCMP++/Carrot work lives off master.
 
 ---
 
@@ -49,9 +52,13 @@ builds and signs transactions, and persists two files.
 **Two files, two keys.** The keys file is JSON under a password-derived
 chacha20 key; the cache file is monero binary serialization under
 `derive_cache_key(keys_key, config::HASH_KEY_WALLET_CACHE)` — deliberately not
-the same key. Both are written to `<name>.new` and then `tools::replace_file`,
-so persistence is atomic. **Neither is authenticated**: chacha20 with a random
-IV and no MAC. Tampering is detected only by the deserializer failing.
+the same key. Both are written to a temporary file and moved into place with
+`tools::replace_file` (`store_keys_file_data`; `store_to` when saving to the
+current file), so persistence is atomic. **Neither is authenticated**: chacha20
+with a random IV and no MAC; on parse failure the load paths fall back
+through legacy schemes (chacha8, and for the cache a key derived directly from
+the secret keys). Tampering is detected only by the deserializer
+failing.
 
 **Background sync makes it four files and two key hierarchies.** Three modes
 -- `BackgroundSyncOff`, `BackgroundSyncReusePassword`,
@@ -63,8 +70,11 @@ else. In the custom-password mode the wallet keeps `<name>.background` and
 `<name>.background.keys` alongside the main pair
 (`wallet2::make_background_wallet_file_name`,
 `wallet2::make_background_keys_file_name` in `src/wallet/wallet2.cpp`),
-encrypted under `m_custom_background_key` -- a **different** key from the main cache, so the
-password that opens the background cache is deliberately not the wallet
+encrypted under keys derived from `m_custom_background_key` (itself
+`derive_cache_key(<password key>, HASH_KEY_BACKGROUND_KEYS_FILE)` in
+`get_custom_background_key`; the cache uses a further
+`derive_cache_key(..., HASH_KEY_BACKGROUND_CACHE)` in `wallet2::get_cache_key`),
+so the password that opens the background cache is deliberately not the wallet
 password.
 
 Four things follow, and a diff can break each of them:
@@ -81,6 +91,10 @@ Four things follow, and a diff can break each of them:
   normal wallet is opened, so "the user opened their wallet" reaches a
   deserializer over a second, separately-encrypted file. Everything true of
   the main cache as an attack surface is true of this one.
+- **Background-ness is inferred from the keys file.** In `wallet2::load_keys_buf`,
+  if the password key yields neither the JSON nor the v0 format, the custom
+  background key is tried and, if that parses, the wallet opens with
+  `m_is_background_wallet` and `m_background_syncing` set.
 - **Settings cannot be changed from a background wallet.**
   `THROW_WALLET_EXCEPTION_IF(m_background_syncing || m_is_background_wallet,
   ... "cannot change wallet settings from background wallet")` in
@@ -121,11 +135,16 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   otherwise.
 - Multisig nonces are wiped after a single use — `memwipe` under the comment
   "CRITICAL: a nonce may only be used once!" in `wallet2::get_multisig_k`.
-  **There is no wallet-level nonce member.**
-  The only `m_multisig_k` in the tree is `transfer_details::m_multisig_k`, a
-  plain `std::vector<rct::key>` declared in
-  `src/wallet/wallet2_basic/wallet2_types.h`, carrying no deprecation
-  marker, and it is live state: `wallet2::get_multisig_k` walks
+  Nonces live in two places. The persisted one is
+  `transfer_details::m_multisig_k`, a plain `std::vector<rct::key>` declared
+  in `src/wallet/wallet2_basic/wallet2_types.h`. The second is the
+  in-memory, unserialized `wallet2::m_multisig_rescan_k`, which
+  `import_multisig` fills with a copy of every transfer's `m_multisig_k` so
+  `update_multisig_rescan_info` can reinstall them after the rescan it
+  triggers; `refresh` wipes and clears it at the end. `get_multisig_k` wipes
+  the matching entry in both, so a change that adds a third copy, or skips
+  the `m_multisig_rescan_k` wipe, lets a nonce be handed out twice.
+  `wallet2::get_multisig_k` walks
   `m_transfers[idx].m_multisig_k`,
   matches a nonce by its `L = k*G`, hands it out and wipes it in place.
   Two consequences a diff can break. The wipe **leaves a zero entry in the
@@ -146,12 +165,11 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
     `wallet_generic_rpc_error::what()`. Not reachable from an untrusted
     daemon; see "Every key-image import with `check_spent` needs a trusted
     daemon" in `refutations.md`.
-  - The `get_outs.bin` sites in `get_spend_proof` and `check_spend_proof`
-    pass raw `res.status` to `error::get_outs_error`, and
-    `get_num_rct_outputs` (`get_output_histogram`) passes raw
-    `resp_t.status` to `error::get_histogram_error`. Both types keep the
-    status out of `what()`; it appears only in `to_string()`, which
-    `throw_wallet_ex` logs.
+  - `get_num_rct_outputs` (`get_output_histogram`) passes raw
+    `resp_t.status` to `error::get_histogram_error`, which keeps it out of
+    `what()`; it appears only in `to_string()`, which `throw_wallet_ex` logs.
+  - The `get_transaction_pool_hashes.bin` and `get_txpool_backlog` sites
+    pass no status at all (`error::get_tx_pool_error` carries none).
 
   Outside `wallet2.cpp`, `src/wallet/node_rpc_proxy.cpp` returns raw
   `res.status` as its error string. Find candidates with
@@ -163,8 +181,11 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - **`THROW_WALLET_EXCEPTION_IF` is a bare `if (cond) { … }`** with no
   `do { } while(0)` wrapper — unlike `THROW_WALLET_EXCEPTION`, which has one.
   An `else` after it binds to the macro's hidden `if`.
-- **`encrypt_keys(key)` encrypts the *spend* key and decrypts the *view* key**;
-  `decrypt_keys` does the reverse. The names describe the spend key only.
+- **`wallet2::encrypt_keys(key)` leaves the view key in plaintext.** It calls
+  `account_base::encrypt_keys` (XOR of spend, view, multisig keys, polyseed
+  and passphrase with a chacha20 keystream) and then `decrypt_viewkey` to undo
+  the view-key part; `wallet2::decrypt_keys` does the reverse after
+  `verify_password_with_cached_key`. The names describe the spend key only.
 - **`hashchain::size()` is a height, not a container size** — it returns
   `m_blockchain.size() + m_offset`, and `operator[]` subtracts the offset.
 - **`m_global_output_index` comes from the daemon and is stored unverified.**
@@ -205,22 +226,42 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - **MyMonero / light-wallet support is gone.** `light_wallet` appears zero
   times in `wallet2.{h,cpp}`; older write-ups describing it no longer apply.
 - `wallet2` is **not internally thread-safe.** Its only per-instance mutex,
-  `m_daemon_rpc_mutex`, serialises the HTTP client and `NodeRPCProxy` — it
-  protects none of the wallet state (the static `default_daemon_address_lock`
-  guards only the process-wide default daemon address).
+  `m_daemon_rpc_mutex`, serialises the HTTP client and `NodeRPCProxy`; of
+  the wallet state it guards only `m_pool_info_query_time`
+  (`reset_pool_info_query_time`, `pull_blocks`, `update_pool_state`). The
+  static `default_daemon_address_lock` guards only the process-wide default
+  daemon address.
 
 **Neighbours.** `node_rpc_proxy.cpp` is the caching daemon boundary for scalars
 (height, fees, hard forks): height and `get_info` are re-fetched after 30
 seconds, the fee estimate per height, and the version and hard-fork data only
 after `invalidate()`. `ringdb.cpp` is a separate
-LMDB store of previously used rings keyed by key image, so re-spending an
+LMDB store of previously used rings keyed by the chacha-encrypted key image, so re-spending an
 output reuses its ring. `ringdb::get_rings` does not stop at a missing key
 image: its `MDB_NOTFOUND` branch does `all_outs.emplace_back(); continue;`, so
 it returns true with one entry per key image (empty = not found) and throws on
 LMDB or decode errors. Callers treat empty as absent — `ringdb::get_ring` via
 `all_outs.front().empty()`, `wallet2::get_outs` via `!all_outs[i].empty()`
 when filling `existing_rings` — and `wallet2::get_rings` turns any exception
-into `false`.
+into `false`. `wallet2::commit_tx` records the rings (`add_rings`) **before**
+relaying, so a ring sent to a daemon is reused on rebuild even if the relay
+failed.
+
+**`pending_tx_validation.{h,cpp}`** (`namespace tools::wallet`) is the
+consistency check for transactions the wallet did not just build itself:
+`sanity_check_unsigned_tx_set` (offline signing input, from
+`parse_unsigned_tx_from_str` and `sign_tx`), `sanity_check_pending_tx` /
+`sanity_check_pending_tx_set` (signed and multisig sets, via the `wallet2`
+wrappers of the same names in `parse_tx_from_str`, `load_multisig_tx`,
+`sign_multisig_tx`, `cold_sign_tx`, `make_multisig_tx_set`), and
+`check_consistent_ins_outs` across a set. It re-derives input amounts,
+commitments, key images, ring members and destinations against
+`m_transfers` and the account keys, and requires non-zero change to go to
+the sender. Its header states what it cannot check: URL destinations,
+`tx_construction_data::extra` versus the final `tx_extra`, and `mixRing`
+on deserialized txs. In `commit_tx` the check runs only to decide whether
+to record rings; a failure is logged at `MINFO` and **the transaction is
+still relayed**.
 
 ---
 
@@ -238,6 +279,10 @@ thread**, under an explicit comment. The only cross-thread callers are
 members declared in `wallet_rpc_server.h` and, guarded by them, the
 `m_wallet` pointer (`m_wallet->shutdown()`).
 
+**Startup order.** In `t_daemon::run`, `wrpc->init` (which binds the
+listener) runs before any wallet is loaded, and a generated RPC login is
+written to `monero-wallet-rpc.<port>.login` only after the bind succeeds.
+
 **Body size.** `m_max_content_length = MAX_RPC_CONTENT_LENGTH * 100` — the
 wallet RPC accepts **100 MB** request bodies where the daemon accepts 1 MB.
 
@@ -254,9 +299,10 @@ and a grep for any one of them misses the others:
 - `PRE_VALIDATE_BACKGROUND_SYNC()`, used by the three background-sync
   handlers, which has its own literal `if (m_restricted)`.
 
-Two handlers, `on_get_transfers` and `on_get_transfer_by_txid`, use the
-inverted `if (!m_restricted)` to skip only the pool refresh in restricted
-mode. A new handler is unrestricted unless it says otherwise.
+Two handlers skip only the daemon pool query in restricted mode:
+`on_get_transfer_by_txid` (`if (!m_restricted)`) and `on_get_transfers`
+(`if (req.refresh_pool && !m_restricted)`; `refresh_pool` defaults to true
+and `false` returns the cached pool view). A new handler is unrestricted unless it says otherwise.
 
 **Traps.**
 
@@ -282,13 +328,16 @@ mode. A new handler is unrestricted unless it says otherwise.
   arbitrary daemon and set `trusted`.**
 - **`on_relay_tx` deserializes a full `tools::wallet2::pending_tx` from
   client-supplied hex** with the monero binary archive, inside a bare
-  `catch(...) {}`.
+  `catch(...) {}`, and passes it to `commit_tx`, which relays it whether or
+  not `sanity_check_pending_tx` passes (see `pending_tx_validation` above).
 - Command-type names collide with the daemon's: `COMMAND_RPC_GET_HEIGHT` and
   `COMMAND_RPC_START_MINING` exist in both `tools::wallet_rpc` and
   `cryptonote`.
 - `tests/fuzz/fuzz_rpc` targets the **daemon** only — `core_rpc_server`
   (`fuzz_rpc.cpp`) and the ZMQ publisher `zmq_pub` (`fuzz_zmq.cpp`). There
-  is no wallet-RPC fuzz target.
+  is no wallet-RPC fuzz target; the wallet fuzz targets are
+  `tests/fuzz/cold-outputs.cpp` (`import_outputs_from_str`) and
+  `cold-transaction.cpp` (`sign_tx`).
 - `WALLET_RPC_VERSION_MINOR` (`#define` in
   `src/wallet/wallet_rpc_server_commands_defs.h`) must be bumped on **any**
   change to that file; MAJOR bumps reset it.
