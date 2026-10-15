@@ -48,6 +48,9 @@ the wire, decides whether a block or transaction is valid, touches keys, or
 runs where a wallet trusts a daemon outranks everything else. A build script
 change outranks a refactor.
 
+At the deep profile the run adds a floor of classes to every unit of production
+source (see the dispatch prompt); choose what the unit needs beyond it.
+
 Choose lenses deliberately and sparingly. A ring signature change does not need
 `supply-chain`; a CMake change does not need `crypto-correctness`. Two or three
 apt lenses per unit produce better work than the whole list, because each one

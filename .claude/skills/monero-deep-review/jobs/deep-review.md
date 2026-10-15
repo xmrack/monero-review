@@ -90,6 +90,7 @@ Workflow({ name: "monero-deep-scan",
                    pr: <number from PR_CONTEXT.md, or null>,
                    changedFiles: [<the list from step 2, verbatim>],
                    maxUnits: 8,
+                   changedLines: <insertions + deletions from the --shortstat above>,
                    masterRef: <"origin/master" when step 1 says merged, else omit> } })
 ```
 
