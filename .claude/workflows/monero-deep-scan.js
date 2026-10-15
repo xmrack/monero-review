@@ -481,7 +481,34 @@ const BOUNDED = PROFILE === 'standard'
 // lenses each; the cap the recipe passes is a ceiling, not a target. Medium
 // carries a lower ceiling because its whole premise is a bounded fan-out.
 const UNIT_CEILING = a.maxUnits || (BOUNDED ? 4 : 8)
-const MAX_UNITS = Math.max(1, Math.min(UNIT_CEILING, Math.ceil(CHANGED.length / 2)))
+// At deep the size is lines as well as files: counting files alone gave PR
+// 10724 (+1568 lines in 7 files) two units and four researchers, where 11407
+// (+1486 in 35 files) got thirteen. One unit per LINES_PER_UNIT changed lines,
+// never more units than files.
+const LINES_PER_UNIT = 300
+const CHANGED_LINES = Number.isFinite(Number(a.changedLines)) ? Number(a.changedLines) : 0
+const MAX_UNITS = Math.max(1, Math.min(UNIT_CEILING, CHANGED.length,
+  Math.max(Math.ceil(CHANGED.length / 2),
+           BOUNDED ? 0 : Math.ceil(CHANGED_LINES / LINES_PER_UNIT))))
+// The classes every deep unit of production source is read for, whatever the
+// mapper picks: it is told to pick sparingly, and on 10724 it left the FCMP++
+// tree hashing unread for crypto correctness, memory safety and resource
+// exhaustion. The mapper adds to the floor; it cannot remove from it.
+const SOURCE_FILE = /\.(c|cc|cpp|cxx|h|hh|hpp|inl|rs)$/
+const TEST_OR_DOC = /^(tests|docs?|contrib\/guix|\.github)\/|\.md$/
+const FLOOR_ALL = ['memory-safety', 'integer-overflow', 'resource-exhaustion']
+const FLOOR_BY_PATH = [
+  [/^src\/(crypto|ringct|fcmp_pp|multisig|carrot_[a-z]+|device)\//, ['crypto-correctness']],
+  [/^src\/(crypto|ringct|fcmp_pp|cryptonote_basic|cryptonote_core|blockchain_db|hardforks|carrot_[a-z]+)\//,
+   ['consensus-divergence']],
+]
+function lensFloor(paths) {
+  const src = (paths || []).filter((p) => SOURCE_FILE.test(p) && !TEST_OR_DOC.test(p))
+  if (!src.length) return []
+  const out = new Set(FLOOR_ALL)
+  for (const [re, lenses] of FLOOR_BY_PATH) if (src.some((p) => re.test(p))) lenses.forEach((l) => out.add(l))
+  return [...out]
+}
 // Two angles at standard, three at deep. REACHABILITY and GUARD are the two
 // kept, because they are the two ways a candidate is actually wrong: nothing
 // untrusted gets there, or something in between already stops it. IMPACT
@@ -626,6 +653,11 @@ const mapped = await agent(
    'choose the weakness classes each unit deserves, from exactly this set:',
    '  ' + CATEGORIES.join(', '),
    'Pick sparingly -- each class you add spends a researcher.',
+   ...(BOUNDED ? [] : [
+     'At this depth the run itself adds ' + FLOOR_ALL.join(', ') + ' to every unit of',
+     'production source, crypto-correctness under src/crypto, src/ringct, src/fcmp_pp',
+     'and similar, and consensus-divergence on consensus paths. Choose the classes',
+     'the unit needs beyond those.']),
    '',
    'Every one of the changed files below belongs in exactly one place: inside a',
    'unit, or inside an exclusion carrying its reason. This run compares your',
@@ -671,6 +703,18 @@ if (unaccounted.length) {
 // their product with the lens list. On 9559 that is 8 dispatches instead of
 // 22, for the same partition.
 const cells = []
+let floorAdded = 0
+if (!BOUNDED) {
+  for (const u of units) {
+    const have = new Set(u.lenses || [])
+    const add = lensFloor(u.paths).filter((l) => !have.has(l))
+    if (add.length) {
+      u.lenses = [...(u.lenses || []), ...add]
+      floorAdded += add.length
+      log('lens floor: ' + u.name + ' + ' + add.join(', '))
+    }
+  }
+}
 for (const u of units) {
   const lenses = (u.lenses && u.lenses.length ? u.lenses : ['memory-safety'])
   if (BOUNDED) cells.push({ unit: u, lens: lenses.join(', '), lenses })
@@ -1360,7 +1404,7 @@ log(proposed.length + ' proposed in total, ' + candidates.length + ' distinct af
 
 const coverageBase = {
   units, excluded, unaccounted, mapperFallback: !gotPartition,
-  unitCeiling: UNIT_CEILING, unitsAllowed: MAX_UNITS,
+  unitCeiling: UNIT_CEILING, unitsAllowed: MAX_UNITS, changedLines: CHANGED_LINES, floorLensesAdded: floorAdded,
   cells: cells.length, failedCells, researchAccount,
   // Observations a researcher deferred to another unit. Each one got its own
   // adjudicator, whose ruling is on the entry: 'filed' (it became a candidate)
