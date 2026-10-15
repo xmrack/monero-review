@@ -579,7 +579,14 @@ order the code takes them (`add_host_fail` → `block_host`;
 - `get_peerlist` exists three times with three different meanings, one of
   which *appends*.
 - `m_network_zones.at(zone)` throws; `m_network_zones[zone]` **inserts**, and
-  inserting after configuration invalidates held references.
+  inserting after configuration is an **unsynchronised write** racing other
+  threads' reads. It does *not* invalidate held references: the member is a
+  `std::map`, whose references and iterators to other elements survive
+  inserts/erases. The comment above the declaration in `src/p2p/net_node.h`
+  says so ("Do not insert/erase after configuration and before destruction,
+  lock safety would need to be added"), and
+  `node_server::handle_command_line` relies on it, holding `i2p_sam_zone`
+  across later `add_zone` calls.
 - **Ping connections are real connections** that must not be counted;
   `is_ping` marks them.
 - `get_random_index_with_fixed_probability` is deliberately **not uniform** —
