@@ -22,9 +22,17 @@ All counts measured at master `8308dee67` (2026-10-13).
 **The Rust FFI** (`src/fcmp_pp/fcmp_pp_rust`) is a boundary of its own: a
 hand-written C header `fcmp++.h` (copied into the build, not generated;
 `ffi_api_c_compat.c` only checks it compiles as C) declaring `extern "C"`
-functions in `src/lib.rs` that return `int` (0 on success, -1 on error). The
-C++ side calls them only from `src/fcmp_pp/tower_cycle.cpp`, checking each
-with `CHECK_FFI_RES`, which throws. The crate builds with `panic = "abort"` in both profiles, so a
+functions in `src/lib.rs`. Only the fallible exports return `int`: 0 on
+success, -1 for a null out-pointer, -2 when the Rust call fails (e.g.
+`hash_grow_helios`/`hash_grow_selene` getting `None` from `hash_grow`, or a
+decode failure in the `ec_elem_from_bytes` macro, `Err(_) => -2`). The
+`*_hash_init_point` and `*_zero_scalar` exports return structs by value and
+the four `*_to_bytes` exports (macro `ec_elem_to_bytes`) return `void`. The
+C++ side calls them only from `src/fcmp_pp/tower_cycle.cpp`, wrapping the
+`int` ones in `CHECK_FFI_RES`, which throws; the others (e.g.
+`Selene::hash_init_point`, `Selene::zero_scalar`, `Selene::to_bytes`) are
+called bare because they have no status to check
+(`git grep -n CHECK_FFI_RES -- src/fcmp_pp/tower_cycle.cpp`). The crate builds with `panic = "abort"` in both profiles, so a
 Rust panic terminates the process rather than unwinding into C++.
 
 **Indentation is a reliable fingerprint**: 2 spaces in the core, 4 in most
