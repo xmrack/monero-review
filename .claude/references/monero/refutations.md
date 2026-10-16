@@ -206,9 +206,18 @@ for it. The only checks left in `output_to_tuple` do not cover the case: the
 torsion re-check is a plain `assert` under `!defined(NDEBUG)` (see "An existing
 assertion covers it"), and the release-build check rejects only the identity.
 
-Nothing in the tree constructs a `CarrotOutputPairV1` -- check with
-`git grep -n CarrotOutputPairV1` -- so no untrusted point reaches the skip
-today. Two limits:
+`git grep -n CarrotOutputPairV1` does not show every constructor. A binary
+deserializer builds one too, and its only text trace is two lines in
+`src/fcmp_pp/fcmp_pp_serialization.h`:
+`BEGIN_SERIALIZE_OBJECT_FN(fcmp_pp::CarrotOutputPairV1)` and
+`VARIANT_TAG(binary_archive, fcmp_pp::CarrotOutputPairV1, 0x71)`. The
+construction itself is macro- and template-generated, in `variant_reader::read`
+in `src/serialization/variant.h` (`current_type x; ... v = x;`); the round trip
+is exercised by `TEST(fcmp_pp, output_serialization)` in
+`tests/unit_tests/fcmp_pp.cpp`. So besides the plain grep, also grep for
+`VARIANT_TAG(binary_archive, fcmp_pp::CarrotOutputPairV1` and for
+`parse_binary` callers on `OutputPair` or `UnifiedOutput`: any such caller fed
+bytes from outside is a constructor that checks no torsion. Two limits:
 
 - **It expires when a constructor appears.** Code that wraps outputs in a
   `CarrotOutputPairV1` must first check BOTH the output pubkey and the
@@ -218,6 +227,23 @@ today. Two limits:
 - **Per "Not refutations" above, rate on the live path.** Once outputs flow
   into this type, an unchecked point is rated as the consensus or wallet
   defect it becomes, not as staged code.
+
+## `fcmp_pp_verify_input_new` leaves the root's layer parity to its caller
+
+`fcmp_pp_verify_input_new` does not check that the `TreeRoot`'s curve matches
+the parity of `n_tree_layers`. A mismatch reaches a panic in monero-oxide's
+`Fcmp::verify` (`crypto/fcmps/src/lib.rs`, message `claimed root is on a distinct layer than tree root`),
+and `src/fcmp_pp/fcmp_pp_rust/Cargo.toml` sets `panic = "abort"`, so the
+process dies. That is the function's contract: the `# Safety` comment on
+`fcmp_pp_verify_input_new` in `src/fcmp_pp/fcmp_pp_rust/src/lib.rs` makes that
+parity, `n_inputs <= FCMP_PLUS_PLUS_MAX_INPUTS` and
+`n_tree_layers <= FCMP_PLUS_PLUS_MAX_LAYERS` the caller's job.
+
+A root built by `CurveTrees<Selene, Helios>::get_tree_root_from_bytes` in
+`src/fcmp_pp/curve_trees.cpp` picks its curve from the layer count, so it
+always matches that count. A proposal about this panic is a finding only at a
+caller that builds the root from one layer count and passes a different
+`n_tree_layers`; find that caller or drop it.
 
 ## It is test-only code
 
