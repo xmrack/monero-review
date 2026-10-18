@@ -73,7 +73,7 @@ you claim cannot weigh what you cite.
 
 <Only when the run returned `priorFindings`. Omit the heading entirely when it is empty. One bullet per entry, none dropped.>
 
-- `#<issue>` · <title> (was <SEVERITY>) · **<status>** <what settles it. `<status>` is exactly one of `still holds` (then: published as F<n>), `fixed` (the line that now stops it), `does not hold` (the line that shows it), `refuted now` (the deciding line), or `not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). The harness reads the bold word: an earlier issue is closed as superseded only when none of its entries is `not settled`. One line.>
+- `#<issue>` · <title> (was <SEVERITY>) · **<status>** <what settles it. `<status>` is exactly one of `still holds` (then: published as F<n>), `fixed` (the line that now stops it), `does not hold` (the line that shows it), `refuted now` (the deciding line), or `not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). One line.>
 
 ## Refuted
 
