@@ -30,7 +30,7 @@ suspect of it and what has already been refuted:
 
 | file | read it when |
 |---|---|
-| **`trust-boundaries.md`** | you need to answer reachability concretely: where untrusted data enters, and the severity each boundary anchors to |
+| **`trust-boundaries.md`** | you need the threat model: what is protected, who the adversaries are, where untrusted data enters, and how to rate what you find |
 | **`codebase-notes.md`** | you want the questions that have historically been worth asking of the subsystem in front of you |
 | **`refutations.md`** | **before reporting anything** — the recurring reasons candidate findings here turn out to be unreachable |
 

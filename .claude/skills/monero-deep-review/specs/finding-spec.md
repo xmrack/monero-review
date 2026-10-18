@@ -229,17 +229,36 @@ assign it to, and if that is genuinely ambiguous, the more specific row.
 # Severity
 
 The same ladder every review here uses, so a deep review's labels mean what
-every other issue in this repository's labels mean:
+every other issue in this repository's labels mean. The full model, with the
+precedent each tier was calibrated on and the modifiers, is the Severity section
+of `.claude/references/monero/trust-boundaries.md`; read it before rating. In
+short:
 
-- **CRITICAL**: consensus split, remote code execution, or fund theft.
-- **HIGH**: remote crash or OOM of a node or wallet, key or seed disclosure,
-  or a privacy break that deanonymises a user.
-- **MEDIUM**: needs unusual configuration, a non-default option, or a
-  significant attacker position; or a privacy leak of limited scope.
+- **CRITICAL**: harm to the whole network, or theft with no special position.
+  Inflation, a consensus split, a relayed transaction or mined block that
+  crashes the nodes it reaches, memory corruption from a peer, the restricted
+  RPC, a remote daemon or on-chain data, or a wallet crediting funds that do
+  not exist.
+- **HIGH**: harm to individual nodes or users from a position anyone can take.
+  A remote crash or OOM of one node; a malicious daemon crashing a wallet,
+  making it overspend, or learning which outputs are its own; a privacy break
+  in every transaction the reference wallet makes or written into the chain;
+  theft or key disclosure by a co-signer, cold-signing partner or device host;
+  control of a wallet by someone not given it.
+- **MEDIUM**: needs a significant position (on-path, DNS, a miner below 50%),
+  or the effect is limited: a slowdown without a crash, a forged proof
+  accepted, a privacy leak to an observer in one place at one time, a HIGH
+  effect that needs the victim to act.
 - **LOW**: defence in depth, hardening, or a real defect with no attacker
   path today, such as code with no production caller or code reachable only
-  from trusted configuration. This does not cover staged code a planned fork
-  will activate, such as FCMP++. Rate that as it will run.
+  from trusted configuration; attacks needing more than 50% of hashrate. This
+  does not cover staged code a planned fork will activate, such as FCMP++.
+  Rate that as it will run.
+
+A configuration is not unusual just because it is not the default. Public
+remote nodes run restricted RPC, exchanges run `wallet-rpc`, privacy users run
+`--tx-proxy`; rate against the people who run it. A privacy leak written into
+a transaction is permanent, so it is not discounted because the fix is easy.
 
 Rate the path the code actually creates, not a deployment you are imagining.
 Resource exhaustion counts here, unlike in a general-purpose security review: a
