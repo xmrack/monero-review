@@ -85,6 +85,9 @@ Workflow({ name: "monero-deep-scan",
                    profile: "standard",
                    changedFiles: [<the list from step 2, verbatim>],
                    maxUnits: 4,
+                   changedLines: <the sum of the counts in PR_NUMSTAT.txt>,
+                   lineCounts: <an object from PR_NUMSTAT.txt: each path to its count>,
+                   priorFindings: <the array in PR_PRIOR.json, verbatim; [] when absent>,
                    masterRef: <"origin/master" when step 1 says merged, else omit> } })
 ```
 
@@ -97,6 +100,14 @@ pull request the sweep picks up, which is a budget nobody asked for.
 the working directory is not reliably the checkout. Prefer passing `args` as a
 real object rather than a JSON-encoded string; both work, an object is the
 documented shape.
+
+`PR_NUMSTAT.txt` holds `<changed lines><TAB><path>` per file. Pass the sum as
+`changedLines` and the pairs as `lineCounts`; the workflow sizes the review
+from them. `PR_PRIOR.json` holds the findings earlier reviews of this pull
+request published at older heads. Pass the array exactly as it is: the
+workflow re-reads each one at this head and returns what became of it in
+`priorFindings`, and the report must account for every entry.
+
 
 Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, and that nothing is a finding until the verifiers have
@@ -180,8 +191,9 @@ label on the issue, so a paraphrase drops the label silently. Only
 `pre-existing` gets it: a finding this change introduced, made newly reachable,
 or let past a guard it added is this change's business. Put
 `coverage.provenanceCorrected` (proposers the panel overruled) and
-`coverage.provenanceDisputed` (verifiers that split, each settled at the
-weakest label any of them would defend)
+`coverage.provenanceDisputed` (confirming verifiers that split; the
+proposer's label stands if any of them backs it, otherwise the weakest any
+would defend)
 on **Corrections.**, and where a merged entry carries `provenanceMixed`, give
 each site its own answer instead of one label for all of them.
 

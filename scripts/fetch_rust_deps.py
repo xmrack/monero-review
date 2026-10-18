@@ -11,7 +11,7 @@ depends on monero-oxide by git revision rather than by crates.io version:
     source = "git+https://github.com/monero-oxide/monero-oxide?rev=31c26d9#31c26d96..."
 
 Nothing else in this harness reaches that. `external/` is submodules, and the
-submodule fetch covers rapidjson, randomx, supercop and gtest; a Cargo git
+submodule fetch covers every entry in .gitmodules; a Cargo git
 dependency is neither a submodule nor vendored in the tree, so it has always
 been simply absent.
 

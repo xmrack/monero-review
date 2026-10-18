@@ -5,6 +5,8 @@ Prints `prs=<json array>` on stdout for $GITHUB_OUTPUT; diagnostics on stderr.
 
 Selection is a queue, not a recency window:
   - open, non-draft, targeting BASE_BRANCH, updated within MAX_AGE_DAYS
+  - merged within MERGED_DAYS whose final head was never reviewed
+  - open PRs targeting a BACKPORT_BRANCHES branch, after everything else
   - head SHA not already present in this repo's issue titles (the dedup record)
   - a PR already reviewed once is held until its head stops moving
   - touches something worth reviewing (see WORTHLESS)
@@ -25,11 +27,12 @@ separate the PRs actually in line from the doc-only residue:
   docs      of those, the doc-only ones, which will never be picked
   settling  of those, the re-reviews being held until the head stops moving
   unprobed  queued PRs the MAX_PROBES budget did not reach
-  offbranch open PRs not targeting BASE_BRANCH, dropped before the queue
+  offbranch open PRs targeting neither BASE_BRANCH nor BACKPORT_BRANCHES
+  merged    of the queue, merged PRs whose final head is unreviewed
   open      open PRs upstream
 
 Env: UPSTREAM, REVIEW_REPO, MAX_AGE_DAYS, BATCH, SETTLE_MINUTES,
-     BASE_BRANCH, GH_TOKEN (optional), API (optional base URL, for testing),
+     BASE_BRANCH, BACKPORT_BRANCHES, MERGED_DAYS, GH_TOKEN (optional), API (optional base URL, for testing),
      DISCLOSURE_REPO and DISCLOSURE_TOKEN (optional, together: the private
      repository that security-sensitive reviews are filed in instead, read as
      part of the same dedup record).
@@ -163,6 +166,18 @@ SETTLE_MINUTES = int(os.environ.get("SETTLE_MINUTES", "90"))
 #
 # Set to an empty string to sweep every branch again.
 BASE_BRANCH = os.environ.get("BASE_BRANCH", "master")
+
+# Backports are swept too, behind everything on BASE_BRANCH. A backport is not
+# always the code master carries: conflict resolution and release-only code
+# differ, and three release-v0.18 backports merged with no review at all.
+# A regex on the target branch; empty turns it off.
+BACKPORT_BRANCHES = os.environ.get("BACKPORT_BRANCHES", r"^release-v")
+
+# A PR pushed and merged inside the settle window leaves the open list before
+# its last head is reviewed, so the code that ships is not the code that was
+# read. Merged PRs this recent are queued until their merged head has a
+# review. 0 turns it off.
+MERGED_DAYS = int(os.environ.get("MERGED_DAYS", "7"))
 
 # Pages of open PRs to consider, 100 each. Upstream runs ~300 open, so one page
 # would hide the backlog behind the most-recently-updated 100.
@@ -321,6 +336,35 @@ def head_pushed_at(upstream, sha):
         return None
 
 
+def recently_merged(upstream, days):
+    """Merged PRs whose merge is newer than `days` days, newest first.
+
+    Read from the closed list sorted by update, which stops at the first page
+    reaching past the cutoff. A failed read returns what was read: a missed
+    merged PR is picked up on the next tick.
+    """
+    if days <= 0:
+        return []
+    cutoff = (datetime.datetime.now(datetime.timezone.utc)
+              - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    out = []
+    for page in range(1, MAX_PR_PAGES + 1):
+        try:
+            rows = get(f"/repos/{upstream}/pulls", {
+                "state": "closed", "per_page": 100, "page": page,
+                "sort": "updated", "direction": "desc",
+            })
+        except TRANSIENT as exc:
+            print(f"warn: listing merged pull requests failed on page {page} "
+                  f"({exc})", file=sys.stderr)
+            break
+        out.extend(p for p in rows
+                   if p.get("merged_at") and p["merged_at"] > cutoff)
+        if len(rows) < 100 or rows[-1]["updated_at"] < cutoff:
+            break
+    return out
+
+
 def worth_reviewing(upstream, number):
     """False only if every changed file is documentation-ish."""
     try:
@@ -436,7 +480,7 @@ def main():
               "reviewed could not be read in full", file=sys.stderr)
         print("prs=[]")
         for name in ("queue", "ready", "docs", "settling", "unprobed",
-                     "offbranch"):
+                     "offbranch", "merged"):
             print(f"{name}=0")
         print(f"open={len(prs)}")
         return
@@ -469,31 +513,54 @@ def main():
     # change: a doc-only pull request becomes eligible the moment it grows a
     # code file, while a backport's target branch is what it is. Probing them
     # would spend a file listing each, every tick, to reach the same answer.
-    offbranch = collections.Counter()
-    if BASE_BRANCH:
-        for p in prs:
-            ref = (p.get("base") or {}).get("ref") or "(unknown)"
-            if ref != BASE_BRANCH:
-                offbranch[ref] += 1
-        prs_on_branch = [p for p in prs
-                         if ((p.get("base") or {}).get("ref") == BASE_BRANCH)]
-    else:
-        prs_on_branch = prs
+    def ref_of(p):
+        return (p.get("base") or {}).get("ref") or "(unknown)"
+
+    def backport(p):
+        return bool(BASE_BRANCH and BACKPORT_BRANCHES
+                    and ref_of(p) != BASE_BRANCH
+                    and re.search(BACKPORT_BRANCHES, ref_of(p)))
+
+    def swept(p):
+        return not BASE_BRANCH or ref_of(p) == BASE_BRANCH or backport(p)
+
+    offbranch = collections.Counter(ref_of(p) for p in prs if not swept(p))
+    prs_on_branch = [p for p in prs if swept(p)]
     if offbranch:
         detail = ", ".join(f"{ref} ({n})" for ref, n in offbranch.most_common())
         print(f"{sum(offbranch.values())} open PR(s) not targeting "
-              f"{BASE_BRANCH}, not swept: {detail}", file=sys.stderr)
+              f"{BASE_BRANCH} or a backport branch, not swept: {detail}",
+              file=sys.stderr)
 
     queue = [p for p in prs_on_branch
              if not p["draft"]
              and p["updated_at"] > cutoff
              and pending(p)]
+    # Merged PRs whose merged head was never reviewed. Same branch rule, same
+    # attempt caps, same settle hold as an open PR.
+    open_numbers = {p["number"] for p in prs}
+    merged = [p for p in recently_merged(upstream, MERGED_DAYS)
+              if p["number"] not in open_numbers and swept(p) and pending(p)]
+    if merged:
+        print(f"{len(merged)} merged PR(s) whose final head is unreviewed: "
+              + ", ".join(f"#{p['number']}" for p in merged), file=sys.stderr)
+    queue += merged
     queue.sort(key=lambda p: p["updated_at"], reverse=True)
-    # A first review always goes ahead of a re-review. Stable, so the order
-    # inside each group is unchanged.
-    queue.sort(key=lambda p: p["number"] in reviewed_before)
+    # Order, stable inside each group: first reviews, merged heads (that code
+    # ships), re-reviews of open PRs, then backports.
+    merged_numbers = {p["number"] for p in merged}
+
+    def rank(p):
+        if backport(p):
+            return 3
+        if p["number"] in merged_numbers:
+            return 1
+        return 2 if p["number"] in reviewed_before else 0
+    queue.sort(key=rank)
     scope = f"updated since {cutoff}" if cutoff else "of any age"
     on = f" targeting {BASE_BRANCH}" if BASE_BRANCH else ""
+    if BASE_BRANCH and BACKPORT_BRANCHES:
+        on += " or a backport branch"
     print(f"{len(queue)} unreviewed PR(s){on} {scope}, "
           f"out of {len(prs)} open", file=sys.stderr)
 
@@ -582,6 +649,7 @@ def main():
     print(f"settling={settling}")
     print(f"unprobed={unprobed}")
     print(f"offbranch={sum(offbranch.values())}")
+    print(f"merged={len(merged)}")
     print(f"open={len(prs)}")
 
 

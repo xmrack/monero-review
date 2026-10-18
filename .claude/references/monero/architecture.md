@@ -4,7 +4,7 @@ How the Monero tree fits together: the layers, what depends on what, and the
 handful of structural facts that explain most of what looks strange when you
 open a file here.
 
-Verified against `monero-project/monero` master `8308dee67` (2026-10-13).
+Verified against `monero-project/monero` master `183b5e962` (2026-10-18).
 Line counts and link edges move; the shape does not. Re-check anything you are
 about to put in a finding.
 
@@ -34,7 +34,7 @@ only. Read it upward: a change low down is felt everywhere above it.
 
 ```
 easylogging  liblmdb  qrcodegen                                 (external/, in tree)
-randomx  rapidjson  supercop  polyseed  utf8proc                (external/, submodules)
+randomx  rapidjson  supercop  polyseed  utf8proc  mx25519       (external/, submodules)
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
@@ -107,7 +107,7 @@ over 2,000 lines (approximate counts; `wc -l` for current ones):
 |  ~4100 | `src/crypto/crypto-ops.c` | Ed25519 arithmetic, C, `ref10`-derived |
 |  ~3200 | `src/p2p/net_node.inl` | the node; a `.inl`, not a `.cpp` |
 |  ~3200 | `src/rpc/core_rpc_server.cpp` | the daemon's HTTP surface |
-|  ~2850 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
+|  ~2900 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
 |  ~2100 | `contrib/epee/include/net/abstract_tcp_server2.inl` | the TCP connection layer under both P2P and HTTP RPC |
 
 The `.inl` files are implementations, not inline helpers. Grep that
@@ -183,7 +183,11 @@ reach `src/` through one edge only: `target_link_libraries` in
 `src/mnemonics/CMakeLists.txt` and
 `src/mnemonics/polyseed/CMakeLists.txt` make `mnemonics` link
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
-`cryptonote_basic`. `contrib/epee/` is Monero's own but
+`cryptonote_basic`. `mx25519` (X25519, with MPL-2.0 assembly backends
+behind the `MX25519_COPYLEFT` option) is added `EXCLUDE_FROM_ALL` in
+`external/CMakeLists.txt`, and nothing in `src/` links it on master; a PR
+that links it brings a new scalar-multiplication path into the build.
+`contrib/epee/` is Monero's own but
 predates most of `src/` and follows its own conventions (the epee dialect
 in `coding-style.md`).
 
@@ -211,20 +215,23 @@ The C++ side guards the boundary: CMake `try_compile`s
 the checked-in, hand-written header `src/fcmp_pp/fcmp_pp_rust/fcmp++.h` stops
 being C-compatible.
 
-**FCMP++ is staged, not live.** Nothing in `src/` outside `src/fcmp_pp/`
-calls into it (only `tests/unit_tests` and `tests/crypto` do); `src/ringct`
+**FCMP++ is staged, not live.** On master nothing in `src/` outside
+`src/fcmp_pp/` calls into it (only `tests/unit_tests` and `tests/crypto` do); `src/ringct`
 links the library but includes none of its headers, and there is no
 `HF_VERSION_*` for it. Carrot is likewise absent from master beyond
 helpers such as `ge_p3_to_x25519` in `src/crypto/crypto-ops.h` and
 comments. Torsion clearing is not part of FCMP++:
 `crypto::get_valid_torsion_cleared_point_vartime` is in `src/crypto/`, is
-used by `src/fcmp_pp/curve_trees.cpp`, and reaches shipped code only
-through `crypto::pubkey_clear_torsion` in the Trezor signing protocol
+used by `src/fcmp_pp/curve_trees.cpp`, and is live in shipped code through
+`crypto::pubkey_clear_torsion`: `src/wallet/wallet2.cpp` (payment-ID
+decryption in `process_new_transaction`, `get_tx_proof`, `check_tx_proof`,
+`get_reserve_proof`, `check_reserve_proof`) and the Trezor signing protocol
 (`src/device_trezor/trezor/protocol.cpp`; see `subsystems-crypto.md`).
 `rct::verPointsForTorsion` has no production caller: it appears in
 `rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp` and nowhere else. Describing FCMP++ as
 consensus-reachable today is wrong; describing the code as absent is also
-wrong. A defect in it is still a finding, rated as it will run once live: see
+wrong. Pull requests add callers, so grep the head you are reviewing. A
+defect in it is still a finding, rated as it will run once live: see
 `refutations.md`, "Not refutations".
 
 ## Consensus versus everything else

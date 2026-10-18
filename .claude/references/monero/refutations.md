@@ -46,10 +46,19 @@ does not apply to it.
 
 ## The config option defaults to off
 
-A path reachable only when a non-default option is enabled is at most MEDIUM,
-and usually LOW. Find the default — in the option's declaration, not in
-documentation — and state it. Wallet and daemon both have options that sound
-enabled but are not.
+Non-default is not the same as rare. Apply Modifier 4 under Severity in
+`trust-boundaries.md`: the option lowers the rating only if few people run it.
+Options common in real deployments do not lower it: `--restricted-rpc` and
+`--rpc-restricted-bind-port` (public remote nodes), `--public-node`,
+`--tx-proxy`, `--anonymous-inbound`, `monero-wallet-rpc` itself, and
+`--zmq-pub` (P2Pool miners enable it; the ZMQ RPC server is on by default
+unless `--no-zmq`). Options that are rare or dangerous by name do lower it:
+`--dangerous-unverified-import` in `monero-blockchain-import`,
+`--disable-rpc-login` on a non-loopback wallet-rpc, a debug build.
+
+Find the default — in the option's declaration, not in documentation — and
+state it, along with who runs the non-default value. Wallet and daemon both
+have options that sound enabled but are not.
 
 ## The RPC handler is restricted
 
@@ -147,7 +156,15 @@ one. A helper with no external caller is not remotely reachable.
 
 Before claiming integer overflow, check the actual types involved, including
 any promotion. `size_t` on 64-bit does not overflow at values an attacker can
-realistically supply through a size-limited message.
+realistically supply through a size-limited message. On a 32-bit target it
+may: `size_t`, `long` and pointer arithmetic are 32 bits there.
+
+So the refutation must say whether a 32-bit target ships and check the
+arithmetic there. On master the Guix release hosts (`HOSTS` in
+`contrib/guix/guix-build`) are all 64-bit, but CI
+(`.github/workflows/depends.yml`) still builds i686 Linux and ARMv7 Android,
+and `contrib/depends` builds 32-bit hosts for anyone compiling their own.
+Re-check those lists on the head you are reviewing.
 
 ## The race is actually serialized
 
@@ -185,13 +202,19 @@ consensus-reachable today" tells a maintainer when the bug starts to matter. It
 does not make the bug go away. See the finding standard in
 `.claude/skills/monero-deep-review/specs/finding-spec.md`.
 
-**No caller is not a dead end.** When staged code has no caller at the head,
-do not stop at "nothing reaches it". On a merged pull request,
-`git grep <symbol> origin/master` finds the callers FCMP++ has added since:
-trace the input from them. They are in scope although they are outside the
-diff, so never leave one untraced because it is outside this pull request. Where no caller exists anywhere, treat every
-argument as attacker-controlled unless the function's contract or the FCMP++
-design constrains it, and cite what does. How a future caller will use the code
+FCMP++ is not scheduled on master: there is no FCMP++ `HF_VERSION_*`, no
+`RCTType` for it, and `git grep -n fcmp_pp -- src ':!src/fcmp_pp'` finds only
+two CMake lines. Pull requests in the review queue add the callers and the
+fork gating. Judge the staged code as if it were activated (Modifier 5 under
+Severity in `trust-boundaries.md`).
+
+**No caller is not a dead end.** "No caller" in these references describes
+master; the head you are reviewing may differ. Grep the head first: a pull
+request that adds a caller is the case to trace. Callers outside the diff are
+in scope, so never leave one untraced because it is outside this pull request.
+Where no caller exists on the head, treat every argument as
+attacker-controlled unless the function's contract or the FCMP++ design
+constrains it, and cite what does. How a future caller will use the code
 is not a gap to report. It is the analysis to do.
 
 ## `CarrotOutputPairV1` skips torsion clearing by contract
@@ -221,9 +244,16 @@ today. Two limits:
 
 ## It is test-only code
 
-Changes under `tests/` do not ship. They matter only if they also modify
-non-test code, or if they weaken a fuzz harness in a way that would hide future
-bugs — the latter is worth a LOW note, not a vulnerability report.
+Changes under `tests/` do not ship. They matter if they also modify non-test
+code, or if they remove a guard:
+
+- A pull request that deletes or weakens a test guarding a consensus rule or a
+  past bug (`tests/core_tests`, unit tests that encode consensus behaviour, a
+  regression test) is not dismissed as test-only. It removes the guard on that
+  rule, and the next change that breaks the rule passes CI. Say which rule
+  loses its test.
+- Weakening a fuzz harness (`tests/fuzz`) is a coverage loss to note, worth a
+  LOW note, not a vulnerability report.
 
 ## A wrong return value the API tells the caller not to trust
 

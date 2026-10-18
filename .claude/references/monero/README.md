@@ -19,6 +19,7 @@ wins** — and fix the file.
 | **`subsystems-node.md`** | the diff touches epee, serialization, p2p or `src/net`, the protocol handler, core, blockchain, the DB, rpc, the daemon or `src/common` |
 | **`subsystems-wallet.md`** | the diff touches `wallet2`, wallet-rpc, `wallet_api`, simplewallet or the device layer |
 | **`subsystems-crypto.md`** | the diff touches `src/crypto`, `src/ringct`, `src/fcmp_pp`, multisig or proof-of-work |
+| **`subsystems-fcmp-carrot.md`** | the diff is FCMP++/Carrot integration work: `src/carrot_core`, `src/carrot_impl`, `RCTTypeFcmpPlusPlus`, Carrot outputs, the curve tree in the DB, wallet tree sync, fork gating or `external/mx25519` |
 | **`macros.md`** | **before believing any grep result**, and before saying "nothing calls this" or "this field is unvalidated" |
 | **`coding-style.md`** | you are about to comment on style, or need to know which of the four dialects a hunk belongs to |
 | **`errors-and-concurrency.md`** | before judging a failure path, and before calling anything a race |

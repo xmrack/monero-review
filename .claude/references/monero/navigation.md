@@ -24,15 +24,19 @@ Four facts change what a search means in this tree:
    `request_t`), and every `m_cur_*` in the LMDB backend are all invisible to
    grep.
 3. **`git grep` and `git ls-files` cannot see inside submodules.**
-   `external/randomx`, `supercop`, `rapidjson`, `gtest`, `polyseed` and
-   `utf8proc` are separate repositories — use `rg` or `find` there. The last
-   two are the `.gitmodules` entries `external/polyseed`
-   (`https://github.com/tevador/polyseed.git`) and `external/utf8proc`
-   (`https://github.com/JuliaStrings/utf8proc.git`).
+   The seven `.gitmodules` entries — `external/randomx`, `supercop`,
+   `rapidjson`, `gtest`, `mx25519`, `polyseed` and `utf8proc` — are separate
+   repositories; use `rg` or `find` there. A submodule the run did not check
+   out is simply absent.
    The FCMP++ prover/verifier is not in the tree at all: `src/fcmp_pp/fcmp_pp_rust`
    is a C-ABI shim (`lib.rs`, `fcmp++.h`) over `monero-oxide` crates pinned by
-   `rev` in its `Cargo.toml`. Read those under `~/.cargo/git/checkouts/` (or a
-   clone at that rev).
+   `rev` in its `Cargo.toml`. The review pipeline writes the pinned sources to
+   `rust-deps/<repo>/` in the checkout (e.g. `rust-deps/monero-oxide/`), and
+   crates.io packages the PR adds or bumps, plus the registry original of any
+   `[patch.crates-io]` replacement, under `rust-deps/crates/<name>-<version>/`.
+   `RUST_DEPS.md` at the tree root lists
+   what was fetched, at which revision, what a PR bumps, and what was not
+   fetched. Report a dependency listed as not fetched as not covered.
 4. **Spelling.** The consensus verdict flag is **`m_verifivation_failed`**
    (and `m_verifivation_impossible`). The correct spelling matches nothing.
 

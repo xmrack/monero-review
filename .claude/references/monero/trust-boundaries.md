@@ -5,7 +5,7 @@ how bad each outcome is. Use it to answer the reachability question concretely
 (name the boundary, then trace the call sequence from it to the changed code)
 and to rate what you find.
 
-Verified against master `183b5e96` (2026-10-18). The severity tiers follow the
+Verified against master `183b5e962` (2026-10-18). The severity tiers follow the
 classes of vulnerability the project has actually had to fix and how it rated
 them. Verify locations against the checkout — this is a
 map, not a substitute for reading the tree. Where a symbol index has been built
@@ -120,10 +120,15 @@ the restricted surface; a public client with valid PoW reaches full block
 validation through `submit_block`.
 
 `--restricted-rpc` defaults to false. `--rpc-restricted-bind-port` adds a
-second, restricted server; `--public-node` advertises that port to peers and
-requires it. The epee HTTP parser (`http_protocol_handler.inl`, digest auth in
-`contrib/epee/src/http_auth.cpp`) runs before any login check or restriction,
-so it is pre-authentication surface on every HTTP RPC server. A
+second, restricted server. `--public-node` restricts nothing: it advertises
+an RPC port to peers and throws "restricted RPC mode is required" unless
+restriction is already on (`parse_public_rpc_port`, `src/daemon/main.cpp`).
+With `--rpc-restricted-bind-port` set it advertises that port; otherwise, with
+`--restricted-rpc`, it advertises the main `--rpc-bind-port`. It only warns if
+the advertised bind address is loopback or local. The epee HTTP parser
+(`http_protocol_handler.inl`, digest auth in `contrib/epee/src/http_auth.cpp`)
+runs before any login check or restriction, so it is pre-authentication
+surface on every HTTP RPC server. A
 `MAP_URI_AUTO_BIN2` body is parsed with `load_t_from_binary` and **no**
 `limits_t`; only `MAX_RPC_CONTENT_LENGTH` bounds it.
 
@@ -590,7 +595,11 @@ take.
   withholding.
 - Resource exhaustion that slows a node down but does not crash it (the VRP
   pays less for "DoS's which do not crash a node remotely").
-- A proof check that accepts a forged proof.
+- An out-of-band wallet proof check that accepts a forged proof:
+  `wallet2::check_tx_proof`, `check_spend_proof`, `check_reserve_proof`,
+  `check_tx_key` or a message signature (`wallet2::verify`). A consensus
+  proof that accepts a forgery (a range proof, CLSAG or MLSAG, the FCMP++
+  membership proof or SA/L) is CRITICAL: inflation or theft.
 - A privacy leak to an observer who must be in a particular place at a
   particular time, which is not written into the chain, such as linking a
   node's Tor and clearnet identities, or Dandelion++ stem timing.
@@ -636,7 +645,7 @@ modifiers above decide the final rating.
 
 | Reached from | Typical ceiling |
 | --- | --- |
-| Consensus validation: inflation, or divergence between shipped nodes | CRITICAL |
+| Consensus validation: inflation, a consensus proof accepting a forgery, or divergence between shipped nodes | CRITICAL |
 | Relayed transaction or mined block that crashes nodes, or anything that halts the chain | CRITICAL |
 | Relayed transaction or block that is cheap to make and expensive to verify; a non-supply consensus rule bypassed by everyone alike | HIGH |
 | P2P, restricted RPC, daemon → wallet, or on-chain data → wallet: memory corruption | CRITICAL |
@@ -646,7 +655,7 @@ modifiers above decide the final rating.
 | Privacy break in the reference wallet's transactions, or written on chain | HIGH |
 | Co-signer, cold-signing partner or device/host: theft or key disclosure | HIGH |
 | On-path network, DNS, or miner below 50% | MEDIUM |
-| Slowdown without a crash; forged proof accepted; observer-position privacy leak | MEDIUM |
+| Slowdown without a crash; forged wallet proof (tx, spend, reserve, message) accepted; observer-position privacy leak | MEDIUM |
 | Cross-site or unattended reach to the default-unrestricted daemon | its effect, one tier lower for the visit; NOT the row below |
 | Unrestricted-RPC-only reached by a client the operator pointed there, or test-only | LOW, usually not reportable |
 | More than 50% of hashrate | LOW (out of the VRP's scope) |

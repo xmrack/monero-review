@@ -84,3 +84,25 @@ if [ -d tests ] && have cscope; then
     echo "index: tests database skipped" >&2
   fi
 fi
+
+# Rust: the FCMP++ crate in src/fcmp_pp and the pinned crates under rust-deps/,
+# which the C/C++ index above cannot see. Definitions only (no cscope for Rust),
+# in their own tags file so the C/C++ caller lists stay as they were.
+if have ctags; then
+  rdirs=""
+  for d in src external rust-deps; do
+    [ -d "$d" ] && rdirs="$rdirs $d"
+  done
+  if [ -n "$rdirs" ]; then
+    # shellcheck disable=SC2086
+    find $rdirs -type f -name '*.rs' ! -path '*[[:cntrl:][:space:]]*' 2>/dev/null \
+      | grep -E '^(src|external|rust-deps)/[A-Za-z0-9_./+-]+$' > rust.files || true
+    rcount=$(wc -l < rust.files | tr -d ' ')
+    if [ "$rcount" != "0" ] && ctags --options=NONE --languages=Rust --fields=+ne --extras=+q \
+         -L rust.files -f tags-rust 2>/dev/null; then
+      echo "index: Rust tags built (${rcount} files, $(wc -l < tags-rust | tr -d ' ') entries)" >&2
+    else
+      echo "index: Rust tags skipped" >&2
+    fi
+  fi
+fi

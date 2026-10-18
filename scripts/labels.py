@@ -5,10 +5,14 @@ then `fixed-on-master` when a finding no longer holds on upstream master.
 
     python3 scripts/labels.py [review.md]
     python3 scripts/labels.py --fixed [review.md]
+    python3 scripts/labels.py --count [review.md]
 
 --fixed prints one line per entry under `## Fixed on master`: the severity from
 its `(was SEVERITY)` heading, or `?`, then every 12-to-40 character hex sha the
 entry cites, then `@`, then every path its locator lines name.
+
+--count prints the number of surviving `### [SEVERITY]` headings, which the
+verification gate compares with the stamp's `published`.
 
 Only findings that SURVIVED verification count. Refuted ones stay in the report
 on purpose -- so a reader can see what was considered and dismissed -- but they
@@ -89,6 +93,15 @@ def pre_existing(text):
     return bool(PRE_EXISTING.search(text))
 
 
+def finding_count(text):
+    """Surviving `### [SEVERITY]` headings: those above `## Refuted`."""
+    cut = REFUTED_SECTION.search(text)
+    if cut:
+        text = text[:cut.start()]
+    return sum(1 for m in HEADING.finditer(text)
+               if not re.search(r"refuted", m.group(2) or "", re.IGNORECASE))
+
+
 def fixed_entries(text):
     """(severity or None, [shas], [paths]) for each `## Fixed on master` entry."""
     entries = []
@@ -113,13 +126,17 @@ def fixed_on_master(text):
 def main():
     args = sys.argv[1:]
     fixed = args[:1] == ["--fixed"]
-    if fixed:
+    count = args[:1] == ["--count"]
+    if fixed or count:
         args = args[1:]
     path = args[0] if args else "review.md"
     try:
         with open(path, errors="replace") as fh:
             text = fh.read()
     except OSError:
+        return
+    if count:
+        print(finding_count(text))
         return
     if fixed:
         for sev, shas, paths in fixed_entries(text):
