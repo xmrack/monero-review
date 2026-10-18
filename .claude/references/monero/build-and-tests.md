@@ -49,6 +49,7 @@ The resulting library dependency graph is in `architecture.md`.
 | `BUILD_GUI_DEPS` | OFF | gates `libwallet_api_tests`; it and `trezor_tests` (`TREZOR_DEBUG`) are the only targets that link `wallet_api` (`EXCLUDE_FROM_ALL`) |
 | `ENABLE_FUZZ_TEST` | OFF | adds `tests/fuzz` to a normal build |
 | `STACK_TRACE` | OFF in release, else platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** (`--wrap` when static, `dlsym(RTLD_NEXT)` otherwise); Guix forces it OFF on `*linux-gnu*` |
+| `MX25519_COPYLEFT` | ON when Monero is the top-level project, OFF as a dependency (`external/CMakeLists.txt`) | includes mx25519's MPL-2.0 assembly backends (ARM64, AMD64, AMD64X); nothing in `src/` links mx25519 on master |
 | `COVERAGE`, `STRIP_TARGETS`, `MANUAL_SUBMODULES`, `BUILD_DEBUG_UTILITIES`, `USE_READLINE`, `BOOST_IGNORE_SYSTEM_PATHS` | | |
 
 `MONERO_WALLET_CRYPTO_LIBRARY` (`src/crypto/wallet/CMakeLists.txt`) defaults

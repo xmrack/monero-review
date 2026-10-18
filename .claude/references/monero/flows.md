@@ -14,9 +14,11 @@ reading the code; line numbers are not given because they rot fastest. Find a
 symbol with `git grep -n`, not with a remembered line.
 
 None of these flows reaches FCMP++ or Carrot code on master: `src/fcmp_pp` is
-built, but only `tests/unit_tests` links it (`grep -rn fcmp_pp
---include=CMakeLists.txt`). Consensus, wallet and RPC paths below are
-CLSAG/RingCT only.
+built and `src/ringct` links it, but nothing in `src/` outside the directory
+calls into it (`git grep -n fcmp_pp -- src ':!src/fcmp_pp'` finds only the two
+CMake lines). Its callers are tests: `tests/unit_tests` links it, and
+`tests/crypto/main.cpp` compiles `fcmp_pp/fcmp_pp_crypto.cpp` in by
+`#include`. Consensus, wallet and RPC paths below are CLSAG/RingCT only.
 
 ---
 
