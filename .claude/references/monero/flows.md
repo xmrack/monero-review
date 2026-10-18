@@ -578,8 +578,16 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
   deciding whether a reorg happens. They enter as `relay_method::block`, so
   `add_tx` skips the fee, extra-size, unlock-time and key-image-conflict
   checks.
-- Sync is refused entirely on non-public zones: `process_payload_sync_data`
-  returns early for Tor and I2P peers.
+- Sync is not started with non-public-zone peers, but their claimed height is
+  not ignored. In `process_payload_sync_data` the early return for Tor and I2P
+  peers comes *after* the peer's height is stored in
+  `context.m_remote_blockchain_height` and the peer is marked `state_normal`,
+  and it is reached only for an unknown `top_id`: a known top takes the earlier
+  `have_block(hshd.top_id, ...)` branch. `on_connection_close` then recomputes
+  the sync target from `m_remote_blockchain_height` over every connection, and
+  `node_server::for_each_connection` (`src/p2p/net_node.inl`) iterates all of
+  `m_network_zones`, so a hidden-zone peer's claim still counts. (Observed at
+  PR 11581 head, not yet re-traced on master.)
 
 ---
 
