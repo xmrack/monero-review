@@ -4,8 +4,8 @@
 Reads this repository's open review issues for the pull request -- only the
 workflow's own or the repository owner's, titled `Review: <upstream>#<n> @
 <sha>` -- at any head but the one under review, and returns one entry per `### [SEVERITY]` heading under
-`## Findings`. A superseded issue is closed when its successor publishes, so
-the open ones are the latest word on every earlier head.
+`## Findings`. Issues are never closed automatically, so the same finding
+can appear in several; it is taken once, from the newest.
 
 Usage: prior_findings.py <review-repo> <pr-number> <head-sha12>
 Env:   GH_TOKEN (optional), API (optional base URL, for testing),

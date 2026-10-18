@@ -2891,13 +2891,9 @@ jobs:
             || fail publish-failed
           outcome published
 
-          # Earlier reviews of this pull request at other heads are superseded.
-          # Whether to close one is decided from its own labels, never from
-          # this report: the model writing it reads the author's text, and an
-          # injection must not be able to close an issue holding a finding.
-          # One with no severity label (no findings) is closed; one with
-          # findings gets a link and stays open for a human, while this
-          # report's Earlier findings section says what became of them.
+          # Earlier reviews of this pull request at other heads get a link to
+          # this one. Nothing is closed: that is a human's call. The comment is
+          # fixed text, so nothing the model wrote decides what is said where.
           # Public route only, and silent on both, so the log reads the same.
           if [ "$route" = public ]; then
             new=$(grep -oE '[0-9]+$' "$RUNNER_TEMP/private-state/created" | tail -1 || true)
@@ -2906,20 +2902,13 @@ jobs:
                 --jq '.[] | select(.pull_request == null)
                       | select(.user.login == "github-actions[bot]" or .user.login == env.OWNER)
                       | select(.title | test("^Review: \\S+#" + env.PRN + " @ [0-9a-f]{12}\\b"))
-                      | select(.title | contains(env.HEAD12) | not)
-                      | "\(.number) \([.labels[].name] | map(select(. == "critical" or . == "high" or . == "medium" or . == "low")) | length)"' \
+                      | select(.title | contains(env.HEAD12) | not) | .number' \
                 2>/dev/null || true)
-            while read -r i nsev; do
-              [ -n "$new" ] && [ -n "$i" ] && [ "$i" != "$new" ] || continue
-              if [ "${nsev:-1}" = "0" ]; then
-                gh issue close "$i" --repo "$repo" --reason "not planned" \
-                  --comment "Superseded by #$new, the review of \`$SHA\`." >/dev/null 2>&1 || true
-              else
-                gh issue comment "$i" --repo "$repo" \
-                  --body "Re-reviewed at \`$SHA\` in #$new, which says under Earlier findings what became of each finding here." \
-                  >/dev/null 2>&1 || true
-              fi
-            done <<< "$earlier"
+            for i in $earlier; do
+              [ -n "$new" ] && [ "$i" != "$new" ] || continue
+              gh issue comment "$i" --repo "$repo" \
+                --body "Re-reviewed at \`$SHA\` in #$new." >/dev/null 2>&1 || true
+            done
           fi
 
           # NO REVIEW BODY IN THE SUMMARY, on either route, and written only
