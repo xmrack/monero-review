@@ -257,7 +257,15 @@ wrappers of the same names in `parse_tx_from_str`, `load_multisig_tx`,
 `check_consistent_ins_outs` across a set. It re-derives input amounts,
 commitments, key images, ring members and destinations against
 `m_transfers` and the account keys, and requires non-zero change to go to
-the sender. Its header states what it cannot check: URL destinations,
+the sender. **Exception — key images of signed sets in
+`wallet2::parse_tx_from_str`:** the resolver lambda it passes to
+`sanity_check_pending_tx_set` returns the signer-supplied
+`signed_tx_set::key_images` entry (`kis.at(i)`) unless `kis.empty()`, and
+`sanity_check_pending_tx` compares `(*transfer_ki_resolver)(selected_transfer) != ki`.
+With a non-empty vector the signer supplies both sides, so the pre-import
+check is self-consistency, not a check against local state; it falls back to
+`m_transfers` only when the vector is empty (and then needs each selected
+transfer's key image known and not partial). Its header states what it cannot check: URL destinations,
 `tx_construction_data::extra` versus the final `tx_extra`, and `mixRing`
 on deserialized txs. In `commit_tx` the check runs only to decide whether
 to record rings; a failure is logged at `MINFO` and **the transaction is
