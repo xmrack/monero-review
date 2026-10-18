@@ -55,8 +55,8 @@ A defect like this dies only on tests 2 or 3: the guard exists, the construction
 constrains it, the behaviour is actually correct, or the code is under `tests/`.
 "Nobody can reach it" moves it to LOW. It does not refute it.
 
-**Staged code is rated as it will run.** FCMP++ is in the build and scheduled
-to activate. That covers `src/fcmp_pp/`, the curve trees, and any code that
+**Staged code is rated as it will run.** FCMP++ is in the build and meant to activate, though
+master schedules no fork for it yet. That covers `src/fcmp_pp/`, the curve trees, and any code that
 only a future hard fork or a not-yet-added `RCTType` switches on. "Not
 consensus-reachable today" is not a refutation, and it is not a reason to rate
 LOW. Take the untrusted input to be what reaches the code once it is live: a
@@ -69,8 +69,9 @@ planned caller at all.
 
 **No caller is not a dead end.** When staged code has no caller at the head,
 do not stop at "nothing reaches it". On a merged pull request,
-`git grep <symbol> origin/master` finds the callers FCMP++ has added since:
-trace the input from them. They are in scope although they are outside the
+`git grep <symbol> origin/master` shows any callers added since: trace the
+input from them. The head under review is the first place to look: FCMP++ and
+Carrot pull requests add callers master does not have. They are in scope although they are outside the
 diff, so never leave one untraced because it is outside this pull request. Where no caller exists anywhere, treat every
 argument as attacker-controlled unless the function's contract or the FCMP++
 design constrains it, and cite what does. How a future caller will use the code
@@ -238,7 +239,8 @@ short:
   Inflation, a consensus split, a halted chain, a relayed transaction or
   mined block that crashes the nodes it reaches, memory corruption from a
   peer, the restricted RPC, a remote daemon or on-chain data, or a wallet
-  crediting funds that do not exist.
+  crediting funds that do not exist. A consensus proof (range proof, CLSAG or
+  MLSAG, FCMP++ membership or SA/L) that accepts a forgery is CRITICAL.
 - **HIGH**: harm to individual nodes or users from a position anyone can take.
   A remote crash or OOM of one node; a relayed transaction or block cheap to
   make and expensive to verify; a non-supply consensus rule everyone fails to
@@ -248,8 +250,9 @@ short:
   theft or key disclosure by a co-signer, cold-signing partner or device host;
   control of a wallet by someone not given it.
 - **MEDIUM**: needs a significant position (on-path, DNS, a miner below 50%),
-  or the effect is limited: a slowdown without a crash, a forged proof
-  accepted, a privacy leak to an observer in one place at one time, a HIGH
+  or the effect is limited: a slowdown without a crash, a forged
+  out-of-band wallet proof accepted (`check_tx_proof`, `check_spend_proof`,
+  `check_reserve_proof`, a message signature), a privacy leak to an observer in one place at one time, a HIGH
   effect that needs the victim to act.
 - **LOW**: defence in depth, hardening, or a real defect with no attacker
   path today, such as code with no production caller or code reachable only
@@ -318,5 +321,13 @@ last week.
 The label is not decoration and it is not the proposer's to settle. A verifier
 reads `origin/base` and can correct it, most importantly downward: `introduced`
 says an author broke something, and that claim has to be earned. Where the
-verifiers split, the workflow settles at the weakest label any of them would
-defend, and the report says so.
+verifiers who confirmed it split, the proposer's label stands if any of them
+backs it, otherwise the weakest any of them would defend, and the report says
+so.
+
+The label is measured against `origin/base`, which may be a commit no release
+ever carried. When `origin/release` exists (PR_CONTEXT.md names it) and the
+behaviour you call `introduced` is what the latest release already does --
+the change restores it after an unreleased regression on the base branch --
+keep the label and say so in `relationToDiff`: "restores the behaviour of
+<tag>". A maintainer reads that very differently from a new hole.

@@ -24,7 +24,7 @@ This is the deep pipeline with the expensive parts removed. It runs the same
 
 - maps the change into at most **4** units and checks the partition against
   the real changed-file list, exactly as the deep pass does;
-- dispatches **one researcher per unit**, carrying all of that unit's weakness
+- dispatches **one researcher per unit** (two or more for a large unit, sharing its classes), carrying all of that unit's weakness
   classes, instead of one per unit per class;
 - runs **no seam pass and no per-unit second look**. On the one measured deep
   run those two were 28.1% of the fleet's cost and produced one candidate
@@ -40,8 +40,12 @@ This is the deep pipeline with the expensive parts removed. It runs the same
   `<n>/2 angles agreed`, against a deep review's `<n>/3`. There is no
   confidence word in a heading at either tier -- two graded words in one
   bracket read as one scale and blur the severity;
-- runs no advocate re-look. That stage is defined on a two-to-one split, and a
-  two-angle panel cannot produce one;
+- sends a 1-1 split to an **advocate**, who reads the rejection's deciding
+  line and either shows it wrong or lets it stand. A tie used to be filed as
+  refuted on one verifier's word, and `## Refuted` then told a maintainer the
+  idea had been checked and was wrong;
+- re-reads every finding an earlier review of this pull request published,
+  at this head, and says what became of each one;
 - **merges the findings that survive**, exactly as the deep pass does. Several
   confirmed candidates can be one defect reached from two directions, and
   publishing each under its own heading shows a maintainer the same bug twice
@@ -54,8 +58,7 @@ This is the deep pipeline with the expensive parts removed. It runs the same
 
 What you give up is real and the report has to say so: no cross-unit trace, no
 second look at a unit whose lens assignment was made before anyone read the
-code, one fewer angle on every candidate, and no rescue for a candidate a
-verifier refuted with a guard it assumed rather than read.
+code, and one fewer angle on every candidate.
 
 ## How it is reached
 

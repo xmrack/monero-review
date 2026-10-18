@@ -9,7 +9,7 @@ published pull requests got it wrong:
 
 1. PROVENANCE. A correction is observed while reading some upstream pull
    request's HEAD -- the target branch plus that author's unmerged changes.
-   The references describe the target branch. So "line 14523" in a correction
+   The references describe upstream master. So "line 14523" in a correction
    may be a line only that pull request has, and a reader of the body could not
    tell: nothing in it named the tree. The block this writes names the pull
    request, its head and its base, and says plainly which of the two a citation
@@ -237,8 +237,8 @@ def provenance(found):
         ">",
         "> Every line number, symbol and quoted source below was read from "
         "**that pull request's head** -- the target branch plus changes that "
-        "are not merged. The reference files describe the target branch "
-        "itself. Where the change moved or added what a citation names, the "
+        "are not merged. The reference files describe upstream master, "
+        "which is not the target branch for a backport. Where the change moved or added what a citation names, the "
         "correction describes the pull request and not Monero, and merging it "
         "here would write an unmerged branch's state into a file that claims "
         "to describe the tree.",

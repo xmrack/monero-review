@@ -44,6 +44,7 @@ though they will.
 
 ## Findings
 
+<With no findings, the single line `None.` and nothing else under this heading.>
 <With two or more findings, this table first. With one, skip it: the finding is already its own summary.>
 
 | id | sev | what is wrong | where | the fix |
@@ -67,6 +68,12 @@ though they will.
 **Where it came from.** <At most 2 sentences. One of: introduced by this change, and the `+` line or the deleted guard; newly reachable, and what now reaches it; or pre-existing, and where outside the change's own code it sits. Take the word from the finding's `provenance`, which the panel settled. One line.>
 
 **On master.** <Only when the finding carries `onMaster`. One sentence: each site's `location` on upstream master from `onMaster.sites`, and whether it still holds there. One line.>
+
+## Earlier findings
+
+<Only when the run returned `priorFindings`. Omit the heading entirely when it is empty. One bullet per entry, none dropped.>
+
+- `#<issue>` · <title> (was <SEVERITY>) · **<status>** <what settles it. `<status>` is exactly one of `still holds` (then: published as F<n>), `fixed` (the line that now stops it), `does not hold` (the line that shows it), `refuted now` (the deciding line), or `not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). The harness reads the bold word: an earlier issue is closed as superseded only when none of its entries is `not settled`. One line.>
 
 ## Refuted
 
@@ -125,7 +132,7 @@ though they will.
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
 -->
 
-<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> -->
+<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> prior=<n> -->
 ```
 
 # The header is three lines
@@ -433,6 +440,12 @@ maintainer's attention directly.
 - a restatement of the code. What the comment claims, and where that claim
   fails, is the entry.
 
+**Five entries at most, one per claim.** The same sentence quoted from two
+places, or one mistake restated at three lines, is one entry. A sentence of
+the description that merely describes an earlier head is not a discrepancy.
+Choose the five whose believers would write the worst code, and say under
+**Not covered** how many you left out.
+
 Omit the heading when the array is empty. The stamp carries `comments=` either
 way, so an absent section still reads as "nothing disagreed" rather than
 "nobody looked at the comments".
@@ -596,6 +609,7 @@ never a number you reasoned your way to.
 | `refuted` | the returned `refuted` array's length |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
+| `prior` | `coverage.priorCount`: the number of entries in `priorFindings`, each listed under `## Earlier findings`. The harness checks every earlier issue is named there |
 | `deferred` | `coverage.deferredUnclaimed.length`: the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone" |
 
 `cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.

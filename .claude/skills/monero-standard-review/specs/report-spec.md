@@ -44,6 +44,7 @@ you claim cannot weigh what you cite.
 
 ## Findings
 
+<With no findings, the single line `None.` and nothing else under this heading.>
 <With two or more findings, this table first. With one, skip it: the finding is already its own summary.>
 
 | id | sev | what is wrong | where | the fix |
@@ -53,6 +54,9 @@ you claim cannot weigh what you cite.
 ### [SEVERITY] Short title
 
 `path/to/file.cpp:123` · `function_name` · <n>/2 angles agreed<, followed by ` · not introduced by this pull request` when the finding's `provenance` is `pre-existing`>
+<For a finding carrying `merged`: one such line per site in `merged.sites`, each with that site's own vote, then a final line reading `Same defect because: <merged.sameDefectBecause>`. These breaks ARE deliberate: one site per line.>
+
+**Panel split.** <Only for a finding carrying `rescued`. At most 3 sentences: that the two verifiers split one to one and an advocate showed the rejection wrong, what the rejection relied on, and the line the advocate showed it was wrong about. When `rescuedMemberId` is set, say which site of the merged finding that was. Omit the line entirely on an ordinary finding. One line.>
 
 **Defect.** <At most 6 sentences and at most 144 words: the untrusted input, what it reaches, why nothing stops it, and every frame the input crosses on the way. A citation for each. One line.>
 
@@ -64,6 +68,12 @@ you claim cannot weigh what you cite.
 **Where it came from.** <At most 2 sentences. One of: introduced by this change, and the `+` line or the deleted guard; newly reachable, and what now reaches it; or pre-existing, and where outside the change's own code it sits. Take the word from the finding's `provenance`, which the panel settled. One line.>
 
 **On master.** <Only when the finding carries `onMaster`. One sentence: each site's `location` on upstream master from `onMaster.sites`, and whether it still holds there. One line.>
+
+## Earlier findings
+
+<Only when the run returned `priorFindings`. Omit the heading entirely when it is empty. One bullet per entry, none dropped.>
+
+- `#<issue>` · <title> (was <SEVERITY>) · **<status>** <what settles it. `<status>` is exactly one of `still holds` (then: published as F<n>), `fixed` (the line that now stops it), `does not hold` (the line that shows it), `refuted now` (the deciding line), or `not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). The harness reads the bold word: an earlier issue is closed as superseded only when none of its entries is `not settled`. One line.>
 
 ## Refuted
 
@@ -120,7 +130,7 @@ you claim cannot weigh what you cite.
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
 -->
 
-<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> -->
+<!-- deep-scan profile=standard units=<n> cells=<n> failedCells=<n> angles=2 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> prior=<n> -->
 ```
 
 # The header is three lines
@@ -287,6 +297,10 @@ Read the cited line and confirm it still says what the proposal quoted. Nothing
 upstream does this for you, and a wrong citation costs more than silence: the
 reader loses confidence in everything around it while chasing it.
 
+Any id in `coverage.anchorDoubted` is a finding the verifiers could not find at
+its cited line. Re-anchor it from the code or drop the finding, and say which
+you did in **Corrections.**
+
 # Nothing was executed
 
 No build, no test, no proof of concept, anywhere in this pipeline. Never phrase
@@ -420,6 +434,12 @@ maintainer's attention directly.
   maintainer's to say;
 - a restatement of the code. What the comment claims, and where that claim
   fails, is the entry.
+
+**Five entries at most, one per claim.** The same sentence quoted from two
+places, or one mistake restated at three lines, is one entry. A sentence of
+the description that merely describes an earlier head is not a discrepancy.
+Choose the five whose believers would write the worst code, and say under
+**Not covered** how many you left out.
 
 Omit the heading when the array is empty. The stamp carries `comments=` either
 way, so an absent section still reads as "nothing disagreed" rather than
@@ -584,13 +604,15 @@ reasoned your way to.
 | `refuted` | the number of entries in `refuted` |
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
+| `prior` | `coverage.priorCount`: the number of entries in `priorFindings`, each listed under `## Earlier findings`. The harness checks every earlier issue is named there |
 | `deferred` | `coverage.deferredUnclaimed.length`: the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone", so stamping the total says on the issue that settled observations were abandoned |
 
-`cells` is `coverage.cells` and **not** `coverage.researchAccount.length`. The
-account holds one entry per pass that had something to report, readers and
+`cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
+`researchAccount` is an exception log, not a roster: a pass is recorded there
+only when it failed outright or came back `notFinished`, readers and
 adjudicators alike, distinguished by `kind`. On a clean run it is **empty**.
 `coverage.cells` is the number of readers dispatched and `coverage.failedCells`
-counts only the ones that came back unusable.
+counts only the ones that still came back unusable after a retry.
 
 `confirmed + refuted + unverified` must equal `candidates`, because every
 proposal ends in exactly one of those buckets. `published + fixedOnMaster + merged`

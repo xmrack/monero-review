@@ -789,9 +789,9 @@ jobs:
           fi
 
           # Names this job writes at the top level start out absent.
-          rm -rf diffstat.txt differr.txt PR_*.md TOOLING.md RUST_DEPS.md \
+          rm -rf diffstat.txt differr.txt PR_*.md PR_PRIOR.json PR_NUMSTAT.txt TOOLING.md RUST_DEPS.md \
             rust-deps deps-include submodule-base submodule-diffs \
-            tags cscope.* tests.out review.md \
+            tags tags-rust rust.files cscope.* tests.out review.md \
             workflow-updates.json exec-pass1.json
 
           # Fixed 12 chars, not --short: `select` compares against this prefix
@@ -1327,6 +1327,17 @@ jobs:
           # step returns early when the repository is gone.
           rm -rf .harness
 
+      # What earlier reviews of this pull request published, so a re-review
+      # says what became of each finding instead of starting from nothing.
+      # Context: an empty list on any failure.
+      - name: Fetch earlier findings
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 "$RUNNER_TEMP/harness-scripts/prior_findings.py" \
+            "$GITHUB_REPOSITORY" "${{ matrix.pr }}" "$HEAD_SHA" > PR_PRIOR.json || echo '[]' > PR_PRIOR.json
+          echo "earlier findings: $(jq length PR_PRIOR.json)"
+
       # Rust dependencies pinned by git revision, which nothing else here
       # reaches. `external/` is submodules and the submodule fetch covers them;
       # a Cargo git dependency is neither a submodule nor vendored, so
@@ -1650,6 +1661,11 @@ jobs:
             # Paths inside a moved submodule: see PR_SUBMODULES.md.
             cat "$RUNNER_TEMP/submodule-files" 2>/dev/null || true
           } > PR_FILES.md
+          # Changed lines per path, for sizing the review: the Lead passes them
+          # to the workflow as changedLines and lineCounts. Binary files count 0.
+          git diff --numstat origin/base...HEAD \
+            | awk -F'\t' '{a=($1=="-")?0:$1; d=($2=="-")?0:$2; printf "%d\t%s\n", a+d, $3}' > PR_NUMSTAT.txt
+          echo "$(awk -F'\t' '{n+=$1} END {print n+0}' PR_NUMSTAT.txt) changed line(s)"
           # `|| true`: grep -c exits 1 on a zero count, which `set -e` would
           # take as a step failure on an empty diff.
           echo "$(grep -cve '^#' -e '^$' PR_FILES.md || true) changed file(s)"
@@ -2234,6 +2250,25 @@ jobs:
           # all.
           pub=$(num published)
           merg=$(num merged)
+          # The headings actually written, counted here: the stamp is typed by
+          # the model, and a dropped or mis-spelled heading leaves its numbers
+          # balanced while the issue loses a finding and its label.
+          headings=$(python3 "$RUNNER_TEMP"/harness-scripts/labels.py --count review.md 2>/dev/null || echo unreadable)
+          # The stamp is the last line of the report, above the telemetry
+          # footer `Append run telemetry` adds after a `---` rule. A file cut
+          # short by a dying session can still carry an earlier stamp.
+          last=$(awk '/^---[[:space:]]*$/{exit} NF{l=$0} END{print l}' review.md)
+          # Earlier findings handed to this run, and the issues they came from.
+          # The report must account for each one.
+          prior_n=0; prior_missing=""
+          if [ -s PR_PRIOR.json ]; then
+            prior_n=$(jq 'length' PR_PRIOR.json 2>/dev/null || echo 0)
+            for i in $(jq -r '.[].issue' PR_PRIOR.json 2>/dev/null | sort -u); do
+              awk '/^## Earlier findings/{f=1;next} /^## /{f=0} f' review.md | grep -q "#$i\b" \
+                || prior_missing="$prior_missing #$i"
+            done
+          fi
+          prior=$(num prior)
           # Entries a merged pull request's recheck moved to `## Fixed on
           # master`. Absent on older stamps and on open pull requests.
           fixed=$(num fixedOnMaster)
@@ -2389,6 +2424,15 @@ jobs:
             # without the other was assembled by hand.
             state=unverified
             note="**NOT VERIFIED**: the coverage stamp carries one of \`published\`/\`merged\` and not the other. The pipeline returns both on every run, so this stamp was not copied from its result."
+          elif [ "$last" != "$stamp" ]; then
+            state=unverified
+            note="**NOT VERIFIED**: the coverage stamp is not the last line of the report, so the file was cut short or edited after it was stamped."
+          elif [ -n "$pub" ] && [ "$headings" != "$pub" ]; then
+            state=unverified
+            note="**NOT VERIFIED**: the coverage stamp says $pub finding(s) were published, but the report carries $headings \`### [SEVERITY]\` heading(s) above Refuted."
+          elif [ "$prior_n" -gt 0 ] && { [ "${prior:-}" != "$prior_n" ] || [ -n "$prior_missing" ]; }; then
+            state=unverified
+            note="**NOT VERIFIED**: $prior_n earlier finding(s) were handed to this run, but the report's Earlier findings section does not account for them (stamp prior=${prior:-absent}; missing:${prior_missing:- none})."
           elif [ -n "$pub" ] && [ -n "$merg" ] && [ "$(( pub + fixed + merg ))" -ne "$conf" ]; then
             # Every confirmed candidate gets an entry under Findings or Fixed
             # on master, or is folded into another one's. A
@@ -2409,13 +2453,13 @@ jobs:
           elif [ "$cells" -eq 0 ]; then
             state=unverified
             note="**NOT VERIFIED**: the $TIER pass dispatched no research cells at all, so nothing was examined."
-          elif [ "$(( failed * 2 ))" -gt "$cells" ]; then
+          elif [ "$(( failed * 4 ))" -gt "$cells" ]; then
             state=unverified
-            note="**NOT VERIFIED**: $failed of $cells research cells failed rather than returning a judgement, so most of this change was never read. A quiet report here means the fleet died, not that the code is clean."
+            note="**NOT VERIFIED**: $failed of $cells research cells failed after a retry rather than returning a judgement, so over a quarter of this change was never read."
           elif [ "$cands" -gt 0 ] && [ "$(( unver * 2 ))" -gt "$cands" ]; then
             state=unverified
             note="**NOT VERIFIED**: the research half ran, but no verifier panel reached a verdict on $unver of $cands candidates. Nothing here has been adversarially checked, and an empty findings list means the panel went silent, not that the candidates died honestly."
-          elif [ "$cands" -eq 0 ] && [ "$(( failed * 4 ))" -gt "$cells" ]; then
+          elif [ "$cands" -eq 0 ] && [ "$failed" -gt 0 ]; then
             # A no-findings deep review is the strongest claim this
             # pipeline makes, and it is the one a reader is least able to
             # check. The majority test above is too lenient for it: with
@@ -2425,8 +2469,8 @@ jobs:
             # anything worse than a quarter of cells lost is not a clean
             # bill of health, it is a thin one.
             state=unverified
-            note="**NOT VERIFIED**: nothing was proposed, but $failed of $cells research cells failed rather than reporting. A no-findings result has no panel evidence behind it, so it is only worth anything when nearly every cell was read. This one was not."
-          elif [ "$cands" -eq 0 ] && [ -n "$unacc" ] && [ "$unacc" -gt 0 ]; then
+            note="**NOT VERIFIED**: nothing was proposed, but $failed of $cells research cells failed after a retry rather than reporting. A no-findings result rests on every cell having been read, and this one was not."
+          elif [ -n "$unacc" ] && [ "$unacc" -gt 0 ]; then
             # Same reasoning as the test above, applied to the other way a
             # clean bill can be thin. There, cells were dispatched and died;
             # here, files were never placed in a unit at all, so no cell was
@@ -2434,7 +2478,7 @@ jobs:
             # The arithmetic all balances and the report still says "No
             # findings" over a diff nobody finished reading.
             state=unverified
-            note="**NOT VERIFIED**: nothing was proposed, but $unacc changed file(s) were placed in neither a unit nor an exclusion, so no researcher was ever sent to them. A no-findings result rests entirely on how much of the diff was read, and this one did not read all of it."
+            note="**NOT VERIFIED**: $unacc changed file(s) were placed in neither a unit nor an exclusion, so no researcher was ever sent to them, and this review cannot retire the pull request."
           else
             state=fleet
             covered="$(( cells - failed )) of $cells research cells reported"
@@ -2468,13 +2512,6 @@ jobs:
             # block returns 1 and `set -e` takes the whole step down.
             if [ -n "$defer" ] && [ "$defer" != "0" ]; then
               note="$note $defer observation(s) one researcher handed to another were never settled by anyone; the report names them under Not covered."
-            fi
-            # A report WITH findings still publishes when some files went
-            # unplaced -- what it found is real -- but the reader has to be
-            # told the review is partial, because the issue is the dedup
-            # record and nothing will come back for the rest.
-            if [ -n "$unacc" ] && [ "$unacc" != "0" ]; then
-              note="$note $unacc changed file(s) were placed in neither a unit nor an exclusion and were read by nobody; the report names them under Not covered. Treat this as a partial review of the change."
             fi
           fi
 
@@ -2689,7 +2726,7 @@ jobs:
           create() {
             local i
             for i in 1 2 3; do
-              gh issue create "$@" >/dev/null 2>&1 && return 0
+              gh issue create "$@" > "$RUNNER_TEMP/private-state/created" 2>/dev/null && return 0
               sleep $(( i * 10 ))
             done
             return 1
@@ -2853,6 +2890,31 @@ jobs:
             --body-file "$RUNNER_TEMP/private-state/body.md" --label "$labels" \
             || fail publish-failed
           outcome published
+
+          # Earlier reviews of this pull request at other heads are superseded:
+          # this report re-read each of their findings under `## Earlier
+          # findings`. One is closed only when none of its entries there is
+          # `not settled`, so an unresolved finding keeps its full text open.
+          # Public route only, and silent on both, so the log reads the same.
+          if [ "$route" = public ]; then
+            new=$(grep -oE '[0-9]+$' "$RUNNER_TEMP/private-state/created" | tail -1 || true)
+            earlier=$(OWNER=${GITHUB_REPOSITORY%%/*} PRN="${{ matrix.pr }}" HEAD12="$SHA" \
+              gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=open&labels=pr-${{ matrix.pr }}&per_page=100" \
+                --jq '.[] | select(.pull_request == null)
+                      | select(.user.login == "github-actions[bot]" or .user.login == env.OWNER)
+                      | select(.title | test("^Review: \\S+#" + env.PRN + " @ [0-9a-f]{12}\\b"))
+                      | select(.title | contains(env.HEAD12) | not) | .number' \
+                2>/dev/null || true)
+            for i in $earlier; do
+              [ -n "$new" ] && [ "$i" != "$new" ] || continue
+              if awk '/^## Earlier findings/{f=1;next} /^## /{f=0} f' review.md | grep -E "#$i\b" | grep -qF '**not settled**'; then
+                continue
+              fi
+              gh issue close "$i" --repo "$repo" --reason "not planned" \
+                --comment "Superseded by #$new, the review of \`$SHA\`, which re-read this issue's findings." \
+                >/dev/null 2>&1 || true
+            done
+          fi
 
           # NO REVIEW BODY IN THE SUMMARY, on either route, and written only
           # once the issue exists. It is the same text as the issue, and a

@@ -114,29 +114,34 @@ unchecked one worth reading closely instead.
 
 ## Monero knowledge, shared with every review here
 
-How the codebase works, in `.claude/references/monero/` (shared by every skill
-here; `README.md` is the index):
+How the codebase works, in `.claude/references/monero/` (`README.md` is the
+index). Together these are over 300 KB, so read by need, not front to back.
 
-- `macros.md`: **read this before you trust a grep.** Most control flow and
-  every wire-facing serializer here is macro-generated and has no text form.
+Before you form a theory, read:
+
+- `refutations.md`: claims already settled. Check it before proposing
+  something, and cite it when it answers you.
+- `trust-boundaries.md`, the boundary sections for your paths and its
+  **Severity** section: who can reach what, and how severe that is.
+- The subsystem file for your paths: `subsystems-node.md`,
+  `subsystems-wallet.md` or `subsystems-crypto.md`, and
+  `subsystems-fcmp-carrot.md` for anything under `src/fcmp_pp`, `src/carrot_*`,
+  the curve trees or `external/mx25519` -- the other files describe master,
+  where FCMP++ and Carrot are not wired in.
+
+Then on demand, when the question comes up:
+
+- `macros.md`: **before you trust a grep.** Most control flow and every
+  wire-facing serializer here is macro-generated and has no text form.
   "Nothing calls this" and "this field is unvalidated" are usually claims
   about a macro.
-- `flows.md`: six end-to-end traces naming, step by step, where a check
-  happens and where none does.
-- `architecture.md` and the `subsystems-*.md` for whatever you were assigned.
-- `errors-and-concurrency.md`: read it before you call a failure unhandled or a
+- `flows.md`: six end-to-end traces naming where a check happens and where
+  none does.
+- `errors-and-concurrency.md`: before you call a failure unhandled or a
   sequence a race.
-- `navigation.md`: the search recipes that actually work in this tree.
-
-What to suspect:
-
-- `.claude/references/monero/trust-boundaries.md`:
-  who can reach what, and which inputs are attacker-controlled.
-- `.claude/references/monero/codebase-notes.md`: how
-  this tree is laid out and what is surprising about it.
-- `.claude/references/monero/refutations.md`: claims
-  already settled in past reviews. Check it before proposing something, and
-  cite it when it answers you.
+- `navigation.md`: the search recipes that work in this tree.
+- `architecture.md`, `codebase-notes.md`, `coding-style.md`,
+  `build-and-tests.md`.
 
 ## When a reference is wrong, say so
 

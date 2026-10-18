@@ -90,12 +90,21 @@ Workflow({ name: "monero-deep-scan",
                    pr: <number from PR_CONTEXT.md, or null>,
                    changedFiles: [<the list from step 2, verbatim>],
                    maxUnits: 8,
-                   changedLines: <insertions + deletions from the --shortstat above>,
+                   changedLines: <the sum of the counts in PR_NUMSTAT.txt>,
+                   lineCounts: <an object from PR_NUMSTAT.txt: each path to its count>,
+                   priorFindings: <the array in PR_PRIOR.json, verbatim; [] when absent>,
                    masterRef: <"origin/master" when step 1 says merged, else omit> } })
 ```
 
 `root` has to be absolute. The agents `cd` to it before doing anything, because
 the working directory is not reliably the checkout.
+
+`PR_NUMSTAT.txt` holds `<changed lines><TAB><path>` per file. Pass the sum as
+`changedLines` and the pairs as `lineCounts`; the workflow sizes the review
+from them. `PR_PRIOR.json` holds the findings earlier reviews of this pull
+request published at older heads. Pass the array exactly as it is: the
+workflow re-reads each one at this head and returns what became of it in
+`priorFindings`, and the report must account for every entry.
 
 Prefer passing `args` as a real object rather than a JSON-encoded string. Both
 work, and that is measured: the first two CI deep runs both serialised it to a
@@ -192,8 +201,9 @@ label on the issue, so a paraphrase drops the label silently. Only
 `pre-existing` gets it: a finding this change introduced, made newly reachable,
 or let past a guard it added is this change's business. Put
 `coverage.provenanceCorrected` (proposers the panel overruled) and
-`coverage.provenanceDisputed` (verifiers that split, each settled at the
-weakest label any of them would defend)
+`coverage.provenanceDisputed` (confirming verifiers that split; the
+proposer's label stands if any of them backs it, otherwise the weakest any
+would defend)
 on **Corrections.**, and where a merged entry carries `provenanceMixed`, give
 each site its own answer instead of one label for all of them.
 

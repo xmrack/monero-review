@@ -667,23 +667,18 @@ const CONTEXT = [
   'change" are claims of that kind. The value of believing one is that it lets',
   'you skim, which is what makes an unchecked one worth reading closely.',
   '',
-  'Monero knowledge, shared with every review here:',
-  '  .claude/references/monero/    how the codebase works. README.md indexes it.',
-  '    macros.md   READ BEFORE TRUSTING A GREP -- most control flow and every',
-  '                wire-facing serializer here is macro-generated and has no',
-  '                text form, so "nothing calls this" and "this field is',
-  '                unvalidated" are usually claims about a macro.',
-  '    flows.md    six end-to-end traces: where each check happens, and where',
-  '                none does (fast_check, the verification-id cache).',
-  '    architecture.md, subsystems-node/wallet/crypto.md, navigation.md,',
-  '    errors-and-concurrency.md, coding-style.md, build-and-tests.md',
-  '  .claude/references/monero/trust-boundaries.md',
-  '  .claude/references/monero/codebase-notes.md',
-  '  .claude/references/monero/refutations.md',
+  'Monero knowledge, in .claude/references/monero/ (README.md indexes it; over',
+  '300 KB, so read by need). .claude/agents/monero-context.md says what to read',
+  'first. In short: refutations.md, trust-boundaries.md (your boundary and its',
+  'Severity section), and the subsystem file for your paths --',
+  'subsystems-fcmp-carrot.md for src/fcmp_pp, src/carrot_*, the curve trees and',
+  'external/mx25519. macros.md BEFORE TRUSTING A GREP: most control flow and every',
+  'wire-facing serializer is macro-generated and has no text form.',
   'The candidate standard: .claude/skills/monero-deep-review/specs/finding-spec.md',
   '',
   'Symbol index, when this run built one (check with Glob; some runs have none):',
   '  readtags -t tags <symbol>            a definition',
+  '  readtags -t tags-rust <symbol>       a Rust definition (src, external, rust-deps)',
   '  cscope -d -L3 <fn>                   callers in src and contrib',
   '  cscope -d -f tests.out -L3 <fn>      callers in tests, a separate database',
   'Prefer it over grep for reachability. A hit is reliable; a MISS IS NOT -- and a',
@@ -901,6 +896,8 @@ const researchCell = (cell) => agent(
    '  newly-reachable  the code is outside the changes and the diff exposes it;',
    '  pre-existing     the code is outside the changes, and the diff neither',
    '                   wrote it nor made it reachable.',
+   'If origin/release exists and already behaves the way you call introduced, the',
+   'change restores released behaviour: keep the label and say so in relationToDiff.',
    'Get that label right in both directions. Calling an old hole `introduced`',
    'blames an author for something they did not do, and the panel will correct',
    'you. Calling a new one `pre-existing` buries the thing the review is for.',
@@ -2406,10 +2403,8 @@ return {
     masterDisputed,
     // How the published findings break down by where they came from, and
     // every entry the panel corrected. `provenanceDisputed` is where the
-    // verifiers did not agree with each other, which the workflow settles
-    // conservatively (`pre-existing`) and the report discloses, because a
-    // contested claim that an author created a hole is not one to publish
-    // quietly.
+    // confirming verifiers did not agree with each other; the report
+    // discloses how it was settled.
     provenanceCounts: findings.reduce((t, f) => {
       const k = PROVENANCES.includes(f.provenance) ? f.provenance : 'pre-existing'
       t[k] += 1
@@ -2463,8 +2458,9 @@ return {
     'paraphrase drops the label. coverage.provenanceCounts is the breakdown,',
     'coverage.provenanceCorrected names every entry whose proposer got the label',
     'wrong and the panel fixed it, and coverage.provenanceDisputed names the ones',
-    'the verifiers disagreed on, each settled at the weakest label any',
-    'verifier would defend: both go on the Coverage **Corrections.** line. On a merged entry `provenanceMixed`',
+    'the confirming verifiers disagreed on (the proposer\'s label stands if one backs',
+    'it): both go on the Coverage **Corrections.** line. A `relationToDiff` saying the',
+    'change restores a released behaviour goes in **Where it came from.** On a merged entry `provenanceMixed`',
     'means the sites differ, so give each site its own answer rather than one',
     'label for all of them.',
     '',

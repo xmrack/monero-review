@@ -174,7 +174,7 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # pull request could plant`: project instructions Claude Code would load as
 # trusted, and the names this script itself writes and reads.
 # As in CI: case-insensitive, any file type, and symlinks.
-rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json"
+rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt"
 tidy_checkout() {
   find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
     \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
@@ -414,6 +414,12 @@ FLEET_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero
   echo "# Lines starting with # are not paths."
   ( cd "$CACHE" && git diff --name-only origin/base...HEAD )
 } > "$CACHE/PR_FILES.md"
+# Per-path changed lines and earlier published findings, as in the workflow.
+git -C "$CACHE" diff --numstat origin/base...HEAD \
+  | awk -F'\t' '{a=($1=="-")?0:$1; d=($2=="-")?0:$2; printf "%d\t%s\n", a+d, $3}' > "$CACHE/PR_NUMSTAT.txt"
+GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
+  python3 "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
+  > "$CACHE/PR_PRIOR.json" 2>/dev/null || echo '[]' > "$CACHE/PR_PRIOR.json"
 
 # One model on both tiers -- deep buys more agents, not a better reader. EFFORT
 # was empty for deep while the unnamed default was Opus 5's `high`, which kept

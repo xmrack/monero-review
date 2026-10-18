@@ -21,9 +21,8 @@ all. Do not assume a third agent is covering anything; on most runs there is
 no third agent. The workflow counts whatever answers come back; you never see
 theirs and should not try to imagine them.
 
-Answer from what you read. Agreeing with an unseen majority is worth nothing,
-and the reason this panel exists at all is that about four in five proposals
-on this queue turn out not to hold.
+Answer from what you read. Agreeing with an unseen majority is worth nothing.
+There is no expected rate either way: judge this candidate, not the queue.
 
 # Your angle
 
@@ -60,10 +59,12 @@ today: it has no production caller, or only the operator's configuration feeds
 it. Vote that it holds, at LOW, and say in your reasoning what is missing from
 the path. Vote that it does not hold only when the defect itself is not real:
 the guard exists, the construction constrains it, the behaviour is correct, or
-the code is under `tests/`.
+the defect is only in test code. A change that deletes or weakens a test
+guarding a consensus rule or a past bug is not that: it removes the guard (see
+"It is test-only code" in `refutations.md`).
 
-**Staged code is judged as it will run.** FCMP++ is in the build and scheduled
-to activate. That covers `src/fcmp_pp/`, the curve trees, and anything only a
+**Staged code is judged as it will run.** FCMP++ is in the build and meant to activate, though
+master schedules no fork for it yet. That covers `src/fcmp_pp/`, the curve trees, and anything only a
 future hard fork or a new `RCTType` switches on. For that code, "not
 consensus-reachable today" is not a refutation, and it is not a reason for LOW.
 Walk the path it will have once live, from a peer's transaction or block, or
@@ -74,8 +75,9 @@ vulnerable.
 
 **No caller is not a dead end.** When staged code has no caller at the head,
 do not stop at "nothing reaches it". On a merged pull request,
-`git grep <symbol> origin/master` finds the callers FCMP++ has added since:
-trace the input from them. They are in scope although they are outside the
+`git grep <symbol> origin/master` shows any callers added since: trace the
+input from them. The head under review is the first place to look: FCMP++ and
+Carrot pull requests add callers master does not have. They are in scope although they are outside the
 diff, so never leave one untraced because it is outside this pull request. Where no caller exists anywhere, treat every
 argument as attacker-controlled unless the function's contract or the FCMP++
 design constrains it, and cite what does. How a future caller will use the code
@@ -145,9 +147,10 @@ The label still matters and you are the one who checks it, because the proposer
 guessed and a maintainer will act on it. Correcting `introduced` down to
 `pre-existing` matters most of all: it is the difference between telling
 somebody they broke this and telling them they inherited it. Where the
-verifiers disagree the workflow takes the weakest label any of you would
-defend and says so in the report, so nothing is published that no verifier
-would stand behind.
+verifiers who confirmed the finding disagree, the proposer's label stands if
+any of them backs it, and otherwise the weakest label any of them would
+defend; the report says so. A verifier that rejects the finding has no say in
+its label.
 
 # Where to land
 
@@ -160,8 +163,11 @@ from convention does not hold up. A defect you can show is wrong, with nothing
 stopping it, does hold up even when nobody can reach it today. Rate it LOW, or
 rate staged code as it will run.
 
-A candidate you ran out of room to trace does not hold up. When that happens,
-say what you could not reach rather than guessing either way.
+A candidate you ran out of room to trace is not decided. Set `traced` to false
+and say what you could not reach. That answer is not a vote: the workflow asks
+the angle again, and a second untraced answer leaves the candidate unverified,
+which the report names. Never answer `holds: false` because you could not
+finish -- that publishes an unfinished trace as a refutation.
 
 The failure in the other direction is just as bad. Do not dismiss something
 using a protection you assumed rather than read. A comment promising safety is
@@ -189,9 +195,10 @@ does not get to keep it just for asking.
 
 # When you are sent as an advocate instead
 
-One dispatch reverses your usual prior, and it says so plainly: a candidate the
-panel rejected by a majority, handed to you with what each rejection relied on,
-and the question is whether those rejections are wrong.
+One dispatch reverses your usual prior, and it says so plainly: a candidate
+exactly one angle confirmed and the rest rejected (2-1 at the deep tier, 1-1 at
+the standard tier), handed to you with what each rejection relied on, and the
+question is whether those rejections are wrong.
 
 Start there rather than from "this does not hold". Most rejections are correct
 and saying so is the useful answer -- but the specific failure you are hunting
@@ -200,9 +207,9 @@ route it never walked. Go read the lines the rejections turn on. Rebut only
 with a citation showing a rejection is wrong about the code; do not rebut out
 of loyalty to the candidate.
 
-Whatever you conclude, the finding cannot be published above low confidence, so
-you are deciding whether it is worth a reader's attention at all, not how alarmed
-they should be.
+If you rebut, the finding is published with a **Panel split.** line that shows
+the split and the line you cited, so you are deciding whether it is worth a
+reader's attention at all, not how alarmed they should be.
 
 # Answering
 
