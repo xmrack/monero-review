@@ -303,6 +303,13 @@ that break the obvious mental model (all in `src/common/threadpool.cpp`):
   `src/fcmp_pp/curve_trees.cpp`) throws if run as a leaf job.
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking — including jobs other submitters queued.
+- **`waiter::~waiter` calls `wait()`**, so destroying a waiter joins its
+  outstanding tasks. Anything a submitted lambda captures by reference must
+  be declared **before** the waiter; otherwise an early return or exception
+  destroys it first while queued tasks still write through it. Example:
+  upstream PR 11575 moves `std::deque<bool> results` above the waiter in
+  `verRctSemanticsSimple` (`src/ringct/rctSigs.cpp`) to fix exactly this
+  ordering.
 - **`threadpool::run` catches only `std::exception`** from a queued job and
   records it with `e.wo->set_error()` without checking `e.wo` for null, although
   `submit` documents a null waiter as allowed. Every current `submit` call in
