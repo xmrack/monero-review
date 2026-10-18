@@ -28,7 +28,7 @@ macros, looser on error handling — and it sits directly on the network.
 
 **`src/serialization/`** is the template-based binary/JSON archive machinery
 used for blocks, transactions, and the wallet cache (which falls back to
-`boost::serialization`; see `trust-boundaries.md` section 7).
+`boost::serialization`; see `trust-boundaries.md` section 8).
 
 Because both parse attacker-supplied bytes, both are worth checking, and a
 change to either has a blast radius much wider than the diff suggests. When a
