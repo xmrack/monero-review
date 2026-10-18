@@ -230,7 +230,7 @@ assign it to, and if that is genuinely ambiguous, the more specific row.
 
 The same ladder every review here uses, so a deep review's labels mean what
 every other issue in this repository's labels mean. The full model, with the
-precedent each tier was calibrated on and the modifiers, is the Severity section
+adversary catalogue and the modifiers, is the Severity section
 of `.claude/references/monero/trust-boundaries.md`; read it before rating. In
 short:
 
