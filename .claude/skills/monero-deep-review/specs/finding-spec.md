@@ -235,12 +235,14 @@ of `.claude/references/monero/trust-boundaries.md`; read it before rating. In
 short:
 
 - **CRITICAL**: harm to the whole network, or theft with no special position.
-  Inflation, a consensus split, a relayed transaction or mined block that
-  crashes the nodes it reaches, memory corruption from a peer, the restricted
-  RPC, a remote daemon or on-chain data, or a wallet crediting funds that do
-  not exist.
+  Inflation, a consensus split, a halted chain, a relayed transaction or
+  mined block that crashes the nodes it reaches, memory corruption from a
+  peer, the restricted RPC, a remote daemon or on-chain data, or a wallet
+  crediting funds that do not exist.
 - **HIGH**: harm to individual nodes or users from a position anyone can take.
-  A remote crash or OOM of one node; a malicious daemon crashing a wallet,
+  A remote crash or OOM of one node; a relayed transaction or block cheap to
+  make and expensive to verify; a non-supply consensus rule everyone fails to
+  enforce alike; a malicious daemon crashing a wallet,
   making it overspend, or learning which outputs are its own; a privacy break
   in every transaction the reference wallet makes or written into the chain;
   theft or key disclosure by a co-signer, cold-signing partner or device host;

@@ -17,8 +17,9 @@ map, not a substitute for reading the tree. Where a symbol index has been built
 1. **Supply integrity.** Amounts are hidden, so nobody can audit total supply
    by adding up balances. Counterfeiting is invisible unless someone already
    knows the flaw and searches for it, so a past exploit can only be ruled out
-   by a scan written after the flaw is found. A soundness break in a range proof, the balance check, or
-   key-image uniqueness can be permanent and undetectable.
+   by a scan written after the flaw is found. A soundness break in a range
+   proof, the balance check, or key-image uniqueness can be permanent and
+   undetectable.
 2. **Funds and keys.** A theft or burn cannot be reversed.
 3. **Privacy.** The chain is permanent and public, so whatever a transaction
    leaks, it leaks to every future analyst with every future heuristic. A
@@ -39,7 +40,7 @@ judge reachability or rate severity.
 | --- | --- | --- |
 | **P2P peer** | Open connections and send any Levin message; occupy peer slots; answer our outbound requests with whatever they like | Free, and running many is cheap. Spy and proxy nodes have been measured as a large fraction of the network, so holding a large share of a victim's peers is a realistic position for **privacy** attacks, not an unusual one |
 | **Transaction sender** | Put crafted but valid data on chain: `tx_extra`, output keys, amounts, unlock times, many outputs to one key | Only the fee. Historically the largest source of real money loss (section 5) |
-| **Miner** | Choose block contents and timestamps, withhold blocks, reorg | Below 50% is in the project's scope, and a large minority pool has already produced reorgs deeper than the 10-block lock. Above 50% is out of scope (VRP preamble 6) |
+| **Miner** | Choose block contents, the coinbase and timestamps; withhold blocks; reorg | One crafted block needs no special position, because small miners find blocks daily. Reorgs and withholding need a large share; a large minority pool has already produced reorgs deeper than the 10-block lock. Above 50% is out of scope (VRP preamble 6) |
 | **Remote node operator** | Answer every wallet request with whatever it likes; see the wallet's IP, timing and the transactions it submits | The common configuration for GUI and mobile users. A network attacker is usually equivalent (section 4) |
 | **Restricted-RPC client** | Call the public RPC surface of a node that runs one | Anyone, wherever public remote nodes exist |
 | **Counterparty** | A multisig co-signer, the hot half of a cold-signing pair, the payer or payee in a payment, an exchange | Inside the protocol on purpose; a co-signer able to steal funds has happened |
@@ -334,31 +335,158 @@ verification.
 
 ## 9. Consensus validation
 
-`src/cryptonote_core/blockchain.cpp`, `tx_pool.cpp`, `src/ringct/`,
-`src/crypto/`
+`src/cryptonote_core/blockchain.cpp`, `tx_pool.cpp`,
+`tx_verification_utils.cpp`, `src/cryptonote_basic/`, `src/ringct/`,
+`src/crypto/`, `src/hardforks/`
 
-Block and transaction acceptance, including `ver_non_input_consensus`
-(`src/cryptonote_core/tx_verification_utils.cpp`, called from
-`tx_memory_pool::add_tx` and the block paths), which runs
-`core::check_tx_semantic` and its key-image subgroup check
-`check_tx_inputs_keyimages_domain`. The question is not
-just "does it crash" but "would a node running this code reach a different
-verdict than the rest of the network on the same input", and "does it accept
-anything that creates money". Every supply bug in Monero's history has been
-here, and so have crashes in proof verification that any relayed transaction
-could trigger.
+Every node must reach the same verdict on every block and transaction, and
+nothing may create money. Ask both questions of any change here. The input is
+an ordinary transaction from anyone or an ordinary block from any miner. A
+miner does not need a large share of hashrate to put one crafted block on
+chain, because even a small miner finds blocks every day. Only reorgs and
+withholding need a large share.
 
-Fork heights live in `src/hardforks/hardforks.cpp`, the `HF_VERSION_*`
-constants in `src/cryptonote_config.h`. Any behaviour change must be gated to
-the correct version; ask explicitly whether an ungated change makes old and
-new nodes disagree.
+**Which layer a rule lives in matters as much as the rule.** A rule that moves
+between layers can silently stop running on some path.
 
-`src/fcmp_pp/` (FCMP++) is built and linked into `ringct` but has no caller in
-`src/` outside its own directory; Carrot is not merged and no
-`HF_VERSION_FCMP*` exists yet (see `codebase-notes.md`). Rate it as it will
-run once activated, not as dead code. FCMP++ removes ring-statistics attacks
-and decoy selection. Fee, output-count and `tx_extra` fingerprints and every
-network-level leak remain.
+| Layer | What it enforces | Where it does not run |
+| --- | --- | --- |
+| `ver_non_input_consensus` (`tx_verification_utils.cpp`) → `core::check_tx_semantic` | blob ≤ `CRYPTONOTE_MAX_TX_SIZE`, weight ≤ `get_transaction_weight_limit`, version bounds, output point validity (`check_outs_valid`), amount overflow (`check_inputs_overflow`, `check_outs_overflow`), key-image domain (`check_tx_inputs_keyimages_domain`) and uniqueness within the tx, RingCT semantics and batched range proofs | below the fast-sync height |
+| `Blockchain::check_tx_outputs` | which RCT types, output types and view tags each fork allows | — |
+| `Blockchain::check_tx_inputs` | ring size, at least two outputs, inputs sorted by key image, the 10-block minimum age (`CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE`), unlock times, key image not already spent, ring signatures | below the fast-sync height, and for alt-chain blocks until a reorg applies them |
+| `prevalidate_miner_transaction`, `validate_miner_transaction` | the coinbase: one `txin_gen` at the block height, unlock at height + `CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW`, the RCT type and version each fork requires, and the claimed amount against reward plus fees | the coinbase never goes through `check_tx_semantic`, so its output keys are not checked as valid points the way other outputs are |
+| The DB | no duplicate key image or txid anywhere in the chain | — |
+| `tx_memory_pool::add_tx` (**relay only**) | minimum fee (`check_fee`), `MAX_TX_EXTRA_SIZE`, `unlock_time == 0`, conflicts with key images already in the pool | blocks. A transaction mined by someone else skips all of these |
+
+Two consequences reviewers miss:
+
+- **Relay rules are not consensus.** Fee, `tx_extra` size and unlock time are
+  pool policy today. A change to them is not a fork, and a change that applies
+  them to block validation **is** one. Several become consensus rules at the
+  FCMP++ fork, so check which version a change targets.
+- **The pool feeds the block template.** `fill_block_template` takes pool
+  transactions without re-running `ver_non_input_consensus`; it relies on
+  `tx_memory_pool::validate` re-checking the pool when the fork changes. A pool
+  that holds anything consensus rejects makes every default miner build an
+  invalid block, which stops the chain.
+
+**Economic rules.** All integer arithmetic, and some of it lives in
+`contrib/epee` (`mul128`, `div128_64` in `int-util.h`; `misc_utils::median`
+and `rolling_median_t`), so a change there can be a consensus change.
+
+- *Reward and emission:* `get_block_reward` in `cryptonote_basic_impl.cpp`.
+  `MONEY_SUPPLY` drives the base reward, `FINAL_SUBSIDY_PER_MINUTE` the tail
+  emission, and the penalty cuts the reward for blocks above the median.
+  `HF_VERSION_EXACT_COINBASE` requires the coinbase to claim the amount
+  exactly.
+- *Block weight:* short-term and long-term medians
+  (`update_next_cumulative_weight_limit`, `get_next_long_term_block_weight`,
+  `CRYPTONOTE_LONG_TERM_BLOCK_WEIGHT_WINDOW_SIZE`,
+  `CRYPTONOTE_SHORT_TERM_BLOCK_WEIGHT_SURGE_FACTOR`). A block may weigh at most
+  twice the effective median. Transaction weight is not blob size
+  (`get_transaction_weight`, the bulletproof clawback).
+- *Fees:* `get_dynamic_base_fee` derives the relay fee from the reward and the
+  median.
+
+Past consensus bugs in this area have been caches: a value computed from a
+cache on one node and from the chain on another, or a rolling median not
+resized when its window changed at a fork. **Every consensus value must be
+recomputable from the chain alone**, not from cache warmth, startup order or
+which node did a refresh. Spam that grows the medians, and miners that hold
+them down, are both studied attacks. Rate a change that makes either cheaper
+by what it does to fees and to the cost of verifying a block.
+
+**Difficulty and time.** `next_difficulty` in `difficulty.cpp` (window
+`DIFFICULTY_WINDOW`, `DIFFICULTY_CUT` dropped from each end, `DIFFICULTY_LAG`)
+has two callers that must agree: `get_difficulty_for_next_block`, which is
+cached, and `get_next_difficulty_for_alternative_chain`. `check_hash` has
+64-bit and 128-bit paths. `check_block_timestamp` requires a timestamp above
+the median of the last `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW` blocks and below
+local time + `CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT`. The upper bound reads the
+node's **clock**, so it is the one acceptance rule that is not a function of
+the chain. That is tolerable only because the rejection is not permanent.
+Ask whether a change makes the verdict depend on anything local. Timestamps
+steer difficulty, so a miner who controls them steers it.
+
+**Proof of work.** `get_block_longhash`. RandomX keys change every
+`SEEDHASH_EPOCH_BLOCKS` with a lag of `SEEDHASH_EPOCH_LAG` (`rx_seedheight` in
+`rx-slow-hash.c`). Verifying a block under any seed other than the current
+one is far slower, and a new seed means rebuilding a cache. So the order of
+checks on blocks from peers matters: is PoW checked before any expensive work,
+and can a peer make the node switch seeds repeatedly? Both epoch values are
+read from environment variables whatever the network. RandomX's JIT, its
+interpreter and every architecture must produce identical hashes.
+
+**Trust roots.**
+
+- *Hard-coded checkpoints* (`src/checkpoints/checkpoints.cpp`): no alt block
+  at or below the last checkpoint is allowed. Otherwise there is **no maximum
+  reorg depth**.
+- *Fast sync* (`src/blocks/checkpoints.dat`, its sha256 pinned in
+  `blockchain.cpp`, `--fast-block-sync` on by default on mainnet): up to the
+  embedded height, which is nearly the whole chain at release, blocks are
+  accepted without PoW, `ver_non_input_consensus` or input checks. For that
+  history, supply integrity rests on the release binary. A change to that file,
+  to its hash, or to what the fast path skips changes what a new node trusts.
+- *DNS checkpoints* are enforced only with `--enforce-dns-checkpointing`.
+
+**Hard forks.** Heights are in `src/hardforks/hardforks.cpp`, the
+`HF_VERSION_*` constants in `src/cryptonote_config.h`. `HardFork::check`
+requires the block's major version to equal the scheduled version and its minor
+version (the vote) to be at least that. Any behaviour change must be gated to
+the correct version. Ask explicitly whether an ungated change makes old and new
+nodes disagree, and check `>` against `>=` at the boundary and the grace forks
+where two values are allowed.
+
+**Reorgs.** `switch_to_alternative_blockchain`,
+`rollback_blockchain_switching`, `pop_block_from_blockchain`. Popped
+transactions return to the pool already marked verified. Alt blocks are stored
+and only fully validated when a reorg applies them. Check that an alt-chain
+path applies the same rules as the main-chain path; they have diverged before.
+
+**Determinism.** No floating point anywhere in consensus; keep it that way.
+Watch for `assert` guarding consensus arithmetic, because it is compiled out
+of release builds, and for `size_t` arithmetic that differs on 32-bit. Watch
+also for behaviour that depends on unordered-container iteration, sort
+stability, `getenv`, build flags or DB contents. A second, independent node
+implementation (Cuprate) now follows these rules, so a monerod quirk is itself
+a split risk.
+
+**Canonical encodings.** Key images are compared byte for byte, which is only
+sound because decoding is canonical: `ge_frombytes_vartime` and
+`fe_frombytes_vartime` reject non-canonical points, and `sc_check` rejects
+non-canonical scalars. Replacing a decoder (a Rust library, `mx25519`, a new
+`ge_*` routine) must keep identical accept and reject behaviour on every
+input, or two encodings of one key image both become spendable.
+
+**FCMP++ and Carrot** (`src/fcmp_pp/`). Built and linked into `ringct`, but
+on master it has no caller in `src/` outside its own directory. Carrot is not
+merged and no `HF_VERSION_FCMP*` exists yet (see `codebase-notes.md`). Rate it
+as it will run once activated, not as dead code. When it activates it adds
+consensus **state**, not only new rules:
+
+- a curve tree of every spendable output, with a root each block commits to
+  and each transaction references;
+- tree growth as outputs unlock, and trimming on reorg;
+- a migration that inserts every historical output.
+
+Questions it raises:
+
+- Does tree building handle every output already on chain, malformed ones
+  included, identically on every node?
+- Is the key-image generator taken from the same point it always was, so no
+  output gains a second key image across the fork?
+- Is the referenced tree root bounded and checked against the right layer count?
+- Do reorgs of any depth restore the tree exactly?
+
+The Rust side builds with `panic = "abort"` and `overflow-checks = true`
+(`fcmp_pp_rust/Cargo.toml`). Any panic or overflow a transaction can reach
+becomes a node abort the C++ cannot catch: on a relayed transaction, every
+node. Proof verification also costs far more per input than ring signatures,
+so verification cost per byte becomes a DoS question.
+
+FCMP++ removes ring-statistics attacks and decoy selection. Fee, output-count
+and `tx_extra` fingerprints and every network-level leak remain.
 
 ## 10. Build and CI
 
@@ -422,7 +550,10 @@ reach it, then apply the modifiers below.
   block or transaction, including a fork-gating error in staged code that
   would split the chain when it activates.
 - A crafted transaction or block that crashes or stalls **every** default node
-  it reaches, because relay or mining delivers it everywhere.
+  it reaches, because relay or mining delivers it everywhere. A panic in the
+  Rust code under consensus counts, since it aborts the node.
+- Anything that stops the chain: a pool or template rule that makes default
+  miners build invalid blocks, or a valid block nodes cannot accept.
 - Memory corruption or code execution reached from an unauthenticated peer,
   the restricted RPC, a remote daemon talking to a wallet, or on-chain data
   parsed by a wallet.
@@ -432,6 +563,11 @@ reach it, then apply the modifiers below.
 **HIGH** — harm to individual nodes or users, from a position anyone can
 take.
 
+- A relayed transaction or a block that is cheap to make and expensive to
+  verify, slowing every node it reaches without crashing them.
+- A consensus rule that no longer holds as intended, when every node still
+  agrees and nothing is minted, such as a limit or minimum age that can be
+  bypassed. If the rule protects supply, it is CRITICAL instead.
 - Crash, permanent hang or OOM of a default node by an unauthenticated peer or
   restricted-RPC client.
 - A remote daemon crashing a wallet, making it spend more than the user chose,
@@ -501,7 +637,8 @@ modifiers above decide the final rating.
 | Reached from | Typical ceiling |
 | --- | --- |
 | Consensus validation: inflation, or divergence between shipped nodes | CRITICAL |
-| Relayed transaction or mined block that crashes nodes | CRITICAL |
+| Relayed transaction or mined block that crashes nodes, or anything that halts the chain | CRITICAL |
+| Relayed transaction or block that is cheap to make and expensive to verify; a non-supply consensus rule bypassed by everyone alike | HIGH |
 | P2P, restricted RPC, daemon → wallet, or on-chain data → wallet: memory corruption | CRITICAL |
 | On-chain data → wallet: wrong balance credited | CRITICAL |
 | P2P or restricted RPC: crash, hang or OOM of one node | HIGH |
