@@ -24,7 +24,7 @@ Run locally, leaves the result in `reviews/`:
 
 | flag | does |
 | --- | --- |
-| `-f pr=<n>` / `-f pr=sweep` | one PR, or the next unreviewed ones. `sweep` is the default, and it takes only pull requests targeting `master`; by number reviews any branch |
+| `-f pr=<n>` / `-f pr=sweep` | one PR, or the next unreviewed ones. `sweep` is the default: pull requests targeting `master`, then merged ones whose final head was never reviewed, then `release-v*` backports. By number reviews any branch |
 | `-f mode=deep` | the escalation. Requires a PR number; `pr=sweep` is refused |
 | `-f model=<id>` | pins the model. Default `auto`, the same model on both tiers |
 | `DEEP=1 ./review-local.sh` | deep, locally |

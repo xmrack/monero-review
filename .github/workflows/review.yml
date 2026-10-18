@@ -157,6 +157,13 @@ env:
   # backport is code that already landed on master, where this queue has
   # already read it. Set to an empty string to sweep every branch again.
   BASE_BRANCH: master
+  # Backport branches are swept too, behind everything targeting master: a
+  # backport's conflict resolution is code master never carried.
+  BACKPORT_BRANCHES: ^release-v
+  # Merged PRs this recent are queued until their merged head has a review. A
+  # push and a merge inside the settle window otherwise ship a head nobody
+  # read. 0 turns it off.
+  MERGED_DAYS: 7
   # What a run gets when nothing names a model -- every `schedule` tick, and
   # any dispatch that omits the input. Keep the `model:` input default above
   # identical, or the dropdown lies about scheduled runs again.
@@ -497,6 +504,7 @@ jobs:
       # another branch. Published beside `open` so the gap between the two is
       # visible in the footer rather than left for a reader to wonder about.
       offbranch: ${{ steps.pick.outputs.offbranch }}
+      merged: ${{ steps.pick.outputs.merged }}
       open: ${{ steps.pick.outputs.open }}
     steps:
       - uses: actions/checkout@v7
@@ -689,14 +697,10 @@ jobs:
           fi
           echo "PR ${{ matrix.pr }} targets $BASE"
 
-          # The sweep never selects one of these, so reaching here means a
-          # human dispatched it by number. That is an explicit choice and it
-          # is honoured: the review runs, correctly, against the branch the
-          # pull request actually targets. Say so loudly, because the reason
-          # the sweep skips them is that a backport is code master already
-          # carries and this queue has already read.
+          # A backport (swept after master) or a by-number dispatch. The review
+          # runs against the branch the pull request actually targets.
           if [ -n "${BASE_BRANCH:-}" ] && [ "$BASE" != "$BASE_BRANCH" ]; then
-            echo "::warning::PR ${{ matrix.pr }} targets $BASE, not $BASE_BRANCH. The sweep does not pick these up; reviewing it because this run asked for it by number."
+            echo "::notice::PR ${{ matrix.pr }} targets $BASE, not $BASE_BRANCH."
           fi
 
           git clone --filter=blob:none --no-tags --single-branch --branch "$BASE" \
@@ -2479,6 +2483,7 @@ jobs:
           SETTLING: ${{ needs.select.outputs.settling }}
           UNPROBED: ${{ needs.select.outputs.unprobed }}
           OFFBRANCH: ${{ needs.select.outputs.offbranch }}
+          MERGED: ${{ needs.select.outputs.merged }}
           OPEN: ${{ needs.select.outputs.open }}
         run: |
           set -euo pipefail
@@ -2509,7 +2514,10 @@ jobs:
           # reader is left guessing whether the bot is behind. It is not: those
           # pull requests target another branch and are never swept.
           if [ -n "${OFFBRANCH:-}" ] && [ "$OFFBRANCH" != "0" ]; then
-            line="$line, $OFFBRANCH not targeting ${BASE_BRANCH:-master}"
+            line="$line, $OFFBRANCH not targeting ${BASE_BRANCH:-master} or a backport branch"
+          fi
+          if [ -n "${MERGED:-}" ] && [ "$MERGED" != "0" ]; then
+            line="$line, $MERGED merged with an unreviewed final head"
           fi
           printf '<sub>%s, of %s open upstream PR(s) when this run started.</sub>\n' \
             "$line" "$OPEN" >> review.md

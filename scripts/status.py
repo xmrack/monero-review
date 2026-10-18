@@ -25,6 +25,7 @@ REPO = os.environ.get("REVIEW_REPO", "xmrack/monero-review")
 UPSTREAM = os.environ.get("UPSTREAM", "monero-project/monero")
 # Mirrors select_prs.BASE_BRANCH: the branch the sweep actually reviews.
 BASE_BRANCH = os.environ.get("BASE_BRANCH", "master")
+BACKPORT_BRANCHES = os.environ.get("BACKPORT_BRANCHES", r"^release-v")
 LOG = os.environ.get("LOG", "/tmp/monero-review.log")
 TOKEN = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
 DISCLOSURE_REPO = os.environ.get("DISCLOSURE_REPO", "xmrack/monero-review-disclosure")
@@ -166,14 +167,16 @@ def main():
         done = set()
         for i in reviews + private:
             done.update(re.findall(r"\b[0-9a-f]{12}\b", i["title"]))
-        # Same base-branch filter the selector applies, so a backport the
-        # sweep deliberately never queues is not counted here as an
-        # unreviewed pull request. The caption below warns only about the
+        # Same branch filter the selector applies, so a pull request the
+        # sweep never queues is not counted here as unreviewed. The caption below warns only about the
         # doc-only split, so without this the two disagreed permanently.
         left = [p for p in open_prs
                 if not p["draft"]
                 and (not BASE_BRANCH
-                     or ((p.get("base") or {}).get("ref") == BASE_BRANCH))
+                     or ((p.get("base") or {}).get("ref") == BASE_BRANCH)
+                     or (BACKPORT_BRANCHES and re.search(
+                         BACKPORT_BRANCHES,
+                         (p.get("base") or {}).get("ref") or "")))
                 and p["head"]["sha"][:12] not in done]
         # Says "before the doc-only filter" because it is: this runs with no
         # token by default, and separating the two would cost one file listing
