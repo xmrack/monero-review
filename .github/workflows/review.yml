@@ -3677,10 +3677,17 @@ jobs:
               `# Skipped` at the top of `SKIPPED.md` only ever produced the
               word twice, once at a size larger than anything around it.
 
-            Say which tree a citation describes when it matters, but do not
-            invent provenance: the pull request the observation came from, its
-            head and its base branch are stamped into the body automatically
-            from the harness's own record, above whatever you write.
+            THE REFERENCES ARE A GENERAL GUIDE TO MONERO, as it is on master.
+            They are not a record of reviews. In the reference files AND in
+            `SUMMARY.md` and `SKIPPED.md`, never write an upstream pull request
+            or issue number, a pull request's head commit, an author's name, or
+            phrases like "this pull request", "an unmerged PR" or "the change
+            under review". Write each claim about Monero itself: what master
+            does, or a general rule ("a change that links X into Y must ...").
+            Where a correction is true only of one pull request's unmerged
+            code, it does not belong in these files: skip it in `SKIPPED.md`
+            with the reason "describes an unmerged change". The body says
+            where the observations came from on its own.
           # `Edit` and `Write` are UNQUALIFIED, and that is deliberate rather
           # than careless. The per-path form --
           #   Edit(.claude/references/monero/**),Write(SUMMARY.md), ...
@@ -4014,23 +4021,6 @@ jobs:
           # body. Same rewrite the review job applies before publishing.
           python3 "$RUNNER_TEMP"/propose-scripts/neutralise.py "$body" "$UPSTREAM" >/dev/null
 
-          # The upstream PR(s) these corrections were read from, for the title
-          # below -- from the trusted copy, as above. Normally one: BATCH is 1,
-          # so one review run's artifact is what landed here.
-          SRC_PRS=$(python3 - "$RUNNER_TEMP/proposals.trusted.json" <<'PY'
-          import json, os, sys
-          path = sys.argv[1]
-          entries = json.load(open(path)) if os.path.exists(path) else []
-          prs = set()
-          for e in entries:
-              if isinstance(e, dict) and isinstance(e.get("source"), dict):
-                  pr = e["source"].get("pr")
-                  if pr:
-                      prs.add(str(pr))
-          print(",".join(sorted(prs, key=lambda s: int(s) if s.isdigit() else 0)))
-          PY
-          )
-
           rm -f SUMMARY.md SKIPPED.md proposals.json
 
           git add -A
@@ -4090,18 +4080,12 @@ jobs:
             exit 0
           fi
 
-          # A title that names the files and the upstream pull request(s) the
-          # corrections came from, so a list of these pull requests is
-          # readable -- and searchable by upstream PR number -- without
-          # opening any of them.
-          PR_TAG=""
-          if [ -n "$SRC_PRS" ]; then
-            PR_TAG=" (from $UPSTREAM#${SRC_PRS//,/, #})"
-          fi
+          # The files, and nothing about the upstream pull request: the
+          # references are a general guide to Monero, not a log of reviews.
           files=$(git diff --cached --name-only | sed 's|.*/||' | sort -u | paste -sd', ' -)
-          TITLE="References: update $files$PR_TAG"
+          TITLE="References: update $files"
           if [ "${#TITLE}" -gt 70 ]; then
-            TITLE="References: update $(git diff --cached --name-only | wc -l) file(s)$PR_TAG"
+            TITLE="References: update $(git diff --cached --name-only | wc -l) file(s)"
           fi
 
           git commit -q -m "$TITLE

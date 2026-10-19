@@ -11,9 +11,10 @@ published pull requests got it wrong:
    request's HEAD -- the target branch plus that author's unmerged changes.
    The references describe upstream master. So "line 14523" in a correction
    may be a line only that pull request has, and a reader of the body could not
-   tell: nothing in it named the tree. The block this writes names the pull
-   request, its head and its base, and says plainly which of the two a citation
-   describes.
+   tell: nothing in it named the tree. The block this writes names the base
+   branch and says plainly that citations come from an unmerged head. It does
+   not name the upstream pull request: the references are a general guide to
+   Monero, and nothing here points back at one change.
 
 2. HEADINGS. The caller used to print `### Skipped` and then cat a SKIPPED.md
    that opened with its own `# Skipped`, so the body carried the heading twice,
@@ -227,12 +228,10 @@ def provenance(found):
             "symbol as unverified until checked against the branch the "
             "reference describes."
         )
-    lines = ["> **Where these observations come from.**", ">"]
-    for s in found:
-        lines.append(
-            "> - `%s#%s` at head `%s`, which targets `%s`."
-            % (s["upstream"], s["pr"], s["head"], s["base"])
-        )
+    bases = sorted({s["base"] for s in found})
+    lines = ["> **Where these observations come from.** A review of an "
+             "upstream pull request targeting "
+             + ", ".join("`%s`" % b for b in bases) + "."]
     lines += [
         ">",
         "> Every line number, symbol and quoted source below was read from "
