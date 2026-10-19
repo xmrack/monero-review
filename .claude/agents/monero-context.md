@@ -160,6 +160,11 @@ describes, and the two disagree, return it in `referenceUpdates`:
 - `evidence`: the path, symbol or command in the MONERO source that settles
   it, read in this checkout. Not a line number in the reference.
 
+The references are a general guide to Monero master, not a log of reviews.
+Write each correction about Monero itself, with no upstream pull request or
+issue number and no "this pull request". Something only the unmerged head
+under review does is not a reference update.
+
 You are the only reader who can catch these. You have just walked the code the
 reference describes, with the reference in front of you; nobody downstream has
 both. A stale reference is worse than none, because every skill here trusts

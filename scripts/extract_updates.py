@@ -82,6 +82,15 @@ ALLOWED_PREFIXES = (
 )
 
 
+PR_SPECIFIC = re.compile(
+    r"\b(?:PR|pull\s+request|issue)\s*#?\s*\d{2,}"
+    r"|(?<![\w/])#\d{3,}\b"
+    r"|github\.com/[^\s/]+/[^\s/]+/(?:pull|issues)/\d+"
+    r"|\bunmerged\b|\b(?:this|the)\s+(?:pull\s+request|PR|change\s+under\s+review)\b",
+    re.IGNORECASE,
+)
+
+
 def clean(entry):
     """Return a sanitised entry, or None when it may not be acted on."""
     if not isinstance(entry, dict):
@@ -108,6 +117,14 @@ def clean(entry):
         print("extract: refusing suspicious path: %r" % out["file"], file=sys.stderr)
         return None
     out["file"] = path
+    # The references are a general guide to Monero master. An entry that names
+    # an upstream pull request, or only describes one, is not a correction to
+    # them.
+    for k in ("says", "correction", "evidence"):
+        if PR_SPECIFIC.search(out[k]):
+            print("extract: refusing entry tied to one pull request in %r" % k,
+                  file=sys.stderr)
+            return None
     return out
 
 
