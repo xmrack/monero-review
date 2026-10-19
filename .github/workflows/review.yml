@@ -2891,26 +2891,6 @@ jobs:
             || fail publish-failed
           outcome published
 
-          # Earlier reviews of this pull request at other heads get a link to
-          # this one. Nothing is closed: that is a human's call. The comment is
-          # fixed text, so nothing the model wrote decides what is said where.
-          # Public route only, and silent on both, so the log reads the same.
-          if [ "$route" = public ]; then
-            new=$(grep -oE '[0-9]+$' "$RUNNER_TEMP/private-state/created" | tail -1 || true)
-            earlier=$(OWNER=${GITHUB_REPOSITORY%%/*} PRN="${{ matrix.pr }}" HEAD12="$SHA" \
-              gh api --paginate "repos/$GITHUB_REPOSITORY/issues?state=open&labels=pr-${{ matrix.pr }}&per_page=100" \
-                --jq '.[] | select(.pull_request == null)
-                      | select(.user.login == "github-actions[bot]" or .user.login == env.OWNER)
-                      | select(.title | test("^Review: \\S+#" + env.PRN + " @ [0-9a-f]{12}\\b"))
-                      | select(.title | contains(env.HEAD12) | not) | .number' \
-                2>/dev/null || true)
-            for i in $earlier; do
-              [ -n "$new" ] && [ "$i" != "$new" ] || continue
-              gh issue comment "$i" --repo "$repo" \
-                --body "Re-reviewed at \`$SHA\` in #$new." >/dev/null 2>&1 || true
-            done
-          fi
-
           # NO REVIEW BODY IN THE SUMMARY, on either route, and written only
           # once the issue exists. It is the same text as the issue, and a
           # summary that carried it only when the review went public would
