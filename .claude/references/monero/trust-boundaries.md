@@ -524,6 +524,13 @@ signed hashes.
   `notify`), DNS checkpoints (only with `--enforce-dns-checkpointing`) and the
   DNS blocklist (`--enable-dns-blocklist`, default off). Whoever controls the
   moneropulse zones is trusted here, by design.
+- **DNSSEC root trust anchors** are static DS strings compiled into
+  `get_builtin_ds` and loaded with `ub_ctx_add_ta` in `add_anchors`
+  (`src/common/dns_utils.cpp`). Nothing in the tree does RFC 5011 automatic
+  anchor updates: `git grep -n "ub_ctx_add_ta\|auto-trust-anchor\|ub_ctx_add_ta_autr\|ub_ctx_add_ta_file" -- src contrib tests`
+  finds only the `ub_ctx_add_ta` call in `add_anchors`. So a root KSK
+  rollover needs a code change and a release, and a binary without the new
+  DS fails DNSSEC validation once the new KSK signs.
 - **Public nodes.** Peers advertise an RPC port in their handshake and
   peerlist entries. `get_public_nodes` (restricted surface) serves those
   entries to wallets, which offer them as remote nodes. A P2P peer can
