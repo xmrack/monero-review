@@ -73,7 +73,7 @@ though they will.
 
 <Only when the run returned `priorFindings`. Omit the heading entirely when it is empty. One bullet per entry, none dropped.>
 
-- `#<issue>` · <title> (was <SEVERITY>) · **<status>** <what settles it. `<status>` is exactly one of `still holds` (then: published as F<n>), `fixed` (the line that now stops it), `does not hold` (the line that shows it), `refuted now` (the deciding line), or `not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). One line.>
+- **<status>** · `#<issue>` · <title> (was <SEVERITY>) · <what settles it>. `<status>` comes first, so a reader sees at a glance whether the finding was fixed. It is exactly one of `Fixed` (the line that now stops it), `Still holds` (published as F<n>), `Does not hold` (the line that shows it), `Refuted now` (the deciding line), or `Not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). One line.
 
 ## Refuted
 
