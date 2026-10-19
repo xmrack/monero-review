@@ -187,6 +187,11 @@ reach `src/` through one edge only: `target_link_libraries` in
 behind the `MX25519_COPYLEFT` option) is added `EXCLUDE_FROM_ALL` in
 `external/CMakeLists.txt`, and nothing in `src/` links it on master; a PR
 that links it brings a new scalar-multiplication path into the build.
+PR 10965 (unmerged) is such a PR: its `src/crypto/CMakeLists.txt` links
+`mx25519_static` PUBLIC into `cncrypto`, so everything that links `cncrypto`
+gets mx25519 and its run-time backend selection (`get_impl()` in
+`src/crypto/x25519.cpp`, `mx25519_select_impl(MX25519_TYPE_AUTO)`). Check
+`grep -rn mx25519 src/*/CMakeLists.txt` before trusting "on master".
 `contrib/epee/` is Monero's own but
 predates most of `src/` and follows its own conventions (the epee dialect
 in `coding-style.md`).

@@ -208,7 +208,11 @@ Carrot is present only as groundwork: `CarrotOutputPairV1` in
 `ge_p3_to_x25519` / `edwards_bytes_to_x25519_vartime` in
 `src/crypto/crypto-ops.c`, which nothing outside that file calls
 (`grep -rn x25519 src tests`). There is no Carrot address, output type or
-scanning code on master.
+scanning code on master. PR 10965 (unmerged) adds a `crypto::x25519_*`
+wrapper in `src/crypto/x25519.{h,cpp}` and `tests/unit_tests/x25519.cpp`,
+which calls both helpers, so that grep then hits outside `crypto-ops.c`;
+production code still calls neither the helpers nor the wrapper there
+(`git grep -n 'edwards_bytes_to_x25519_vartime\|ge_p3_to_x25519' -- src tests`).
 
 **It also means Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
 staticlib crate linked as `libfcmp_pp_rust.a`. Its `Cargo.toml` pulls
