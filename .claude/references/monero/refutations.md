@@ -166,6 +166,19 @@ arithmetic there. On master the Guix release hosts (`HOSTS` in
 and `contrib/depends` builds 32-bit hosts for anyone compiling their own.
 Re-check those lists on the head you are reviewing.
 
+MEASURED: in `Blockchain::load_compiled_in_block_hashes`
+(`src/cryptonote_core/blockchain.cpp`) the `nblocks >` bound divides by
+`sizeof(hash)` (32) while `size_needed` multiplies by
+`sizeof(crypto::hash) * 2` (64), which looks like a 32-bit wrap leading to an
+over-read. It is not reachable: `size_needed` wraps only when
+`nblocks >= 2^26`, and `m_blocks_hash_of_hashes.reserve(nblocks)` runs before
+the copy loop and throws `length_error` for any count above `max_size()`
+(libstdc++ `vector::reserve` in `bits/vector.tcc`, `__throw_length_error`),
+which on 32-bit targets is below 2^26. The input is also the blob compiled
+into the binary, a trust root. Do not re-propose it as a memory-safety
+finding; at most it is hardening. Re-read the function on the head you are
+reviewing: moving the `reserve` after the loop reopens it.
+
 ## The race is actually serialized
 
 Before reporting concurrent access, establish that two threads genuinely reach
