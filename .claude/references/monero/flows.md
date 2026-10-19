@@ -516,9 +516,17 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 
 1. **Peer selection** — `node_server::connections_maker` on the 1-second idle
    handler. Chooses *who* to talk to; validates nothing about honesty.
-2. **`process_payload_sync_data`** — the peer's claimed height is **taken at
-   face value as the sync target** (`set_target_blockchain_height`); its
-   claimed cumulative difficulty is not read. Only the hard-fork version and
+2. **`process_payload_sync_data`** — the peer's claimed height **raises the
+   sync target** (`set_target_blockchain_height`) only for a public-zone
+   peer whose top block we do not have, and only when it exceeds the current
+   target. A peer that already has our top block (the `have_block(hshd.top_id)`
+   early return) and every non-public-zone peer (the
+   `get_zone() != epee::net_utils::zone::public_` early return) go to
+   `state_normal` without touching the target; both returns come before the
+   call. Any zone can still raise the target later through
+   `handle_response_chain_entry` and `handle_response_get_objects` —
+   `grep -n set_target_blockchain_height src/cryptonote_protocol/cryptonote_protocol_handler.inl`
+   lists the raise sites. Its claimed cumulative difficulty is not read. Only the hard-fork version and
    the pruning seed shape are checked; a downward height revision costs one
    score point (`hit_score`), not a disconnect.
 3. **`NOTIFY_REQUEST_CHAIN` / `handle_response_chain_entry`** — the densest
