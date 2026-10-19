@@ -309,7 +309,7 @@ and `false` returns the cached pool view). A new handler is unrestricted unless 
 - **A missing request field is not an error.** `KV_SERIALIZE` discards the
   serializer's return, so an absent JSON key leaves the value-initialised
   default. Every field needs a validity check in the handler.
-- **A JSON string is not accepted where a `uint64_t` is declared.** epee has
+- **On master, a JSON string is not accepted where a `uint64_t` is declared.** epee has
   no string-to-integer coercion: such a field hits the generic
   `convert_to_integral<from, to, false>` in
   `contrib/epee/include/storages/portable_storage_val_converters.h`, which
@@ -318,7 +318,14 @@ and `false` returns the cached pool view). A new handler is unrestricted unless 
   (`contrib/epee/include/serialization/keyvalue_serialization.h`, reached
   via `PREPARE_OBJECTS_FROM_JSON` in
   `contrib/epee/include/net/http_server_handlers_map2.h`) and the request is
-  rejected.
+  rejected. This holds on master only. Since monero-project/monero PR
+  11552, `release-v0.18` has a
+  `convert_to_integral<std::string, uint64_t, false>` specialization in
+  the same header, which accepts a non-empty, all-ASCII-digit string that
+  fits in `uint64_t`, in both JSON and binary portable storage. Other
+  integer widths still reach the generic throwing case. Check with
+  `git grep -n "convert_to_integral<std::string" <branch> -- contrib/epee`
+  (nothing on master; the specialization on `origin/release`, v0.18.5.4).
 - A handler that returns false without setting `er.code` produces
   `{"error":{"code":0,…}}`; an escaping exception produces
   `{"error":{"code":0,"message":""}}`.
