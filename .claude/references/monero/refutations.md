@@ -23,6 +23,15 @@ This is the most common way a genuine memory-safety *primitive* turns out to
 have no reachable path. The primitive being real is not the finding; reaching
 it is.
 
+One such bound: a `tx_source_entry` parsed from a binary blob (`pending_tx`,
+unsigned or signed tx sets, wallet-rpc `tx_metadata`) cannot carry
+`real_output >= outputs.size()`. Its serializer (`BEGIN_SERIALIZE_OBJECT` in
+`struct tx_source_entry`, `src/cryptonote_core/cryptonote_tx_utils.h`) has
+`if (real_output >= outputs.size()) return false;`, so the whole parse fails.
+Indexing `src.outputs[src.real_output]` after a successful binary parse is
+bounded, and an out-of-bounds read there is not a finding unless the source
+entry was built some other way -- say how it was.
+
 ## Proof-dimension bugs in RingCT and Bulletproofs+
 
 Indexing and buffer-sizing bugs in `src/ringct/` verification are frequently
