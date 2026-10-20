@@ -50,10 +50,16 @@ relying on them.
 readtags -t tags <symbol>          # where a symbol is DEFINED — better than cscope for C++
 cscope -d -L3 <function>           # functions calling this function
 cscope -d -f tests.out -L3 <fn>    # callers in tests/, a separate database
+rtool callers <function>           # both databases plus every git grep -w match
 ```
 
-A hit is reliable. **A miss is not** — and a miss on `cscope.out` alone means
-no *production* caller, not no caller.
+A hit is reliable. **A miss is not.** cscope does not see a call written
+inside a macro argument, and most guards here are exactly that:
+`passes_max_size_check` is called four times, all inside
+`CHECK_AND_ASSERT_MES(...)`, and `cscope -L3` returns none of them. Before
+calling anything uncalled, read the `git grep -w` matches as well; `rtool
+callers` prints both. A miss on `cscope.out` alone says nothing about tests
+either: that is `tests.out`.
 
 ---
 

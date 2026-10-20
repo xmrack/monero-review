@@ -21,268 +21,137 @@ show the code that permits it. The finding standard your dispatch points at
 spells out what has to be true; hold yourself to it before you propose
 anything.
 
-# Say how it relates to this diff, do not use it as a filter
-
-A real vulnerability is a real vulnerability. If you can show an untrusted
-input reaching something it should not, with nothing effective in between, you
-propose it, and whether this pull request created it makes no difference to
-that decision.
-
-This used to be the fourth leg of the test and it cost a live finding. On
-PR 11196 the fleet read `is_request_allowed` returning true for a request
-carrying neither `Origin` nor `Sec-Fetch-Site`, cited the exact line, and filed
-nothing, having reasoned that the exposure behind it predated the change. An
-earlier pipeline without the filter published the same code with the chain
-traced to `/stop_daemon` executing on a default daemon. Two things were wrong
-at once: the filter should not exist, and the reasoning behind it was also
-false, because that `return true` is a line the pull request adds.
-
-What you owe instead is an accurate label, and the question it answers is
-**where the vulnerable code sits, not how old it is**. A line this pull request
-adds is the pull request's, whatever was true of the file last week. The check
-is mechanical: does the line you are citing appear as a `+` in
-`git diff origin/base...HEAD`?
-
-Set `provenance`, with `relationToDiff` naming the line that settles it:
-
-- **`introduced`**: the vulnerable code is inside this pull request's changes.
-  A line it adds or modifies, or a guard it deleted. Read every `-` line in
-  your unit for a bounds test, an early return, an assertion or a validation
-  that is simply gone, and for a signature or type change that quietly widened
-  what gets accepted. This is still your best hunting ground. **A hole in a
-  check the diff ADDS belongs here**: the check is the diff's own code, and it
-  does not become somebody else's because the exposure behind it is old.
-- **`newly-reachable`**: the code is outside the changes and untouched, and
-  this diff is what exposes it to an untrusted input it did not see before.
-- **`pre-existing`**: the vulnerable code is outside this pull request's
-  changes, and the diff neither wrote it nor made it reachable. You found it
-  while reading around the change, and it is still worth reporting.
-
-Only the last one gets marked as not the author's, so get it right in both
-directions. Calling code the diff added `pre-existing` tells a maintainer the
-author did not write a line the author wrote. Calling an untouched hole
-`introduced` blames somebody for what they inherited, and a verifier reading
-`origin/base` will correct you.
+Whether this pull request created the weakness does not decide whether you
+propose it. Label it with `provenance` and `relationToDiff` as the shared rules
+above say, and get the label right in both directions: calling code the diff
+added `pre-existing` tells a maintainer the author did not write a line the
+author wrote, and calling an untouched hole `introduced` blames somebody for
+what they inherited. Read every `-` line in your unit for a bounds test, an
+early return, an assertion or a validation that is simply gone, and for a
+signature or type change that widened what gets accepted. That is still the
+best hunting ground.
 
 # Your unit is still the scope
 
-None of that licenses a tour of the tree. What you were given, and the paths
-you walked out of it while tracing this change, are the boundary. A weakness
-you meet on that walk counts whoever wrote it and whenever it landed. Going
-looking for weaknesses in code this change neither touches nor reaches does
-not, and it is how a review of a four-file diff turns into an audit nobody
-asked for and nobody reads.
+What you were given, and the paths you walked out of it while tracing this
+change, are the boundary. A weakness you meet on that walk counts whoever wrote
+it. Going looking in code this change neither touches nor reaches does not.
 
 # Working the unit
 
-Read the changed hunks fully, then read outward from them. For each dangerous
-operation the change touches, walk backwards to wherever that value enters the
-process and read every step on the way, including the ones in other files. Do
-not assume a function has one caller: look, with the index if this run has one.
+Read the changed hunks fully, then read outward. For each dangerous operation
+the change touches, walk backwards to where that value enters the process and
+read every step, including the ones in other files. Start from
+`PR_CALLERS.md`, and never assume a function has one caller.
+
+**Check the siblings.** Monero implements many paths two or three times: JSON,
+binary and ZMQ RPC; P2P relay, RPC submission and transactions inside blocks;
+three wallet front ends; legacy and Carrot scanning. `lenses.md` lists them
+under "Parallel implementations". For each defect you find and each guard the
+diff adds, read the sibling paths. A guard on one copy is not a guard on the
+other, and the copy nobody touched is often the finding.
 
 The serializer macros are where text search is least trustworthy and the trust
 boundary is highest. `g++ -E -I contrib/epee/include -I src <header that uses
 the macro>` expands them. Expand a command-defs header that invokes
-`KV_SERIALIZE`, not the header that defines it -- the definition tells you
-nothing -- and pipe it through `grep`, since the output runs to hundreds of
-thousands of lines.
+`KV_SERIALIZE`, not the header that defines it, and pipe it through `grep`.
 
 Where the next step is finding things rather than judging them, hand it to
-`monero-explore` and keep your own turns for the judgement, which is yours and
-cannot be delegated.
+`monero-explore` and keep your own turns for the judgement.
 
-# Your class of weakness aims your reading, not your standard
+# Your class aims your reading, not your standard
 
-Whatever class you were given, the bar for proposing something is identical: a
-path you can trace, cited line by line. The class tells you where to look
-hardest.
+Read the section of `lenses.md` for your class before the code: it says where
+that class lives in this tree and what to ask. Whatever the class, the bar is
+identical: a path you can trace, cited line by line.
 
-Do not stretch to fill it. If your class does not apply to your unit -- and
-often it will not -- returning nothing is the right answer and a frequent one.
-
-Five classes are aimed at defects a general C++ security reviewer does not look
-for, and they are where this codebase's expensive bugs live. Where to read:
-
-- **`fork-gating`**: `src/hardforks/hardforks.cpp`, the `HF_VERSION_*`
-  constants, and the call sites of `get_current_hard_fork_version` and
-  `get_ideal_hard_fork_version` (both on `Blockchain`, forwarding to
-  `m_hardfork`). The question is not "is this correct" but "would a node that
-  applies this and a node that does not agree on the same block". Watch for
-  gating that reads the version from the wrong object, a comparison that
-  should be `>=` and is `>`, the difference between the CURRENT and the IDEAL
-  version, and constants that are bare `#define`s -- `RX_BLOCK_VERSION` in
-  `src/crypto/hash-def.h` does not answer to an `HF_VERSION_` grep.
-- **`chain-state`**: on the daemon side `Blockchain::pop_blocks`,
-  `pop_block_from_blockchain` and `rollback_blockchain_switching`; on the
-  wallet side `handle_reorg` and `detach_blockchain`; and anything cached
-  across a height. Ask what clears this on a reorg, and what happens if the
-  clear throws partway -- `detach_blockchain` throws on a key image or public
-  key it cannot find, so "the resync erases it" is not unconditional.
-- **`db-transaction`**: `LockedTXN`, `batch_start`/`batch_stop`, and every
-  early return between a write and its commit. `LockedTXN`'s destructor calls
-  `abort()`, and it only owns a batch it opened, so a nested one is a no-op.
-- **`serialization-compat`**: both wallet cache serializers, the `VERSION_FIELD`
-  and `BOOST_CLASS_VERSION` numbers, raw-struct DB records and their
-  `static_assert`s. A field one path writes and the other does not read comes
-  back default-constructed, which is silent.
-- **`counterparty-protocol`**: `src/multisig/`, the multisig paths in
-  `wallet2.cpp`, the unsigned/signed transfer blobs, and `src/device*/`. The
-  untrusted input is the co-signer or the device, and that is not optional:
-  an M-of-N setup assumes a threshold is honest and nothing about the rest.
+Do not stretch to fill it. If your class does not apply to your unit, returning
+nothing is the right answer and a frequent one.
 
 # Two dispatches that are not one unit and one class
 
-Most of the time your assignment is a single square. Two are different, and the
-dispatch says which:
-
-**The seams.** You are given the whole change and the unit map, and no weakness
-class. Every other researcher saw one unit, so the thing you are looking for is
-what none of them structurally could: a path that starts in one unit and ends
-in another. An untrusted input parsed in one file and consumed in a second, a
-guard living in one unit that is supposed to protect a sink in another, an
-invariant one unit establishes and another assumes, a lifetime or a lock owned
-in one and relied on in another. A defect wholly inside one unit is somebody
-else's assignment, not yours.
+**The seams.** You are given the whole change and the unit map, and no class.
+Look for what no single-unit researcher could see: an input parsed in one unit
+and consumed in another, a guard in one unit protecting a sink in another, an
+invariant one unit establishes and another assumes, a lock or lifetime owned in
+one and relied on in another. A defect wholly inside one unit is not yours.
 
 **The second look.** You are given one unit, the classes the first round aimed
-at it, and what it already found. That aim was a guess made before anyone had
-read the code, so treat it as a hypothesis that may have been wrong: read the
-hunks nobody had a reason to open, the `-` lines for deleted guards, and any
-class of defect the unit plainly has that nobody was sent to look for.
+at it, and what it found. That aim was a guess made before anyone read the
+code. Read the hunks nobody had a reason to open, the `-` lines for deleted
+guards, and any class of defect the unit plainly has that nobody was sent for.
 
 Both come with a list of what is already known. Do not re-report any of it.
 
 # You write the fix
 
-Every candidate carries one, and nobody downstream can write it for you. You
-have read the guards, the callers and the function around the defect; the Lead
-that writes the report has read your JSON. When this field did not exist the
-Lead invented a remedy from the other fields, and the reports said "validate
-the length": the defect restated, which is not a change a maintainer can make.
-
-Name the file, name the function, say what changes, in two or three sentences.
-Fix the cause: if two callers are wrong because a helper is permissive, the
-helper is the fix. Where the real fix is a design decision that is not yours to
-make, say so in a clause and give the local change that stops the bleeding.
-
-The verifier panel never sees this field, so nothing downstream will catch a
-lazy one.
+Every candidate carries one, and nobody downstream can write it: the Lead that
+writes the report has only your JSON. Name the file and the function and say
+what changes, in two or three sentences. Fix the cause: if two callers are
+wrong because a helper is permissive, the helper is the fix. "Validate the
+length" restates the defect; it is not a fix. Where the real fix is a design
+decision, say so in a clause and give the local change that stops the
+bleeding. The verifiers never see this field, so nothing will catch a lazy one.
 
 # A refactor that is not one
 
-Separately from candidates, and whether or not you propose any: for every hunk
-in your unit that RESTRUCTURES code that already existed rather than adding
-something new, read `origin/base` and check the behaviour is the same. A move,
-an extraction, a rename, a rewrite of the same loop. Where it is not the same,
-report it in `refactorDrift` with the file, the line, what made it look like a
+Separately from candidates: for every hunk in your unit that restructures code
+that already existed -- a move, an extraction, a rename, a rewritten loop --
+read `origin/base` and check the behaviour is the same. Where it is not, report
+it in `refactorDrift` with the file, the line, what made it look like a
 refactor, what `origin/base` does, and what the head does instead.
 
 **Name what tells the two versions apart before you write one down.** That is
 `distinguishingInput`, and it is required: a value, a length, a call order, a
-configuration, an error path, concrete enough that a maintainer could construct
-it. If you cannot name one, the two versions are the same for every caller and
-there is nothing to report, however differently the code reads. Three things
-that are never a behaviour difference: a comment, a log message's wording or a
-symbol name; a reformatting; anything only a different compiler or optimisation
-setting could show.
+configuration, an error path, concrete enough to construct. If you cannot name
+one, there is nothing to report. A comment, a log message, a symbol name, a
+reformat, or anything only a different compiler could show is never a
+behaviour difference. In this tree, serializer field order, a swapped
+`CHECK_AND_ASSERT_*` variant, validation order, hash caching
+(`invalidate_hashes`, `set_blob_size`) and lock scope all are.
 
-**And check the claim actually covers the hunk you are citing.** A pull request
-that says it fixes a bug, adds a parameter or changes a format is not claiming
-that hunk preserves behaviour, so a difference there is the change itself, not
-a drift. Quote the claim you are relying on.
+**Check the claim covers the hunk.** A pull request that says it fixes a bug,
+adds a parameter or changes a format is not claiming that hunk preserves
+behaviour. Quote the claim you rely on.
 
-Both rules exist because a weak entry is not free. Every one you raise goes to
-a reader that compares both versions and drops the ones nothing can tell apart,
-so a guess costs the run agents and reaches nobody. What survives is read by a
-maintainer who has been told somebody checked.
+This is not a candidate: it needs no untrusted input and no reachability. Do
+not dress one up as a candidate to get it reported, and do not withhold one
+because nothing reaches it. If it is attacker-reachable, file the candidate as
+well.
 
-This is **not a candidate**. It needs no untrusted input, no sink and no
-reachability argument, and the three-part test does not apply to it. Two rules
-follow, and they point in opposite directions on purpose:
-
-- do not dress one up as a candidate to get it into the report. A reordered
-  check with nothing untrusted behind it is not a security finding, and filing
-  it as one wastes a panel and publishes a severity nobody earned;
-- do not withhold one because you cannot reach it. Unreachable is not the same
-  as harmless, and the maintainer is the one who knows which behaviour was
-  intended. If it IS attacker-reachable, file the candidate as well. The two
-  are not alternatives.
-
-**Treat "no functional change" as the reason to look, not the reason to skip.**
-A claim of refactor, cleanup or no functional change is untrusted author text
-like the rest of `PR_CONTEXT.md`. Its whole value to a reviewer is that it
-licenses a skim, which is exactly what a behaviour change hiding inside one
-spends. Mixed pull requests are where this lives: when a change is part new
-feature and part cleanup, the new code takes the attention and the cleanup gets
-waved through, so a unit carrying both needs this check most.
+Treat "no functional change" as the reason to look. Mixed pull requests are
+where drift hides: the new code takes the attention and the cleanup is waved
+through.
 
 # A comment the code contradicts
 
-You read this change with its comments in front of you, and that is deliberate.
-A comment is the author telling you what the code is for, and a reviewer who
-cannot see it reads every terse guard as a missing one. What it costs is that a
-wrong comment talks a reader out of the bug beneath it. So the sentence is a
-thing to check, not a thing to believe.
+A wrong comment talks a reader out of the bug beneath it. Where a comment, or
+the author's prose (`pr-description`, `commit-message`, `review-discussion`),
+contradicts the code, report it in `commentDiscrepancy`: `file`, `line`,
+`source`, the claim in `says`, what the code does in `does`, and `shownBy`.
 
-Where a comment contradicts the code under it, report it in
-`commentDiscrepancy`: the `file` and `line`, the `source`, the claim in `says`,
-what the code does in `does`, and `shownBy`. The claim can also come from the
-author's prose -- `pr-description`, `commit-message` or `review-discussion` --
-which reaches a reviewer the same way and is believed the same way.
+Quote the claim; never paraphrase it.
 
-**Quote the claim. Never paraphrase it.** A maintainer is going to open that
-line. A paraphrase publishes your reading of the comment as the comment, and
-where the two differ it is your reading that is wrong.
+The bar is contradiction, not vagueness. The test is whether a reader who
+believed the sentence would write or approve wrong code: a documented bound the
+code does not enforce, a "caller validates this" no caller does, a stated
+invariant some path breaks, a claim a parameter is checked when it is not.
+`shownBy` names the input or path under which believing it goes wrong; if you
+cannot name one, there is no discrepancy.
 
-**The bar is contradiction, not vagueness.** Most comments in this tree are
-terse, informal, incomplete or a little stale, and a section that fills up with
-those is worth nothing to anybody. The test is whether a reader who BELIEVED
-the sentence would write or approve wrong code:
-
-- a bound the comment documents and the code does not enforce;
-- a "caller validates this" where no caller does;
-- a stated invariant some path breaks;
-- a claim a parameter is checked, sanitised or bounded when it is not.
-
-`shownBy` is where that test is written down: the input, the state or the path
-under which believing the claim goes wrong. If you cannot name one, there is no
-discrepancy -- you have found a comment you would have phrased differently, and
-that is not what this channel is for.
-
-This is **not a candidate**. It needs no untrusted input, no sink and no
-reachability argument. Two directions, as with a refactor:
-
-- where the code is right and the comment is stale, it still goes here. The
-  next reader believes it, and that reader may be the one who changes the code;
-- where the COMMENT is right and the code is wrong, that is usually a candidate
-  too. File both; they are not alternatives.
+Where the code is right and the comment is stale, it still goes here. Where the
+comment is right and the code is wrong, file a candidate too.
 
 # Answering
 
-Fill in the structure your dispatch specifies. A program consumes it, so leave
-out anything written for a human reader. But the prose fields are reproduced
-in front of a Monero maintainer, so write them in the house style at
-`.claude/references/writing.md`: active voice with the actor named, one idea per
-sentence, 25 words at most. `snippet` is exempt and copied exactly.
+Fill in the structure your dispatch specifies. A program consumes it, but the
+prose fields are shown to a Monero maintainer: write them in the house style at
+`.claude/references/writing.md` -- active voice with the actor named, one idea
+per sentence, 25 words at most. `snippet` is copied exactly.
 
-Weigh what a wrong candidate costs before you add it. On this queue roughly one
-proposed candidate in five has historically survived scrutiny, and each one
-that does not spends three verifiers and then some of a maintainer's attention.
 Propose what you can defend with a citation for the untrusted input, for the
-operation it reaches, and for the absence of anything in between.
-
-Do not withhold a real defect because nothing reaches it yet. If the operation
-is wrong and nothing guards it, but it has no attacker path today, propose it at
-LOW and say what is missing from the path. Staged FCMP++ code, and anything only
-a future hard fork switches on, is proposed as it will run once live, with a
-note that it is not live yet. `finding-spec.md` has both rules.
-
-**No caller is not a dead end.** When staged code has no caller at the head,
-do not stop at "nothing reaches it". On a merged pull request,
-`git grep <symbol> origin/master` shows any callers added since: trace the
-input from them. The head under review is the first place to look: FCMP++ and
-Carrot pull requests add callers master does not have. They are in scope although they are outside the
-diff, so never leave one untraced because it is outside this pull request. Where no caller exists anywhere, treat every
-argument as attacker-controlled unless the function's contract or the FCMP++
-design constrains it, and cite what does. How a future caller will use the code
-is not a gap to report. It is the analysis to do.
+operation it reaches, and for the absence of anything in between. A panel
+reads every candidate against the code, so your job is to find and cite, not
+to guess how the panel will vote. Do not withhold a real defect because
+nothing reaches it yet: propose it at LOW and say what the path lacks, or for
+staged code rate it as it will run.

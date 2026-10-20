@@ -1,0 +1,214 @@
+#!/usr/bin/env -S python3 -I
+"""Read-only helpers for the review agents, with the right flags built in.
+
+  rtool def <symbol>                     definitions (C++ tags, then Rust tags)
+  rtool callers <function>               callers in src/contrib and in tests
+  rtool history <path> [count]           recent commits touching a path
+  rtool git <repo> <cmd> [args...]       read-only git inside a submodule or
+                                         rust-deps/<name>; cmd is one of
+                                         log show diff grep ls-files ls-tree
+                                         rev-list rev-parse
+  rtool weggli [-u] [-R v=re]... <pattern> <path>
+                                         weggli in C++ mode over .c .cc .cpp
+                                         .h .hpp .inl
+
+Installed outside the workspace by the harness, so a review cannot rewrite
+it. Every argument is checked: nothing here writes a file, runs a pager or
+an external diff driver, or reaches outside the checkout.
+"""
+import os
+import re
+import subprocess
+import sys
+
+GIT_CMDS = {"log", "show", "diff", "grep", "ls-files", "ls-tree", "rev-list", "rev-parse"}
+# Options a git call may carry. Anything else starting with "-" is refused:
+# --output writes a file, -O runs a pager, --ext-diff and --textconv run
+# configured programs.
+GIT_OPT = re.compile(
+    r"^(--|-p|--patch|-s|--stat|--numstat|--shortstat|--oneline|--name-only|"
+    r"--name-status|--no-merges|--merges|--reverse|--first-parent|--all|-i|-w|"
+    r"-l|-n|-E|-F|-W|-h|--cached|--word-diff|--submodule=log|--full-history|"
+    r"--decorate|--graph|--abbrev-commit|-r|-t|-z|--full-name|"
+    r"-U[0-9]+|-[0-9]+|-n[0-9]+|--max-count=[0-9]+|--skip=[0-9]+|"
+    r"--format=.*|--pretty=.*|--since=.*|--until=.*|--author=.*|--grep=.*|"
+    r"-S.+|-G.+|-e)$")
+SAFE_GIT = ["git", "--no-pager", "-c", "core.pager=cat", "-c", "diff.external=",
+            "-c", "core.fsmonitor=false", "-c", "protocol.file.allow=never"]
+NAME = re.compile(r"^[A-Za-z_~][A-Za-z0-9_:~<>]*$")
+SRC_EXT = ["c", "cc", "cpp", "h", "hpp", "inl"]
+
+
+def die(msg):
+    print("rtool: " + msg, file=sys.stderr)
+    sys.exit(2)
+
+
+def root():
+    r = os.environ.get("RTOOL_ROOT")
+    if not r:
+        p = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+        if p.returncode:
+            die("not inside the checkout")
+        r = p.stdout.strip()
+    return os.path.realpath(r)
+
+
+def inside(path, base):
+    real = os.path.realpath(path)
+    return real == base or real.startswith(base + os.sep)
+
+
+def run(cmd, cwd):
+    sys.stdout.flush()
+    env = dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null",
+               GIT_PAGER="cat", PAGER="cat", GIT_EXTERNAL_DIFF="")
+    try:
+        return subprocess.run(cmd, cwd=cwd, env=env).returncode
+    except FileNotFoundError:
+        die(f"{cmd[0]} is not installed in this run; see TOOLING.md")
+
+
+def no_dash(args, what):
+    for a in args:
+        if a.startswith("-"):
+            die(f"{what}: options are not accepted here ({a})")
+
+
+def cmd_def(args, base):
+    if len(args) != 1 or not NAME.match(args[0]):
+        die("usage: rtool def <symbol>")
+    found = False
+    for tags in ("tags", "tags-rust"):
+        if os.path.isfile(os.path.join(base, tags)):
+            p = subprocess.run(["readtags", "-t", tags, "-e", "-n", args[0]],
+                               cwd=base, capture_output=True, text=True)
+            if p.stdout.strip():
+                found = True
+                print(f"# {tags}")
+                print(p.stdout.rstrip())
+    if not found:
+        print("# no definition in the index; a miss is inconclusive (macros, templates)")
+    return 0
+
+
+def cmd_callers(args, base):
+    if len(args) != 1 or not NAME.match(args[0]):
+        die("usage: rtool callers <function>")
+    name = re.split(r"::", args[0])[-1]
+    for db, label in (("cscope.out", "cscope, production (src, contrib)"), ("tests.out", "cscope, tests")):
+        print(f"# {label}")
+        if not os.path.isfile(os.path.join(base, db)):
+            print(f"(no {db} in this run)")
+            continue
+        p = subprocess.run(["cscope", "-d", "-f", db, "-L3", name],
+                           cwd=base, capture_output=True, text=True)
+        print(p.stdout.strip() or "(none)")
+    # cscope misses a call written inside a macro argument, which is most of
+    # the guards here (CHECK_AND_ASSERT_MES(f(x), ...)), so the text matches
+    # always follow.
+    print("# git grep -w, every text match (catches calls inside macro arguments)")
+    p = subprocess.run(SAFE_GIT + ["grep", "-n", "-w", "-e", name, "--", "src", "contrib", "tests"],
+                       cwd=base, capture_output=True, text=True)
+    lines = p.stdout.splitlines()
+    print("\n".join(lines[:60]) or "(none)")
+    if len(lines) > 60:
+        print(f"... {len(lines) - 60} more; narrow with git grep")
+    return 0
+
+
+def cmd_history(args, base):
+    if not 1 <= len(args) <= 2:
+        die("usage: rtool history <path> [count]")
+    no_dash(args, "history")
+    count = args[1] if len(args) == 2 else "15"
+    if not count.isdigit():
+        die("count must be a number")
+    if not inside(os.path.join(base, args[0]), base):
+        die("path is outside the checkout")
+    return run(SAFE_GIT + ["log", "--oneline", "-n", count, "--", args[0]], base)
+
+
+def repos(base):
+    """Directories `rtool git` may run in: submodules and fetched Rust deps."""
+    ok = set()
+    gm = os.path.join(base, ".gitmodules")
+    if os.path.isfile(gm):
+        p = subprocess.run(["git", "config", "-f", gm, "--get-regexp", r"submodule\..*\.path"],
+                           capture_output=True, text=True)
+        for line in p.stdout.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) == 2:
+                ok.add(os.path.realpath(os.path.join(base, parts[1])))
+    rd = os.path.join(base, "rust-deps")
+    if os.path.isdir(rd):
+        for d in os.listdir(rd):
+            full = os.path.join(rd, d)
+            if os.path.isdir(os.path.join(full, ".git")):
+                ok.add(os.path.realpath(full))
+    return ok
+
+
+def cmd_git(args, base):
+    if len(args) < 2:
+        die("usage: rtool git <repo> <cmd> [args...]")
+    repo, cmd, rest = args[0], args[1], args[2:]
+    real = os.path.realpath(os.path.join(base, repo))
+    if not inside(real, base) or real not in repos(base):
+        die(f"{repo} is not a submodule or a rust-deps/ repository")
+    if not os.path.exists(os.path.join(real, ".git")):
+        die(f"{repo} is not checked out in this run")
+    if cmd not in GIT_CMDS:
+        die(f"git {cmd} is not one of: " + " ".join(sorted(GIT_CMDS)))
+    after_dd = False
+    for a in rest:
+        if after_dd:
+            continue
+        if a == "--":
+            after_dd = True
+        elif a.startswith("-") and not GIT_OPT.match(a):
+            die(f"option {a} is not allowed")
+    extra = ["--no-ext-diff", "--no-textconv"] if cmd in ("log", "show", "diff") else []
+    return run(SAFE_GIT + [cmd] + extra + rest, real)
+
+
+def cmd_weggli(args, base):
+    flags, pos = [], []
+    it = iter(args)
+    for a in it:
+        if a == "-u":
+            flags.append(a)
+        elif a == "-R":
+            v = next(it, None)
+            if v is None or not re.match(r"^\$?[A-Za-z_][A-Za-z0-9_]*=", v):
+                die("-R takes var=regex")
+            flags += ["-R", v]
+        elif a.startswith("-"):
+            die(f"option {a} is not allowed")
+        else:
+            pos.append(a)
+    if len(pos) != 2:
+        die("usage: rtool weggli [-u] [-R v=re]... <pattern> <path>")
+    pattern, path = pos
+    if not inside(os.path.join(base, path), base):
+        die("path is outside the checkout")
+    ext = []
+    for e in SRC_EXT:
+        ext += ["-e", e]
+    return run(["weggli", "--cpp"] + flags + ext + ["--", pattern, path], base)
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("help", "-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    base = root()
+    cmds = {"def": cmd_def, "callers": cmd_callers, "history": cmd_history,
+            "git": cmd_git, "weggli": cmd_weggli}
+    if sys.argv[1] not in cmds:
+        die(f"unknown command {sys.argv[1]}; see rtool help")
+    return cmds[sys.argv[1]](sys.argv[2:], base)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -225,6 +225,10 @@ whether a MEDIUM is this afternoon's problem or next month's. State the
 condition plainly: a flag by its real spelling, an attacker position, a victim
 action.
 
+Write it from the confirming verifiers' `consequence` lines in the panel
+record, not from the proposal: they read the code for exactly this question.
+Where they disagree, say the narrower one and why.
+
 **Fix.** Five sentences at most and at most 120 words, and it must survive
 being read alone. Name the file, name the function, say what changes.
 "Validate the length" is not a fix; "reject the packet in

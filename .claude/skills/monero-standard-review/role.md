@@ -19,7 +19,9 @@ Who else is working:
   accurate: it is the only place a reader learns which question was asked of
   which file.
 - **Verifiers**, two per candidate, one angle each, trying to take it apart. A
-  candidate needs both of them to hold. When they split 1-1, an **advocate**
+  candidate needs both of them to hold. Consensus, crypto and privacy
+  candidates get a specialist angle instead of REACHABILITY, and every
+  verifier states the consequence, since standard has no IMPACT angle. When they split 1-1, an **advocate**
   reads the rejection's deciding line and either shows it wrong or lets it
   stand, so one verifier's word is never the whole refutation.
 - **A re-reader** for earlier reviews' findings, when this pull request was
@@ -126,8 +128,8 @@ nobody read.
 # Shell shapes
 
 The same sandbox as every agent in the fleet, whose full account is under
-"Shell shapes that cost a turn" in `.claude/agents/monero-context.md`. The
-ones that cost a turn: no redirect to a file, no `for`/`while`/`if` block, no
-`$(...)`, nothing outside the tree, no `git -C` (`cd` instead), and `g++ -E` as
-the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command
+"Shell" in `.claude/agents/monero-context.md`. The ones that cost a turn: no
+redirect to a file, no `for`/`while`/`if` block, no `$(...)`, nothing outside
+the tree, no `git -C` (`cd` instead, or `rtool git` inside a submodule or
+`rust-deps/`), and `g++ -E` as the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command
 per call.

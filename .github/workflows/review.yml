@@ -308,7 +308,7 @@ env:
   # agent, granted to every researcher, was dispatched ZERO times in 1,492 tool
   # calls. Both skills now tell their reader to reach for it by name.
   ALLOWED_TOOLS: >-
-    Read,Grep,Glob,Write(./**),Edit(./**),Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)
+    Read,Grep,Glob,Write(./**),Edit(./**),Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rtool:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)
 
   # Write and Edit are scoped to the working directory, which is the only
   # place a review writes. `Write(./**)` covers the tree and its
@@ -347,8 +347,8 @@ env:
   # with the reasoning for why that one is different.)
   #
   # Six separate `Agent(name)` entries rather than one `Agent(a, b, c, ...)`.
-  # Rules in this list union -- that is exactly how the 76 `Bash(...)` rules
-  # in the 82-entry list above work -- so six scoped rules grant the same
+  # Rules in this list union -- that is exactly how the 77 `Bash(...)` rules
+  # in the 83-entry list above work -- so six scoped rules grant the same
   # six agents, and they do it without asking whether a comma inside
   # parentheses survives the split.
   #
@@ -599,9 +599,81 @@ jobs:
 
           python3 scripts/select_prs.py >> "$GITHUB_OUTPUT"
 
-  review:
+  # BUILD AND TEST THE PULL REQUEST, the one place its code runs. Deep runs
+  # always; standard runs when the PR_TESTS variable is 1, because a sanitizer
+  # build costs about an hour of runner time per pull request.
+  #
+  # Its own job so nothing secret is anywhere near it: no issues scope, no
+  # Claude token, no transcript key. Inside, pr_tests.sh runs every build and
+  # test in a container with no network, no capabilities and the source
+  # mounted read-only. The only output is PR_TESTS.md, handed to the review as
+  # an artifact and read there as untrusted.
+  tests:
     needs: select
-    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]'
+    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' && (inputs.mode == 'deep' || vars.PR_TESTS == '1')
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pr: ${{ fromJSON(needs.select.outputs.prs) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Fetch the pull request
+        run: |
+          set -euo pipefail
+          meta=$(curl -fsS --retry 3 "https://api.github.com/repos/$UPSTREAM/pulls/${{ matrix.pr }}")
+          base=$(jq -r .base.ref <<<"$meta"); merged=$(jq -r .merged <<<"$meta")
+          merge=$(jq -r '.merge_commit_sha // ""' <<<"$meta")
+          [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::bad base branch"; exit 1; }
+          git clone -q --filter=blob:none --no-tags --single-branch --branch "$base" \
+            "https://github.com/$UPSTREAM.git" src
+          cd src
+          git fetch -q --filter=blob:none origin "+refs/pull/${{ matrix.pr }}/head:refs/heads/pr"
+          git checkout -q pr
+          if [ "$merged" = "true" ] && [ -n "$merge" ]; then
+            base_sha=$(git rev-parse "$merge^1")
+          else
+            base_sha=$(git merge-base origin/"$base" pr)
+          fi
+          echo "BASE_SHA=$base_sha" >> "$GITHUB_ENV"
+          # Submodule URLs come from the pull request: https only.
+          git -c protocol.allow=never -c protocol.https.allow=always \
+            submodule update -q --init --recursive
+          # The consensus suite only when consensus code or its tests move.
+          if git diff --name-only "$base_sha...pr" \
+               | grep -qE '^src/(cryptonote_core|cryptonote_basic|ringct|fcmp_pp|hardforks|blockchain_db|crypto|carrot_[a-z]+)/|^tests/core_tests/'; then
+            echo "CORE=core" >> "$GITHUB_ENV"
+          fi
+      # Per pull request: the build runs the pull request's CMake with the
+      # cache mounted, so a shared cache could be poisoned for the next one.
+      - uses: actions/cache@v6
+        with:
+          path: pr-tests-work/ccache
+          key: pr-tests-ccache-${{ matrix.pr }}-${{ github.run_id }}
+          restore-keys: pr-tests-ccache-${{ matrix.pr }}-
+      - name: Build and test in an offline container
+        timeout-minutes: 180
+        run: |
+          WORK="$PWD/pr-tests-work" bash harness/scripts/pr_tests.sh src "$BASE_SHA" PR_TESTS.md ${CORE:-}
+          cat PR_TESTS.md
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-tests-${{ matrix.pr }}
+          path: PR_TESTS.md
+          if-no-files-found: ignore
+          retention-days: 7
+
+  review:
+    needs: [select, tests]
+    if: ${{ !cancelled() && needs.select.result == 'success' && needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' }}
     # Deliberately unchanged for the deep pass. `ubuntu-latest` on a PUBLIC
     # repo is already the 4-vCPU tier, and the workflow runtime caps
     # concurrent agents at min(16, max(2, vCPUs - 2)) -- which is 2 at both 2
@@ -1550,6 +1622,41 @@ jobs:
       - name: Build symbol index
         continue-on-error: true
         run: bash "$RUNNER_TEMP"/harness-scripts/build_index.sh .
+
+      # rtool wraps the reads the sandbox otherwise refuses or that need flags
+      # agents kept getting wrong: git inside a submodule or rust-deps/, the
+      # callers of a function, weggli in C++ mode. Installed root-owned outside
+      # the workspace, so the model can run it but never rewrite it.
+      # PR_CALLERS.md lists the callers of every changed function up front.
+      # Written by the tests job, when it ran. Downloaded outside the
+      # workspace first, so a missing artifact leaves no file at all.
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: pr-tests-${{ matrix.pr }}
+          path: ${{ runner.temp }}/pr-tests
+      - name: Hand over the test results
+        run: |
+          if [ -s "$RUNNER_TEMP/pr-tests/PR_TESTS.md" ]; then
+            cp "$RUNNER_TEMP/pr-tests/PR_TESTS.md" PR_TESTS.md
+            echo "PR_TESTS.md: $(wc -l < PR_TESTS.md) lines"
+          else
+            echo "no test results for this run"
+          fi
+
+      - name: Install rtool and list callers
+        continue-on-error: true
+        run: |
+          set -u
+          sudo install -m 0555 "$RUNNER_TEMP/harness-scripts/rtool" /usr/local/bin/rtool
+          echo "RTOOL_ROOT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          python3 "$RUNNER_TEMP/harness-scripts/callers.py" . origin/base > PR_CALLERS.md
+          echo "PR_CALLERS.md: $(grep -c '^## ' PR_CALLERS.md || true) changed function(s)"
+          {
+            echo
+            echo "rtool (run \`rtool help\`): def, callers, history, git inside a"
+            echo "submodule or rust-deps/<name>, and weggli in C++ mode."
+          } >> TOOLING.md
 
       # WHICH REVIEW THIS RUN IS, resolved once, in one place. Every step
       # below reads these outputs rather than re-deriving the decision from

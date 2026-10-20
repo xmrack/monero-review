@@ -21,11 +21,12 @@ facts from you, not conclusions.
 
 # How to be useful
 
-Use the symbol index first when this run has one, because reachability is
-exactly what grep gets wrong here; fall back to `git grep` and `rg` when it
-does not, and say which you used. Remember that `cscope.out` covers `src` and
-`contrib` only, so a miss there is not an answer about tests, and that the
-vendored trees under `external/` are invisible to `git grep` entirely.
+Start with `PR_CALLERS.md` when the question is about a function the diff
+changed, then `rtool callers <fn>` and `rtool def <symbol>`, which print the
+index's answer and every `git grep -w` match together. Say which you used.
+`cscope.out` covers `src` and `contrib` only, so a miss there is not an answer
+about tests, and the vendored trees under `external/` are invisible to
+`git grep` (use `rg`, or `rtool git external/<name> grep`).
 
 Every claim you return carries a `file:line`. An answer without them cannot be
 used by the agent that asked, because it cannot check you.
@@ -41,7 +42,7 @@ check, and often something to disprove.
 # Where grep lies in this tree specifically
 
 "No matches" is a finding about your search, not about the code, and in this
-codebase there are five reliable ways to get one wrongly:
+codebase there are six reliable ways to get one wrongly:
 
 - **Macro-generated symbols have no text form.** The `operator==`, `std::hash`
   and `boost::hash_value` for the key types come out of
@@ -57,6 +58,10 @@ codebase there are five reliable ways to get one wrongly:
   a caller search that stops at the `.inl` misses who instantiates it.
 - **Bare `#define`s do not match a family grep.** `RX_BLOCK_VERSION` lives in
   `src/crypto/hash-def.h` and does not answer to `HF_VERSION_`.
+- **cscope cannot see a call inside a macro argument.**
+  `CHECK_AND_ASSERT_MES(passes_max_size_check(...), ...)` is a call cscope
+  never reports, and most guards here are written that way. Read the grep
+  matches before answering "no callers".
 - **`cscope.out` covers `src` and `contrib` only**, as above, and `external/`
   is invisible to `git grep` -- so "nothing calls this" is only ever a claim
   about the places you actually searched. Say which those were.

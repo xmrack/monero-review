@@ -26,13 +26,14 @@ wins** — and fix the file.
 | **`build-and-tests.md`** | the diff touches CMake, `contrib/depends`, `contrib/guix`, CI or `tests/` |
 | **`navigation.md`** | you are looking for something and want the recipe that actually works |
 
-The three below are the **judgement half** — not what the code is, but what to
+The four below are the **judgement half** — not what the code is, but what to
 suspect of it and what has already been refuted:
 
 | file | read it when |
 |---|---|
 | **`trust-boundaries.md`** | you need the threat model: what is protected, who the adversaries are, where untrusted data enters, and how to rate what you find |
 | **`codebase-notes.md`** | you want the questions that have historically been worth asking of the subsystem in front of you |
+| **`lenses.md`** | you were given a weakness class: where in this tree that class lives, what to ask, and the parallel implementations a guard has to cover |
 | **`refutations.md`** | **before reporting anything** — the recurring reasons candidate findings here turn out to be unreachable |
 
 ## Suggested order for a change you have not seen before
