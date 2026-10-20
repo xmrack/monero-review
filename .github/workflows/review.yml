@@ -116,8 +116,10 @@ on:
   #
   # Stop it without editing this file:
   #   gh variable set REVIEW_PAUSED --body 1 --repo <this repo>
-  schedule:
-    - cron: "23,53 * * * *"
+  # PAUSED: the scheduled sweep is commented out. Restore these two lines to
+  # resume it. By-number and manual dispatches still work.
+  # schedule:
+  #   - cron: "23,53 * * * *"
 
 env:
   UPSTREAM: monero-project/monero
