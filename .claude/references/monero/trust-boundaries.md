@@ -518,7 +518,14 @@ signed hashes.
   only when DNSSEC is available and fails to validate; an unsigned answer is
   accepted. So a resolver or on-path attacker can supply the first peers of a
   new node, which helps an eclipse attack. Seed lookups are skipped behind
-  `--proxy` unless `--proxy-allow-dns-leaks` is set.
+  `--proxy` unless `--proxy-allow-dns-leaks` is set. The same `allow_dns`
+  flag (computed in `t_core`, `src/daemon/core.h`, from `arg_proxy` and
+  `arg_proxy_allow_dns_leaks`) also turns off update checks and DNS
+  checkpoints: `core::init` sets `UPDATES_DISABLED` on
+  `if (check_updates_string == "disabled" || not allow_dns)`. It does not
+  gate the unrestricted `/update` RPC: `core_rpc_server::on_update` calls
+  `tools::check_updates` with no `allow_dns` check, so it still resolves
+  TXT records directly behind `--proxy`.
 - **TXT records** (`load_txt_records_from_dns`: DNSSEC-valid, at least two,
   majority agreement) feed update checks (`--check-updates`, default
   `notify`), DNS checkpoints (only with `--enforce-dns-checkpointing`) and the
