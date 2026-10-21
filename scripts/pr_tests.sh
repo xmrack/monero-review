@@ -19,7 +19,7 @@ set -uo pipefail
 SRC=$(realpath "$1"); BASE=$2; OUT=$(realpath -m "$3"); CORE=${4:-}
 WORK=${WORK:-$(dirname "$SRC")/pr-tests-work}
 IMAGE=monero-review-tests
-UNIT_TIMEOUT=${UNIT_TIMEOUT:-2400}
+SUITE_TIMEOUT=${SUITE_TIMEOUT:-600}
 CORE_TIMEOUT=${CORE_TIMEOUT:-3600}
 JOBS=${JOBS:-$(nproc)}
 mkdir -p "$WORK/build" "$WORK/cargo" "$WORK/ccache" "$WORK/logs"
@@ -74,8 +74,13 @@ box() {
 }
 
 build() {
-  local targets="unit_tests${CORE:+ core_tests}"
+  local targets="unit_tests test_notifier${CORE:+ core_tests}"
+  # UBSan with GCC's -Wduplicated-branches/-cond takes hours per large file
+  # (blockchain.cpp: over two hours, 57s without them). The per-config flags
+  # come last on the command line, so they switch those two off.
+  local tail="-O2 -g -DNDEBUG -Wno-duplicated-branches -Wno-duplicated-cond"
   box sh -c "cmake -S /src -B /build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSANITIZE=ON \
+      -DCMAKE_C_FLAGS_RELWITHDEBINFO='$tail' -DCMAKE_CXX_FLAGS_RELWITHDEBINFO='$tail' \
       -DBUILD_TESTS=ON -DCOMPILER_CACHE=ccache -DMANUAL_SUBMODULES=ON >/dev/null && make -j$JOBS $targets"
 }
 
@@ -84,34 +89,60 @@ checkout() {
     git -C "$SRC" submodule update -q --init --recursive
 }
 
-# One gtest binary, run until it finishes: a sanitizer abort kills the
-# process, so the test that was running is recorded and excluded, and the
-# rest are run again. Writes passed/failed/crashed lists.
+# Suites that need the network, which the test container never has.
+OFFLINE_SKIP="DNSResolver.*:AddressFromURL.*"
+
+# One container per gtest filter, killed by name on timeout: `timeout` on
+# the docker client alone leaves the container running.
+gtest() {
+  local log=$1 filter=$2 name="pr-tests-$$-$RANDOM" rc
+  timeout -k 15 "$SUITE_TIMEOUT" docker run --rm --name "$name" --user "$(id -u):$(id -g)" \
+    -e HOME=/tmp --network none --cap-drop ALL --security-opt no-new-privileges \
+    --memory 14g -v "$SRC:/src:ro" -v "$WORK/build:/build" \
+    -e ASAN_OPTIONS=detect_leaks=0 \
+    -e UBSAN_OPTIONS=print_stacktrace=1:suppressions=/build/ubsan.supp \
+    -w /build "$IMAGE" ./tests/unit_tests/unit_tests --data-dir /build/test-data \
+    "--gtest_filter=$filter" > "$log" 2>&1
+  rc=$?
+  # The client forwards SIGTERM to a test that may ignore it, so -k kills the
+  # client (137) and the container is killed by name.
+  if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then docker kill "$name" > /dev/null 2>&1; rc=124; fi
+  return $rc
+}
+
+# Every suite, or the given tests, one container each. A crash or a hang
+# kills only its own run: the test that was running is recorded and the rest
+# of its suite runs again without it.
 run_unit() {
-  local tag=$1 filter=${2:-} exclude="" n=0 log
+  local tag=$1 only=${2:-} unit log rc n last exclude
+  # Wallet tests write next to their fixtures, and /src is read-only.
+  rm -rf "$WORK/build/test-data" && cp -r "$SRC/tests/data" "$WORK/build/test-data"
+  # ref10's field arithmetic shifts negative values left on purpose, hundreds
+  # of times per test; GCC defines it. Everything else is reported.
+  printf 'shift-base:src/crypto/crypto-ops.c\nshift-base:src/ringct/rctCryptoOps.c\n' > "$WORK/build/ubsan.supp"
   : > "$WORK/$tag.failed"; : > "$WORK/$tag.crashed"; : > "$WORK/$tag.passed"
-  while [ $n -lt 6 ]; do
-    n=$((n + 1)); log="$WORK/logs/$tag-unit-$n.log"
-    local f="${filter:-*}${exclude:+-$exclude}"
-    timeout "$UNIT_TIMEOUT" docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp --network none --cap-drop ALL \
-      --security-opt no-new-privileges --memory 14g \
-      -v "$SRC:/src:ro" -v "$WORK/build:/build" \
-      -e ASAN_OPTIONS=detect_leaks=0 -e UBSAN_OPTIONS=print_stacktrace=1 \
-      -w /build "$IMAGE" ./tests/unit_tests/unit_tests --data-dir /src/tests/data \
-      "--gtest_filter=$f" > "$log" 2>&1
-    local rc=$?
-    grep -E '^\[       OK \]' "$log" | awk '{print $4}' >> "$WORK/$tag.passed"
-    grep -E '^\[  FAILED  \] [A-Za-z0-9_/.]+ \(' "$log" | awk '{print $4}' >> "$WORK/$tag.failed"
-    [ $rc -eq 124 ] && { echo "TIMEOUT after ${UNIT_TIMEOUT}s" >> "$WORK/$tag.crashed"; break; }
-    # Finished on its own: the summary line is there.
-    grep -qE '^\[==========\] [0-9]+ tests? from .* ran' "$log" && break
-    local last
-    last=$(grep -E '^\[ RUN      \]' "$log" | tail -1 | awk '{print $4}')
-    [ -n "$last" ] || break
-    echo "$last" >> "$WORK/$tag.crashed"
-    cp "$log" "$WORK/logs/$tag-crash-$last.log"
-    exclude="${exclude:+$exclude:}$last"
-  done
+  if [ -n "$only" ]; then
+    printf '%s\n' "$only" | tr ':' '\n' > "$WORK/$tag.units"
+  else
+    box ./tests/unit_tests/unit_tests --gtest_list_tests 2>/dev/null \
+      | grep -E '^[A-Za-z0-9_/]+\.' | sed 's/\..*$/.*/' > "$WORK/$tag.units"
+  fi
+  while read -r unit; do
+    exclude=""; n=0
+    while [ $n -lt 4 ]; do
+      n=$((n + 1)); log="$WORK/logs/$tag-unit-$(printf '%s' "${unit%%.*}" | tr '/' '_')-$n.log"
+      gtest "$log" "$unit-$OFFLINE_SKIP${exclude:+:$exclude}"
+      rc=$?
+      grep -E '^\[       OK \]' "$log" | awk '{print $4}' >> "$WORK/$tag.passed"
+      grep -E '^\[  FAILED  \] [A-Za-z0-9_/.]+ \(' "$log" | awk '{print $4}' >> "$WORK/$tag.failed"
+      grep -qE '^\[==========\] [0-9]+ tests? from .* ran' "$log" && break
+      last=$(grep -E '^\[ RUN      \]' "$log" | tail -1 | awk '{print $4}')
+      [ -n "$last" ] || break
+      if [ $rc -eq 124 ]; then echo "$last (hung)" >> "$WORK/$tag.crashed"
+      else echo "$last" >> "$WORK/$tag.crashed"; cp "$log" "$WORK/logs/$tag-crash-$(printf '%s' "$last" | tr '/' '_').log"; fi
+      exclude="${exclude:+$exclude:}$last"
+    done
+  done < "$WORK/$tag.units"
   sort -u -o "$WORK/$tag.failed" "$WORK/$tag.failed"
 }
 
@@ -134,10 +165,14 @@ run_unit head
 P=$(sort -u "$WORK/head.passed" | wc -l)
 F=$(wc -l < "$WORK/head.failed")
 C=$(wc -l < "$WORK/head.crashed")
-note "## unit_tests on the head: $P passed, $F failed, $C crashed or timed out"
+note "## unit_tests on the head: $P passed, $F failed, $C crashed or hung"
+note ""
+note "Skipped offline: $OFFLINE_SKIP. Each suite has ${SUITE_TIMEOUT}s."
+note "UBSan suppressed: negative left shifts in src/crypto/crypto-ops.c and"
+note "src/ringct/rctCryptoOps.c (ref10 field arithmetic)."
 note ""
 
-BAD=$(cat "$WORK/head.failed" "$WORK/head.crashed" | grep -v '^TIMEOUT' | sort -u | paste -sd: -)
+BAD=$(cat "$WORK/head.failed" "$WORK/head.crashed" | cut -d' ' -f1 | sort -u | paste -sd: -)
 if [ -n "$BAD" ]; then
   # The same tests on base, rebuilt incrementally in the same directory.
   checkout "$BASE"
@@ -146,8 +181,9 @@ if [ -n "$BAD" ]; then
     sort -u "$WORK/base.passed" > "$WORK/base.ok"
     note "Each failing test, run again on base:"
     note ""
-    for t in $(cat "$WORK/head.failed" "$WORK/head.crashed" | grep -v '^TIMEOUT' | sort -u); do
-      how=failed; grep -qxF "$t" "$WORK/head.crashed" && how=crashed
+    for t in $(cat "$WORK/head.failed" "$WORK/head.crashed" | cut -d' ' -f1 | sort -u); do
+      how=failed; grep -q "^$t\b" "$WORK/head.crashed" && how=crashed
+      grep -qxF "$t (hung)" "$WORK/head.crashed" && how=hung
       if grep -qxF "$t" "$WORK/base.ok"; then
         note "- **NEW** \`$t\` $how on the head and passes on base."
       else
@@ -156,7 +192,7 @@ if [ -n "$BAD" ]; then
     done
   else
     note "Base did not build, so the failures below are not classified:"
-    for t in $(cat "$WORK/head.failed" "$WORK/head.crashed" | sort -u); do note "- \`$t\`"; done
+    for t in $(cat "$WORK/head.failed" "$WORK/head.crashed" | cut -d' ' -f1 | sort -u); do note "- \`$t\`"; done
   fi
   note ""
   checkout "$HEAD"
@@ -186,11 +222,12 @@ fi
 
 if [ -n "$CORE" ]; then
   log="$WORK/logs/core.log"
-  timeout "$CORE_TIMEOUT" docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp --network none --cap-drop ALL \
+  timeout -k 15 "$CORE_TIMEOUT" docker run --rm --name "pr-tests-core-$$" --user "$(id -u):$(id -g)" -e HOME=/tmp --network none --cap-drop ALL \
     --security-opt no-new-privileges --memory 14g \
     -v "$SRC:/src:ro" -v "$WORK/build:/build" -e ASAN_OPTIONS=detect_leaks=0 \
     -w /build "$IMAGE" ./tests/core_tests/core_tests --generate_and_play_test_data > "$log" 2>&1
   rc=$?
+  if [ $rc -eq 124 ] || [ $rc -eq 137 ]; then docker kill "pr-tests-core-$$" > /dev/null 2>&1; rc=124; fi
   if [ $rc -eq 124 ]; then
     note "## core_tests: TIMED OUT after ${CORE_TIMEOUT}s"
   elif [ $rc -eq 0 ]; then
