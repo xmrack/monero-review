@@ -131,8 +131,9 @@ env:
   # public, and so is every run log, step summary and artifact it produces. A
   # review goes to this private repository, and leaves nothing readable here,
   # when scripts/disclosure.py routes it private: a CRITICAL or HIGH finding
-  # already in live code, or an obvious security patch by Monero developers,
-  # which a public review would point attackers at before the release ships.
+  # already in live code, an obvious security patch by Monero developers,
+  # which a public review would point attackers at before the release ships,
+  # or any privacy break at any severity.
   #
   # Needs the DISCLOSURE_TOKEN secret: a fine-grained token with Issues
   # read/write on this repository only. Without it nothing is reviewed at all

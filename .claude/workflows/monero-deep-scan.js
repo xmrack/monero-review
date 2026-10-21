@@ -1730,7 +1730,7 @@ if (!candidates.length) {
                 // Present and zero rather than absent: the stamp asks for all
                 // three on every report, and a field the Lead has to invent a
                 // value for is how a stamp stops being copied from a result.
-                confirmed: 0, published: 0, merged: 0,
+                confirmed: 0, published: 0, merged: 0, privacyCandidates: 0,
                 provenanceCounts: provenanceTally(),
                 provenanceCorrected: [], provenanceDisputed: [],
                 mergeApplicable: false, mergeClusters: 0, mergeFailed: 0, mergeGroups: [] },
@@ -2455,6 +2455,12 @@ return {
     confirmed: holds.length,
     published: findings.length,
     merged: mergedAway,
+    // Every candidate that is a privacy break, whatever the panel said: the
+    // `privacy` category or a protocol-level vote. Stamped as privacy=, and
+    // any non-zero count routes the review to the private repository
+    // (scripts/disclosure.py). Refuted ones count too: a panel can be wrong,
+    // and the report still describes the attack.
+    privacyCandidates: results.filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy).length,
     // Merged pull requests only. Entries moved out of `findings` because they
     // no longer hold on master: `published + fixedOnMaster + merged ==
     // confirmed`. `masterUnchecked` are ids whose check returned nothing for
