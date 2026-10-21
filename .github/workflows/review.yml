@@ -1956,6 +1956,9 @@ jobs:
           echo "execution_file=$out" >> "$GITHUB_OUTPUT"
           effort=()
           [ -n "${EFFORT:-}" ] && effort=(--effort "$EFFORT")
+          # `|| var=$?`: the step shell runs with -e, which used to exit on a
+          # failed CLI before the diagnosis below could print.
+          rc=0; flagged=0
           "$CLAUDE_CLI" -p "$PROMPT" \
             --permission-mode default \
             --model "$MODEL" "${effort[@]}" \
@@ -1963,9 +1966,8 @@ jobs:
             --allowedTools "$ALLOWED_TOOLS,$FLEET_EXTRA_TOOLS" \
             --disallowedTools "$DISALLOWED_TOOLS" \
             --output-format stream-json --verbose \
-            < /dev/null > "$out"
-          rc=$?
-          python3 - "$out" <<'PY'
+            < /dev/null > "$out" || rc=$?
+          python3 - "$out" <<'PY' || flagged=$?
           import json, sys
           last = None
           for line in open(sys.argv[1], errors="replace"):
@@ -1991,7 +1993,6 @@ jobs:
                         f"api_error_status={last.get('api_error_status')}")
                   sys.exit(1)
           PY
-          flagged=$?
           if [ "$rc" -ne 0 ] || [ "$flagged" -ne 0 ]; then
             echo "::error::the review pass failed (exit $rc)"
             exit 1
