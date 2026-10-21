@@ -186,6 +186,17 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   and passphrase with a chacha20 keystream) and then `decrypt_viewkey` to undo
   the view-key part; `wallet2::decrypt_keys` does the reverse after
   `verify_password_with_cached_key`. The names describe the spend key only.
+  Neither records state: each is a bare XOR (`account_keys::xor_with_key_stream`
+  in `src/cryptonote_basic/account.cpp`), so calling one on keys already in
+  the other state corrupts them. wallet2 keeps keys encrypted in memory only
+  when `wallet2::is_key_encryption_enabled()` holds — not unattended,
+  `AskPasswordToDecrypt`, not watch-only, not background syncing — and
+  `wallet2::setup_keys`, `wallet2::load_keys` and `wallet2::get_keys_file_data`
+  test that condition inline rather than calling it (see also
+  `wallet_keys_unlocker::wallet_keys_unlocker`). An unattended wallet, such
+  as `wallet-rpc` (`make_from_file(vm, true, ...)` in
+  `src/wallet/wallet_rpc_server.cpp`) or the wallet API default, keeps
+  plaintext keys whatever `ask_password` says.
 - **`hashchain::size()` is a height, not a container size** — it returns
   `m_blockchain.size() + m_offset`, and `operator[]` subtracts the offset.
 - **`m_global_output_index` comes from the daemon and is stored unverified.**
