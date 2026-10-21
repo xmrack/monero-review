@@ -62,6 +62,10 @@ const CATEGORIES = [
   'wallet-boundary', 'supply-chain', 'prompt-injection',
 ]
 const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']   // worst first
+// A candidate whose own words describe a privacy break, for one no panel
+// vote labelled (a panel that failed, or a category filed elsewhere). The
+// fuller pattern is in scripts/disclosure.py, which reads the report.
+const PRIVACY_TEXT = /de-?anonymi[sz]|\b(?:un)?link(?:ab|ag)|\b(?:un)?traceab|anonymity set|\bdecoys?\b|\bring members?\b|\bview[\s-]+tags?\b|\b(?:links|linked|linking)\b|\breal (?:spend|input|output)\b|\b(?:sender|recipient|receiver|payer|payee)'s (?:\w+ ){0,2}(?:change|address|identity|amount|outputs?|enotes?|secret|keys?|balance)\b|which (?:one|output|address|wallet) (?:sent|received|is)/i
 // What a defect buys once reached, worst first. `none` is a refutation.
 const CONSEQUENCES = ['funds-or-inflation', 'chain-split', 'remote-crash', 'privacy-loss',
   'resource-exhaustion', 'wrong-state', 'local-only', 'none']
@@ -1730,7 +1734,7 @@ if (!candidates.length) {
                 // Present and zero rather than absent: the stamp asks for all
                 // three on every report, and a field the Lead has to invent a
                 // value for is how a stamp stops being copied from a result.
-                confirmed: 0, published: 0, merged: 0,
+                confirmed: 0, published: 0, merged: 0, privacyCandidates: 0,
                 provenanceCounts: provenanceTally(),
                 provenanceCorrected: [], provenanceDisputed: [],
                 mergeApplicable: false, mergeClusters: 0, mergeFailed: 0, mergeGroups: [] },
@@ -1893,6 +1897,7 @@ const judged = await parallel(candidates.map((c) => () =>
     holds: votes[i] ? votes[i].holds : null,
     consequence: votes[i] ? votes[i].consequence || null : null,
     consequenceClass: votes[i] ? votes[i].consequenceClass || null : null,
+    protocolPrivacy: votes[i] ? votes[i].protocolPrivacy === true : false,
     reasoning: votes[i] ? votes[i].reasoning : null,
     decidingLine: votes[i] ? votes[i].decidingLine : null,
     provenance: votes[i] ? votes[i].provenance : null,
@@ -2455,6 +2460,16 @@ return {
     confirmed: holds.length,
     published: findings.length,
     merged: mergedAway,
+    // Every candidate that is a privacy break, whatever the panel said: the
+    // `privacy` category, or ANY vote -- confirming or not -- naming a privacy
+    // loss or a protocol-level break. Stamped as privacy=, and any non-zero
+    // count routes the review to the private repository
+    // (scripts/disclosure.py). Refuted and unverified ones count: a panel can
+    // be wrong, and the report still describes the attack.
+    privacyCandidates: results.filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy ||
+      (r.votes || []).some((v) => v && (v.protocolPrivacy || v.consequenceClass === 'privacy-loss')) ||
+      PRIVACY_TEXT.test([r.candidate.title, r.candidate.reaches, r.candidate.rationale,
+        r.candidate.untrustedInput].join(' '))).length,
     // Merged pull requests only. Entries moved out of `findings` because they
     // no longer hold on master: `published + fixedOnMaster + merged ==
     // confirmed`. `masterUnchecked` are ids whose check returned nothing for

@@ -39,6 +39,16 @@ A review goes private when any of these holds:
                 the surviving list as pre-existing, but which still affects
                 code that is live (the change is already merged, or the same
                 defect sits in the base branch or a release).
+  privacy       a privacy break at ANY severity and ANY provenance: the
+                coverage stamp counts one (`privacy=N`, N > 0), or there is no
+                stamp or no count on it, or the review carries
+                `<!-- disclosure reason=privacy -->`, or a section outside
+                `## Refuted`, `## Checked and clear` and `## Coverage` reads
+                as one. A privacy flaw
+                is usually in the protocol rather than the code: the spec is
+                public, other implementations follow it, and older code often
+                shares it, so "not live yet" protects nobody. A Carrot
+                sender-linkability break was once published here as MEDIUM.
 
 Anything else is public. A finding the pull request introduces, in code that is
 not live yet, is reported normally: that is the whole point of reviewing a pull
@@ -86,7 +96,7 @@ INTRODUCED = re.compile(
 # line break nor a `>` inside the comment hides it.
 MARKER = re.compile(r"<!--\s*disclosure\b(.*?)-->", re.IGNORECASE | re.DOTALL)
 MARKER_REASON = re.compile(r"\breason\s*=\s*([a-z-]+)", re.IGNORECASE)
-KNOWN_REASONS = ("security-fix", "live-code")
+KNOWN_REASONS = ("security-fix", "live-code", "privacy")
 # Entries a merged pull request's recheck found fixed on master. They sit below
 # `## Refuted`, so the finding-heading rule above never sees them. The same
 # three patterns are in labels.py; change them together.
@@ -99,6 +109,48 @@ FIXED_WAS = re.compile(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM|LOW)\s*\)\s*$", re.IGN
 # the strict parse cannot read, which routes private.
 FIXED_SECTION_LOOSE = re.compile(r"^#{1,6}\s*[*_]*\s*Fixed\s+on\s+master", re.MULTILINE | re.IGNORECASE)
 STAMP_FIXED = re.compile(r"<!--\s*deep-scan\b[^>]*?\sfixedOnMaster=(\d+)", re.IGNORECASE)
+STAMP = re.compile(r"<!--\s*deep-scan\b([^>]*)-->", re.IGNORECASE)
+STAMP_PRIVACY = re.compile(r"\sprivacy=(\d+)\b", re.IGNORECASE)
+# What a privacy break reads like. Loose on purpose: a harmless review sent
+# private costs a maintainer a minute, a privacy break sent public is
+# permanent. Tuned against every review this repository published: it
+# matches the privacy findings among them and not TLS fingerprints, the
+# linker, `link-local`, `origin/base` or Doxygen.
+_WHO = (r"(?:sender|recipient|receiver|payer|payee|origin(?!/)|real\s+(?:spend|input|output)|"
+        r"true\s+spend|change\s+(?:amount|address|output|enote)|"
+        r"which\s+(?:one|outputs?|address(?:es)?|wallets?|enotes?|inputs?))\b")
+_LINK = (r"\b(?:links|linked|linking|link(?=\s+(?:the|a|an|its|their|that|this|these|those|"
+         r"every|each|two|payments?|transactions?|them|it)\b))\b")
+_TRACE = r"\b(?:(?:can|could|to|will|would)\s+trace|traces|tracing)\b"
+_OBJ = (r"(?:sender|recipient|receiver|payer|payee|address(?:es)?|outputs?|enotes?|"
+        r"transactions?|spends?|inputs?|key\s+images?|subaddress(?:es)?|wallets?|"
+        r"identit(?:y|ies)|IP|payments?|origin(?!/))")
+PRIVACY_BREAK = re.compile(
+    r"de-?anonymi[sz]"
+    r"|\b(?:un)?link(?:ab|ag)"
+    r"|\b(?:un)?traceab"
+    r"|anonymity\s+set"
+    r"|\bdox(?:x|es|ed|ing)\b"
+    r"|privacy\s+(?:break|leak|loss|regression|flaw|bug)"
+    r"|\b(?:sender|recipient|receiver|payer|payee|user|owner)'s\s+(?:\w+\s+){0,2}(?:change|address|identity|"
+    r"amount|outputs?|enotes?|balance|subaddress|keys?|secret|IP)\b"
+    r"|" + _LINK + r"[^.\n]{0,60}\b" + _OBJ +
+    r"|" + _TRACE + r"[^.\n]{0,40}\b" + _OBJ +
+    r"|\b(?:identif(?:y|ies)|reveal(?:s|ed|ing)?|learn(?:s|ed)?|expos(?:e|es|ed)|"
+    r"leak(?:s|ed)?|tells?|deduce(?:s|d)?|infer(?:s|red)?)\b[^.\n]{0,60}\b" + _WHO
+    + r"|\b(?:wallet|transaction|tx|user|node)\s+fingerprint"
+    r"|\bfingerprint(?:s|ed|ing)?\s+(?:the\s+|a\s+|its\s+)?(?:wallet|transaction|tx|user|node|sender)"
+    r"|\bfingerprintab"
+    r"|\bdistinguish(?:es|ed|able)?\b[^.\n]{0,40}\b(?:wallets?|transactions?|users?|txs?)\b",
+    re.IGNORECASE,
+)
+# Words that name a privacy mechanism. In a defect entry they mean the defect
+# is about that mechanism; in a summary of a clean review they mean nothing.
+PRIVACY_TOPIC = re.compile(r"\bdecoys?\b|\bring\s+members?\b|\bview[\s-]+tags?\b",
+                           re.IGNORECASE)
+DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|earlier findings|"
+                             r"needs human review|comment discrepancy)\b", re.IGNORECASE)
+SAFE_SECTIONS = re.compile(r"^(?:refuted|checked and clear|coverage)\b", re.IGNORECASE)
 
 
 def severe_pre_existing(text):
@@ -138,6 +190,29 @@ def severe_fixed_on_master(text):
     return bool(stamps) and int(stamps[-1]) > len(heads)
 
 
+def privacy_break(text):
+    """True when the stamp counts a privacy break or lacks the count, or any
+    section that reports a problem reads like one."""
+    # No stamp, or no count on it, is an unknown count: private.
+    stamps = STAMP.findall(text)
+    count = STAMP_PRIVACY.search(" " + stamps[-1]) if stamps else None
+    if not count or int(count.group(1)) > 0:
+        return True
+    bounds = [(m.start(), m.group(1).strip()) for m in SECTION.finditer(text)]
+    starts = [0] + [b[0] for b in bounds]
+    names = [""] + [b[1] for b in bounds]
+    for i, start in enumerate(starts):
+        end = starts[i + 1] if i + 1 < len(starts) else len(text)
+        if SAFE_SECTIONS.match(names[i].lstrip("*_ ")):
+            continue
+        body = STAMP.sub("", text[start:end])
+        if PRIVACY_BREAK.search(body):
+            return True
+        if DEFECT_SECTIONS.match(names[i].lstrip("*_ ")) and PRIVACY_TOPIC.search(body):
+            return True
+    return False
+
+
 def marker_reason(text):
     """The reason on the first disclosure marker, `unknown` for a marker whose
     reason is missing or not one we know, or None when there is no marker."""
@@ -158,6 +233,8 @@ def route(text):
         return "private", "pre-existing"
     if severe_fixed_on_master(text):
         return "private", "fixed-on-master"
+    if privacy_break(text):
+        return "private", "privacy"
     return "public", ""
 
 
