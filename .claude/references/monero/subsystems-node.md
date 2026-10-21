@@ -409,8 +409,13 @@ free disk space is under 1 GiB), and its barrier is
 and an atomic counter.
 
 **Pruning** (`src/common/pruning.{h,cpp}`): stripe arithmetic over a seed.
-`prune_worker` only ever deletes from `m_txs_prunable` and
-`m_txs_prunable_tip`; v1 transactions are never pruned and tip blocks
+`prune_worker` deletes from `m_txs_prunable` and `m_txs_prunable_tip`, but
+it also writes: outside check mode it inserts tip records into
+`m_txs_prunable_tip` with `mdb_cursor_put`, and it stores the
+`pruning_seed` and `pruning_progress` keys in `m_properties` (see
+`BlockchainLMDB::prune_worker` in `src/blockchain_db/lmdb/db_lmdb.cpp`;
+`grep -n 'mdb_cursor_put(c_txs_prunable_tip\|mdb_put(txn, m_properties' src/blockchain_db/lmdb/db_lmdb.cpp`).
+v1 transactions are never pruned and tip blocks
 (`CRYPTONOTE_PRUNING_TIP_BLOCKS` = 5500) are never pruned.
 
 **Traps.**
