@@ -358,6 +358,13 @@ from another thread.) Serialization is the front end's job:
   `SubaddressAccountImpl` rebuild their row vectors with no mutex at all;
   `TransactionHistoryImpl`'s `shared_mutex` protects the vector but not the
   `TransactionInfo*` objects it hands out and then deletes in `refresh`.
+  `WalletImpl`'s `m_status` / `m_errorString` is also **one channel shared by
+  the refresh thread and every API thread**: the catch block in
+  `WalletImpl::doRefresh` calls `setStatusError` from the refresh thread,
+  while `WalletImpl::status` / `statusWithErrorString` read the same members
+  under `m_statusMutex`. The mutex makes each access atomic, not the
+  sequence, so a user-thread clear-then-read of status can observe the
+  refresh thread's error or lose its own result to it.
 
 One cross-cutting inconsistency worth knowing:
 `wallet2::process_parsed_blocks` calls `hwdev.generate_key_derivation` (and

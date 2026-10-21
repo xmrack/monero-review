@@ -386,7 +386,11 @@ instance daemon binding). `tr(x)` is defined as `(x)` here — unlike
 simplewallet, nothing is translated. `m_password` is a plain `std::string`
 member, exposed verbatim by `getPassword()`, never wiped. `loadUnsignedTx`
 returns a heap pointer the API gives no disposal method for. `use_ssl` is
-forwarded and then never read.
+forwarded and then never read. `wallet2::is_keys_file_locked` dereferences
+`m_keys_file_locker` with no null check once `m_wallet_file` is set, and
+`wallet2::unlock_keys_file` (also reached from `deinit()`) resets it — so the
+check crashes after an unlock or deinit, and `WalletImpl::isKeysFileLocked`
+exposes it directly.
 
 **`checkBackgroundSync()`** guards every call site found by
 `grep -n 'checkBackgroundSync(' src/wallet/api/wallet.cpp` — every operation that needs
