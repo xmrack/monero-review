@@ -249,18 +249,33 @@ short:
   enforce alike; a malicious daemon crashing a wallet,
   making it overspend, or learning which outputs are its own; a privacy break
   in every transaction the reference wallet makes or written into the chain;
+  any protocol-level privacy break (below);
   theft or key disclosure by a co-signer, cold-signing partner or device host;
   control of a wallet by someone not given it.
 - **MEDIUM**: needs a significant position (on-path, DNS, a miner below 50%),
   or the effect is limited: a slowdown without a crash, a forged
   out-of-band wallet proof accepted (`check_tx_proof`, `check_spend_proof`,
-  `check_reserve_proof`, a message signature), a privacy leak to an observer in one place at one time, a HIGH
+  `check_reserve_proof`, a message signature), a privacy leak to an observer in one place at one time that is not protocol-level, a HIGH
   effect that needs the victim to act.
 - **LOW**: defence in depth, hardening, or a real defect with no attacker
   path today, such as code with no production caller or code reachable only
   from trusted configuration; attacks needing more than 50% of hashrate. This
   does not cover staged code a planned fork will activate, such as FCMP++.
   Rate that as it will run.
+
+**A protocol-level privacy break is HIGH at least.** It is a flaw in what
+Monero's protocol itself reveals, rather than one wallet's or one node's
+mistake: the transaction format and what consensus accepts in it, the
+membership and spend proofs (rings, CLSAG, FCMP++), key images, output and
+address construction (subaddresses, Carrot, view tags, encrypted amounts), or
+the relay protocol's origin hiding (Dandelion++). It lets an observer link a
+spend to the output it spends, link outputs, addresses or transactions to
+each other, learn an amount, or find where a transaction came from, for users
+who follow the protocol as designed. It is HIGH whichever wallet built the
+transaction and wherever the observer has to sit: the observer-position
+MEDIUM row and user action and configuration do not lower it. Only code that is
+not and will not be live does. It is CRITICAL where a CRITICAL
+row also applies, such as the same flaw letting a proof be forged.
 
 A configuration is not unusual just because it is not the default. Public
 remote nodes run restricted RPC, exchanges run `wallet-rpc`, privacy users run

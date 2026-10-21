@@ -581,6 +581,7 @@ take.
   or that is written into the chain: decoy-selection bias, a wallet
   fingerprint, a link between addresses or between the real spend and the
   decoys.
+- Any protocol-level privacy break, defined below the tiers.
 - Theft or key disclosure by a counterparty the protocol is meant to tolerate:
   a multisig co-signer, the hot wallet in cold signing, a host against a
   hardware device.
@@ -601,8 +602,10 @@ take.
   proof that accepts a forgery (a range proof, CLSAG or MLSAG, the FCMP++
   membership proof or SA/L) is CRITICAL: inflation or theft.
 - A privacy leak to an observer who must be in a particular place at a
-  particular time, which is not written into the chain, such as linking a
-  node's Tor and clearnet identities, or Dandelion++ stem timing.
+  particular time, which is not written into the chain and is not a
+  protocol-level break, such as linking a node's Tor and clearnet identities.
+  A flaw in Dandelion++ that reveals where transactions came from is
+  protocol-level, and HIGH.
 - A sender making a wallet unable to spend or sweep, without loss.
 - A HIGH effect that only works if the user takes an action the attacker
   needs, such as visiting a page while the daemon runs (a cross-site
@@ -615,6 +618,20 @@ take.
 - Theoretical side channels with no demonstrated measurement path.
 - Attacks needing more than 50% of hashrate, which the VRP puts out of scope.
 - Hardening: a missing check that something else already enforces.
+
+**A protocol-level privacy break is HIGH at least.** It is a flaw in what
+Monero's protocol itself reveals, rather than one wallet's or one node's
+mistake: the transaction format and what consensus accepts in it, the
+membership and spend proofs (rings, CLSAG, FCMP++), key images, output and
+address construction (subaddresses, Carrot, view tags, encrypted amounts), or
+the relay protocol's origin hiding (Dandelion++). It lets an observer link a
+spend to the output it spends, link outputs, addresses or transactions to
+each other, learn an amount, or find where a transaction came from, for users
+who follow the protocol as designed. It is HIGH whichever wallet built the
+transaction and wherever the observer has to sit: the observer-position
+MEDIUM row and modifiers 3 and 4 below do not lower it. Only modifier 6 does,
+for code that is not and will not be live. It is CRITICAL where a CRITICAL
+row also applies, such as the same flaw letting a proof be forged.
 
 **Modifiers.**
 
@@ -653,9 +670,10 @@ modifiers above decide the final rating.
 | P2P or restricted RPC: crash, hang or OOM of one node | HIGH |
 | Malicious daemon → wallet: crash, wrong spend, owned-output leak | HIGH |
 | Privacy break in the reference wallet's transactions, or written on chain | HIGH |
+| Protocol-level privacy break, from any observer position | HIGH at least, never lowered by position, configuration or user action |
 | Co-signer, cold-signing partner or device/host: theft or key disclosure | HIGH |
 | On-path network, DNS, or miner below 50% | MEDIUM |
-| Slowdown without a crash; forged wallet proof (tx, spend, reserve, message) accepted; observer-position privacy leak | MEDIUM |
+| Slowdown without a crash; forged wallet proof (tx, spend, reserve, message) accepted; observer-position privacy leak that is not protocol-level | MEDIUM |
 | Cross-site or unattended reach to the default-unrestricted daemon | its effect, one tier lower for the visit; NOT the row below |
 | Unrestricted-RPC-only reached by a client the operator pointed there, or test-only | LOW, usually not reportable |
 | More than 50% of hashrate | LOW (out of the VRP's scope) |

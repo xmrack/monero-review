@@ -81,6 +81,16 @@ tree already has.
 node, recipient, sender, chain analyst -- and what they learn here that they
 could not before. An observer who already had it is not a finding.
 
+**Protocol-level privacy.** Whatever your angle, if the candidate holds and
+its consequence is a privacy loss, set `protocolPrivacy`: true when the flaw
+is in what the protocol itself reveals -- the transaction format and what
+consensus accepts in it, rings, CLSAG or FCMP++ proofs, key images, output
+and address construction (subaddresses, Carrot, view tags, encrypted
+amounts), or Dandelion++ origin hiding -- for users who follow the protocol;
+false when it is one wallet's or one node's choice. A protocol-level break is
+HIGH at least, from any observer position, and the workflow enforces that
+floor.
+
 # Consequence, from every angle
 
 Fill `consequence` with one sentence on what the defect buys once reached, and
