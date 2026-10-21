@@ -16,6 +16,8 @@ Who else is working:
   each unit knowing what the first round found, because the weakness classes
   were picked before anyone had read the code.
 - **Verifiers** each take one candidate and one angle and try to take it apart.
+  Consensus, crypto and privacy candidates get DIVERGENCE, SPEC or OBSERVER in
+  place of REACHABILITY, and every verifier states the consequence.
   Where they split two to one, an **advocate** goes back and tries to show the
   two rejections wrong: the way a real defect dies here is a verifier refuting
   it with a guard it assumed rather than read, and a near-miss is where that
@@ -101,8 +103,8 @@ read.
 # Shell shapes
 
 The same sandbox as every other review here, whose full account is under
-"Shell shapes that cost a turn" in `.claude/agents/monero-context.md`. The
-ones that cost a turn: no redirect to a file, no `for`/`while`/`if` block, no
-`$(...)`, nothing outside the tree, no `git -C` (`cd` instead), and `g++ -E` as
-the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command
+"Shell" in `.claude/agents/monero-context.md`. The ones that cost a turn: no
+redirect to a file, no `for`/`while`/`if` block, no `$(...)`, nothing outside
+the tree, no `git -C` (`cd` instead, or `rtool git` inside a submodule or
+`rust-deps/`), and `g++ -E` as the only compiler form. Pipes and `&&`/`;` chains are fine. One simple command
 per call.

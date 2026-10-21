@@ -28,18 +28,33 @@ Each unit you emit carries:
   literal, no globs.
 - `role`: one line on what this part of the change does.
 - `boundary`: the trust boundary it sits behind, named as
-  `.claude/references/monero/trust-boundaries.md` names them: the P2P/Levin surface, the
-  restricted or unrestricted RPC surface, block and transaction validation,
-  the daemon-to-wallet direction, a co-signer's messages (multisig and cold
-  signing), a hardware device's responses, the wallet cache and key files,
-  the build and packaging path. Write `none` when nothing untrusted reaches it.
+  `.claude/references/monero/trust-boundaries.md` names them:
+  1. the P2P/Levin surface;
+  2. the restricted or unrestricted RPC surface (including ZMQ);
+  3. deserialization of untrusted bytes;
+  4. the daemon-to-wallet direction;
+  5. on-chain data reaching the recipient's wallet -- a sender's crafted
+     outputs and `tx_extra`, scanned by somebody else's wallet;
+  6. a co-signer's messages (multisig and cold signing);
+  7. a hardware device's responses;
+  8. the wallet cache, key files and other blobs the user is handed;
+  9. block and transaction validation;
+  10. the build and CI path;
+  11. DNS, seed nodes, checkpoints and ban lists -- the ways the node learns
+      about the world.
 
-  Two of those are easy to miss because the counterparty sounds friendly. A
-  co-signer is a stranger holding another key share, and a hardware device is
-  what the user trusts INSTEAD of the host — so `src/multisig/`,
-  `src/device/`, `src/device_trezor/` and the cold-signing blob paths are
-  never `boundary: none`. Writing `none` there is what makes the researcher
-  drop the finding for want of an untrusted input to cite.
+  Add the FFI into Rust (`src/fcmp_pp/` calling monero-oxide) whenever a unit
+  crosses it: lengths, encodings and panics cross that line in both
+  directions. Write `none` only when nothing untrusted reaches the unit.
+
+  Three of those are easy to miss because the counterparty sounds friendly or
+  passive. A co-signer is a stranger holding another key share; a hardware
+  device is what the user trusts INSTEAD of the host; and a sender reaches the
+  recipient's scanner without any connection at all. So `src/multisig/`,
+  `src/device/`, `src/device_trezor/`, the cold-signing blob paths and the
+  wallet's scanning code are never `boundary: none`. Writing `none` there is
+  what makes the researcher drop the finding for want of an untrusted input to
+  cite.
 - `lenses`: the weakness classes worth spending a researcher on, from the
   fixed set your dispatch lists.
 
@@ -48,8 +63,10 @@ the wire, decides whether a block or transaction is valid, touches keys, or
 runs where a wallet trusts a daemon outranks everything else. A build script
 change outranks a refactor.
 
-At the deep profile the run adds a floor of classes to every unit of production
-source (see the dispatch prompt); choose what the unit needs beyond it.
+The run adds a floor of classes to every unit of production source at both
+tiers (see the dispatch prompt); choose what the unit needs beyond it.
+`.claude/references/monero/lenses.md` says where each class lives in this
+tree, which is the quickest way to tell whether a unit needs it.
 
 Choose lenses deliberately and sparingly. A ring signature change does not need
 `supply-chain`; a CMake change does not need `crypto-correctness`. Two or three

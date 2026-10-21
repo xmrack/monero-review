@@ -28,6 +28,7 @@ Run locally, leaves the result in `reviews/`:
 | `-f mode=deep` | the escalation. Requires a PR number; `pr=sweep` is refused |
 | `-f model=<id>` | pins the model. Default `auto`, the same model on both tiers |
 | `DEEP=1 ./review-local.sh` | deep, locally |
+| `TESTS=1 ./review-local.sh` | also build the head with ASan+UBSan and run its unit tests offline (needs docker; `TESTS=core` adds the consensus suite) |
 
 When the PR is merged, every confirmed finding is also read against upstream
 master and the branch it merged into. Ones a later commit fixed on both move to
@@ -42,6 +43,17 @@ gh variable set REVIEW_PAUSED --body 1 --repo xmrack/monero-review
 ```
 
 `--body 0` resumes. Reviewing a PR by number still works while paused.
+
+Deep reviews first build the PR head with ASan and UBSan and run its unit
+tests, plus `core_tests` when consensus code moved, in an offline container in
+a job that holds no secrets. The result reaches the reviewers as
+`PR_TESTS.md`: a lead to read, never a finding. A failing test is run again on
+base, so the file says which failures the PR brought. Standard reviews get it
+too when the variable is set (about an hour of runner time per PR):
+
+```bash
+gh variable set PR_TESTS --body 1 --repo xmrack/monero-review
+```
 
 ### Transcripts
 
@@ -66,14 +78,19 @@ Every PR the sweep picks up gets a **standard** scan. I can manually launch a
 | a pass across the unit seams | no | yes |
 | a second look at every unit | no | yes |
 | verifier angles per candidate | 2 (reachability, guard) | 3 (reachability, guard, impact) |
-| an advocate for a candidate one vote short | no | yes |
+| an advocate for a candidate one vote short | yes (1-1) | yes (2-1) |
+| sanitizer build and tests | when `PR_TESTS=1` | yes |
 | findings that are one defect merged into one entry | yes | yes |
 | chosen by | default, always | a human, by PR number |
 
 Both run `.claude/workflows/monero-deep-scan.js` under different profiles.
 
-Every candidate goes to a panel whose votes, and the count settles severity at what the panel actually
-found, moving a proposer's guess up or down. What survives is checked for duplicates. 
+Every candidate goes to a panel whose votes are counted in code, and the count
+settles severity at what the panel actually found, moving a proposer's guess up
+or down. Consensus, crypto and privacy candidates get a specialist angle
+(divergence, spec, observer) in reachability's place, and every verifier says
+what the defect buys; one that buys nothing is refuted. What survives is
+checked for duplicates.
 
 ## Where things are
 
@@ -84,8 +101,9 @@ found, moving a proposer's guess up or down. What survives is checked for duplic
   the words to cut and a pass to run over the draft.
 - `.claude/references/monero/` — how the Monero codebase works: architecture,
   six end-to-end flows, per-subsystem notes, the macro families that make grep
-  lie, errors and concurrency, build and tests. `README.md` there is the index.
-  Its last three files are the other half: what to *suspect*, where the rest
+  lie, errors and concurrency, build and tests, and `lenses.md`, where each
+  weakness class lives in the tree. `README.md` there is the index.
+  Its judgement files are the other half: what to *suspect*, where the rest
   says what the code *is*.
 
 **Skills:**
@@ -97,4 +115,6 @@ found, moving a proposer's guess up or down. What survives is checked for duplic
 workflow script serves both tiers, keyed on `profile`: what they share is the
 coverage arithmetic, the candidate schema and the vote counting, which are
 exactly the parts that must not drift. `.claude/agents/monero-context.md` is
-the context contract every agent opens with.
+the context contract every agent opens with. `scripts/rtool` gives the agents
+read-only git inside submodules and `rust-deps/`, caller lists, and weggli with
+the right flags; `scripts/callers.py` writes `PR_CALLERS.md` before a review.

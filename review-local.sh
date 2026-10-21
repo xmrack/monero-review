@@ -5,6 +5,9 @@
 #   ./review-local.sh 9876              # the standard review
 #   ./review-local.sh 9876 claude-fable-5-1
 #   DEEP=1 ./review-local.sh 9876       # the full multi-agent deep review
+#   TESTS=1 ./review-local.sh 9876      # also build with ASan and run the tests
+#                                       # in an offline container (needs docker);
+#                                       # TESTS=core adds the consensus suite
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 #
@@ -174,7 +177,8 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # pull request could plant`: project instructions Claude Code would load as
 # trusted, and the names this script itself writes and reads.
 # As in CI: case-insensitive, any file type, and symlinks.
-rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt"
+rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt" \
+  "$CACHE/PR_CALLERS.md" "$CACHE/PR_TESTS.md"
 tidy_checkout() {
   find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
     \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
@@ -392,8 +396,33 @@ fi
 # src/ and contrib/ only, so rust-deps/ below is not indexed and does not
 # slow it down.
 bash "$HERE/scripts/build_index.sh" "$CACHE"
+python3 "$HERE/scripts/callers.py" "$CACHE" origin/base > "$CACHE/PR_CALLERS.md"
 
-TOOLS="Read,Grep,Glob,Write(./**),Edit(./**),Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
+# rtool on PATH for the review, alone in a directory outside the checkout so
+# the model can run it and not rewrite it.
+RTOOL_BIN=$(mktemp -d)
+ln -s "$HERE/scripts/rtool" "$RTOOL_BIN/rtool"
+
+# The head built with ASan+UBSan and its tests run, as the workflow's tests
+# job does. Off unless asked: it takes about an hour the first time.
+case "${TESTS:-0}" in
+  0|false|"") ;;
+  *)
+    echo "==> building and testing the head in an offline container"
+    # A worktree, so switching it to base for the comparison leaves the
+    # review's checkout where it is. TESTS=core adds the consensus suite.
+    TCOPY=$(mktemp -d)/src
+    git -C "$CACHE" worktree add -q --detach "$TCOPY" HEAD
+    WORK="${PR_TESTS_WORK:-$HOME/.cache/monero-review/pr-tests}" \
+      bash "$HERE/scripts/pr_tests.sh" "$TCOPY" \
+      "$(git -C "$CACHE" merge-base origin/base HEAD)" "$CACHE/PR_TESTS.md" \
+      "$([ "$TESTS" = core ] && echo core)" \
+      || echo "!! the test build failed to run; reviewing without it" >&2
+    git -C "$CACHE" worktree remove --force "$TCOPY" || true
+    ;;
+esac
+
+TOOLS="Read,Grep,Glob,Write(./**),Edit(./**),Skill,Agent(monero-explore),Bash(git diff:*),Bash(git fetch origin:*),Bash(git log:*),Bash(git show:*),Bash(git merge-base:*),Bash(git grep:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git cat-file:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git describe:*),Bash(git shortlog:*),Bash(git name-rev:*),Bash(git --no-pager:*),Bash(readtags:*),Bash(cscope:*),Bash(rtool:*),Bash(rg:*),Bash(grep:*),Bash(sed:*),Bash(awk:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(nl:*),Bash(comm:*),Bash(diff:*),Bash(find:*),Bash(ls:*),Bash(cat:*),Bash(file:*),Bash(stat:*),Bash(xxd:*),Bash(od:*),Bash(strings:*),Bash(basename:*),Bash(dirname:*),Bash(jq:*),Bash(bc:*),Bash(shellcheck:*),Bash(g++ -E:*),Bash(weggli:*),Bash(cd:*),Bash(echo:*),Bash(printf:*),Bash(pwd:*),Bash(realpath:*),Bash(readlink:*),Bash(test:*),Bash(true:*),Bash(false:*),Bash(seq:*),Bash(date:*),Bash(tac:*),Bash(rev:*),Bash(fold:*),Bash(fmt:*),Bash(column:*),Bash(paste:*),Bash(join:*),Bash(cmp:*),Bash(md5sum:*),Bash(sha1sum:*),Bash(sha256sum:*),Bash(cksum:*),Bash(du:*),Bash(git show-ref:*),Bash(git for-each-ref:*),Bash(git symbolic-ref:*),Bash(git diff-tree:*),Bash(git submodule status:*),Bash(git count-objects:*)"
 
 # The two FLEET tiers need these on top, and nothing else does. Kept identical
 # to FLEET_EXTRA_TOOLS in .github/workflows/review.yml -- four separate
@@ -465,7 +494,7 @@ T0=$(date +%s)
 # The same settings as CI: sandboxed shell, file tools scoped to the
 # checkout, only the project's settings loaded, and personal config
 # directories out of scope.
-( cd "$CACHE" && CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
+( cd "$CACHE" && PATH="$RTOOL_BIN:$PATH" RTOOL_ROOT="$CACHE" CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$PROMPT" \
     --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
     --permission-mode default --setting-sources project \

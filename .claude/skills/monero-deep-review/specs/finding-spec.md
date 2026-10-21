@@ -176,8 +176,9 @@ Four things make a fix usable:
   Say that in a clause and give the local change that stops the bleeding. That
   is more useful than a confident wrong answer and more useful than silence.
 
-The panel never sees this field. The two angles are reachability and
-introduced-by-this-diff; a plausible-looking remedy is evidence for neither,
+The panel never sees this field. The angles attack whether the defect is
+reached, guarded and worth anything; a plausible-looking remedy is evidence for
+none of that,
 and showing one to a verifier only adds a cue that the finding must be real. So
 nothing downstream corrects a lazy fix. The merge stage does see it, because
 "would one change at one place fix both" is exactly the question it answers.
@@ -211,7 +212,8 @@ the defect end up in the same group, which is what makes deduplication mean
 something.
 
 Most of these say what they are. Eight are easy to file wrongly, and the
-distinctions are the ones this codebase actually turns on:
+distinctions are the ones this codebase actually turns on. Where each class
+lives in the tree is in `.claude/references/monero/lenses.md`.
 
 | Category | It is this when |
 | --- | --- |

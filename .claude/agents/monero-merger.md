@@ -72,7 +72,8 @@ cause is the field, and the fix is at the field.
 
 When you cannot tell, they are separate. A report with two entries for one
 defect wastes a reader's minute. A report with one entry for two defects hides
-a bug, and this pipeline files an issue that retires the pull request forever.
+a bug: the second defect loses its line and its fix, and is easily closed with
+the first.
 
 # What you write for a group you do merge
 
