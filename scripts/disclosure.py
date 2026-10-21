@@ -132,8 +132,8 @@ PRIVACY_BREAK = re.compile(
     r"|anonymity\s+set"
     r"|\bdox(?:x|es|ed|ing)\b"
     r"|privacy\s+(?:break|leak|loss|regression|flaw|bug)"
-    r"|\b(?:sender|recipient|receiver|payer|payee|user|owner)'s\s+(?:change|address|identity|"
-    r"amount|outputs?|enotes?|balance|subaddress|main\s+address|keys?|view\s+key|spend\s+key|IP)\b"
+    r"|\b(?:sender|recipient|receiver|payer|payee|user|owner)'s\s+(?:\w+\s+){0,2}(?:change|address|identity|"
+    r"amount|outputs?|enotes?|balance|subaddress|keys?|secret|IP)\b"
     r"|" + _LINK + r"[^.\n]{0,60}\b" + _OBJ +
     r"|" + _TRACE + r"[^.\n]{0,40}\b" + _OBJ +
     r"|\b(?:identif(?:y|ies)|reveal(?:s|ed|ing)?|learn(?:s|ed)?|expos(?:e|es|ed)|"
