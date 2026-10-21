@@ -171,7 +171,12 @@ Look at decoy selection (`gamma_picker`, `wallet2::get_outs`,
 remote daemon.
 
 Name the observer -- network watcher, peer, remote node, recipient, sender,
-chain analyst -- and what they learn that they could not before. Common
+chain analyst -- and what they learn that they could not before. Then say
+whether the break is protocol-level: a flaw in what the protocol itself puts
+on the chain or the wire (transaction format, proofs, key images, output and
+address construction, view tags, Dandelion++), rather than one wallet's
+choice. A protocol-level break is HIGH at least, from any observer position
+(`trust-boundaries.md`, Severity). Common
 shapes: a decoy distribution that differs from the real spend distribution,
 a field or fee that fingerprints the wallet, a request pattern that tells a
 remote node which outputs are the wallet's, a stem transaction that leaks to

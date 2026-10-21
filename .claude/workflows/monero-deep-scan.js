@@ -408,6 +408,9 @@ const VERDICT_SCHEMA = {
     // IMPACT angle, so this is the only place the question gets asked there.
     consequence: { type: 'string' },
     consequenceClass: { type: 'string', enum: CONSEQUENCES },
+    // A privacy loss in what the protocol itself reveals, as opposed to one
+    // wallet's or node's choice. Floors the published severity at HIGH.
+    protocolPrivacy: { type: 'boolean' },
   },
   required: ['holds', 'reasoning', 'decidingLine', 'consequence', 'consequenceClass'],
 }
@@ -1799,6 +1802,13 @@ const verifyAngle = (c, angle) => agent(
      'No other angle is covering what yours does not.',
      'Every angle fills consequence: what the defect buys once reached, in one',
      'sentence, and consequenceClass. If the honest class is none, holds is false.',
+     'If it holds and the consequence is a privacy loss, set protocolPrivacy: true',
+     'when the flaw is in what the PROTOCOL reveals (transaction format and what',
+     'consensus accepts, rings/CLSAG/FCMP++ proofs, key images, output and address',
+     'construction incl. Carrot and view tags, encrypted amounts, Dandelion++ origin',
+     'hiding) for users who follow it, false when it is one wallet\'s or node\'s',
+     'choice. A protocol-level privacy break is HIGH at least, from any observer',
+     'position; the count enforces that floor.',
      'Start from "this does not hold up" and let the code move you. Say it holds',
      'only with a line you read for each of: what it reaches, and nothing',
      'effective in between. The untrusted input sets the severity, not the verdict:',
@@ -1908,7 +1918,12 @@ const judged = await parallel(candidates.map((c) => () =>
   const provenanceDisputed = provVotes.length > 1 && !provAgreed
     ? { proposed: c.provenance, votes: provVotes, settled: provenance } : null
   const ratedSeverities = agreeing.map((v) => v.severity).filter(Boolean)
-  const severity = ratedSeverities.length ? settleSeverity(c.severity, ratedSeverities) : c.severity
+  // A protocol-level privacy break is HIGH at least, whatever the position
+  // it needs. Floored when at least half the confirming votes call it that.
+  const protocolVotes = agreeing.filter((v) => v.protocolPrivacy === true).length
+  const protocolPrivacy = agreeing.length > 0 && protocolVotes * 2 >= agreeing.length
+  const settled = ratedSeverities.length ? settleSeverity(c.severity, ratedSeverities) : c.severity
+  const severity = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
   const severitySplit = new Set(ratedSeverities).size > 1 ? ratedSeverities : null
   const rejecting = cast.filter((v) => v.holds === false).length
   return {
@@ -1930,6 +1945,7 @@ const judged = await parallel(candidates.map((c) => () =>
     rejecting,
     severity,
     severitySplit,
+    protocolPrivacy,
     // `high` needs three agreeing angles, so the standard profile's two-angle
     // panel caps every surviving finding at `medium` however sure its proposer
     // was.
