@@ -397,8 +397,13 @@ output index returned wrong is a chain split.
 **Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
 `migrate_4_5` ladder run from `open()` via `migrate()`. `open()` opens the
 sub-databases (`grep -n 'lmdb_db_open(txn, LMDB_' db_lmdb.cpp`; two are
-conditional) under `mdb_env_set_maxdbs(m_env, 32)`. The DUPFIXED tables use a dummy 8-byte all-zero key
-(`zerokval`), so the logical key is the first field of the *data*.
+conditional) under `mdb_env_set_maxdbs(m_env, 32)`. Most DUPFIXED tables use a dummy 8-byte all-zero key
+(`zerokval`), so the logical key is the first field of the *data*. Not all:
+`output_amounts` (DUPSORT|DUPFIXED|INTEGERKEY) is keyed by the real amount and
+its data starts with the amount index -- see the schema comment above
+`LMDB_BLOCKS` ("The output_amounts table doesn't use a dummy key, but uses
+DUPSORT.") and `BlockchainLMDB::add_output`
+(`grep -n 'MDB_val_set(k, amount)\|LMDB_OUTPUT_AMOUNTS' db_lmdb.cpp`).
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
 `batch_commit` / `batch_stop` / `batch_abort` all re-check it. `do_resize`
