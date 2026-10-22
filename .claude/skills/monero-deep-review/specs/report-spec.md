@@ -132,7 +132,7 @@ though they will.
 [{"file": "<the reference file this corrects>", "says": "<what it claims now, quoted, or `missing`>", "correction": "<what the tree shows>", "evidence": "<the path, symbol or command in the MONERO source that settles it>"}]
 -->
 
-<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> prior=<n> privacy=<n> -->
+<!-- deep-scan profile=deep units=<n> cells=<n> failedCells=<n> angles=3 candidates=<n> confirmed=<n> published=<n> fixedOnMaster=<n> merged=<n> refuted=<n> unverified=<n> unaccounted=<n> deferred=<n> drift=<n> driftPublished=<n> comments=<n> prior=<n> privacy=<n> funds=<n> -->
 ```
 
 # The header is three lines
@@ -616,7 +616,8 @@ never a number you reasoned your way to.
 | `unverified` | `coverage.candidatesUnverified` |
 | `unaccounted` | `coverage.unaccounted.length` |
 | `prior` | `coverage.priorCount`: the number of entries in `priorFindings`, each listed under `## Earlier findings`. The harness checks every earlier issue is named there |
-| `privacy` | `coverage.privacyCandidates`: every candidate that is a privacy break, confirmed, refuted or unverified. Any non-zero value, or a stamp without the field, files the review in the private disclosure repository |
+| `privacy` | `coverage.privacyCandidates` |
+| `funds` | `coverage.fundsCandidates` |
 | `deferred` | `coverage.deferredUnclaimed.length`: the ones nobody settled, **not** `coverage.deferred.length`. The harness publishes this number as "observation(s) ... never settled by anyone" |
 
 `cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
@@ -666,19 +667,11 @@ finding whose locator ends ` · not introduced by this pull request` goes
 private. That code is live already, so a public report of it is a public
 zero-day. You write nothing extra for it.
 
-**Every privacy break goes private, at any severity and any provenance.** The
-harness reads `privacy=` from the coverage stamp, and also reads the report
-itself for a way to link, trace, identify or deanonymise somebody. A privacy
-flaw is usually in the protocol, not only in this code: the spec is public,
-other implementations follow it, and older code often shares it, so "not
-live yet" protects nobody. A Carrot sender-linkability break was once
-published here at MEDIUM. Copy `privacy=` exactly, and add
-`reason=privacy` (below) whenever anything in the report -- a finding, an
-unverified candidate, a refuted claim, a comment discrepancy -- describes
-how somebody could learn who paid whom, which output was spent, an amount, or
-where a transaction came from.
+**Privacy breaks and soundness, inflation or burning bugs go private** at
+any severity. Copy `privacy=` and `funds=` exactly, and add the matching
+marker below whenever anything in the report describes one.
 
-**You add the marker for three more cases.** It is an HTML comment on its own
+**You add the marker for four more cases.** It is an HTML comment on its own
 line, directly above the `<!-- workflow-updates -->` stamp, or above the
 coverage stamp when there is no workflow-updates stamp:
 
@@ -698,8 +691,7 @@ coverage stamp when there is no workflow-updates stamp:
   and you must be able to say from the code alone what it fixes. A title
   that says "security" is not enough, and neither is a title that hides it.
   Patches like these are often titled blandly on purpose.
-- `reason=privacy`: anything in the report describes a privacy break, as
-  above. When in doubt, add it.
+- `reason=privacy` or `reason=funds`: as above. When in doubt, add it.
 - `reason=live-code`: a surviving `CRITICAL` or `HIGH` finding that is this
   pull request's own, but still affects code that is live. Examples: the
   change is already merged, the same defect sits in `origin/base` through
@@ -709,9 +701,9 @@ The harness also routes a `CRITICAL` or `HIGH` entry under `## Fixed on
 master` private on its own. A fix on master is not a fix in a release.
 
 Write the marker once, and at most one per file; when two reasons apply, use
-`security-fix`, then `privacy`. Write no marker in any other case. A finding
+`security-fix`, then `funds`, then `privacy`. Write no marker in any other case. A finding
 that this pull request introduces, in code that is not live yet, is reported
-in public as usual -- unless it is a privacy break. Catching that before it merges is what
+in public as usual, except as above. Catching that before it merges is what
 the review is for.
 
 **The marker is the only place that says why.** It is an HTML comment, the
