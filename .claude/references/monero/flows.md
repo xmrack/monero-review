@@ -578,8 +578,18 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
   deciding whether a reorg happens. They enter as `relay_method::block`, so
   `add_tx` skips the fee, extra-size, unlock-time and key-image-conflict
   checks.
-- Sync is refused entirely on non-public zones: `process_payload_sync_data`
-  returns early for Tor and I2P peers.
+- A Tor or I2P peer never starts a sync, but its claimed height still counts.
+  In `t_cryptonote_protocol_handler::process_payload_sync_data`
+  (`src/cryptonote_protocol/cryptonote_protocol_handler.inl`) the early
+  return on `get_zone() != epee::net_utils::zone::public_` comes **after**
+  the peer's `current_height` is stored in
+  `context.m_remote_blockchain_height` and after the `have_block(top_id)`
+  branch, so the peer stays in `state_normal` with an unchecked height.
+  `t_cryptonote_protocol_handler::on_connection_close` recomputes the sync
+  target as a max over `for_each_connection` with no zone filter, and
+  `node_server::for_each_connection` (`src/p2p/net_node.inl`) walks every
+  `m_network_zones` entry — so a hidden-zone peer can keep the target from
+  falling.
 
 ---
 
