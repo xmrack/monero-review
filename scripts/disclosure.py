@@ -39,20 +39,12 @@ A review goes private when any of these holds:
                 the surviving list as pre-existing, but which still affects
                 code that is live (the change is already merged, or the same
                 defect sits in the base branch or a release).
-  privacy       a privacy break at ANY severity and ANY provenance: the
-                coverage stamp counts one (`privacy=N`, N > 0), or there is no
-                stamp or no count on it, or the review carries
-                `<!-- disclosure reason=privacy -->`, or a section outside
-                `## Refuted`, `## Checked and clear` and `## Coverage` reads
-                as one. A privacy flaw
-                is usually in the protocol rather than the code: the spec is
-                public, other implementations follow it, and older code often
-                shares it, so "not live yet" protects nobody. A Carrot
-                sender-linkability break was once published here as MEDIUM.
+  privacy       a privacy break, at any severity: `privacy=N` on the stamp
+                (missing counts), `reason=privacy`, or the report's text.
+  funds         a soundness, inflation or burning bug, on the same tests with
+                `funds=N` and `reason=funds`.
 
-Anything else is public. A finding the pull request introduces, in code that is
-not live yet, is reported normally: that is the whole point of reviewing a pull
-request before it merges.
+Anything else is public.
 
 FAILS CLOSED. A report that is missing, empty or unreadable, or a marker with
 a reason this script does not know, routes private. Missing is the important
@@ -96,7 +88,7 @@ INTRODUCED = re.compile(
 # line break nor a `>` inside the comment hides it.
 MARKER = re.compile(r"<!--\s*disclosure\b(.*?)-->", re.IGNORECASE | re.DOTALL)
 MARKER_REASON = re.compile(r"\breason\s*=\s*([a-z-]+)", re.IGNORECASE)
-KNOWN_REASONS = ("security-fix", "live-code", "privacy")
+KNOWN_REASONS = ("security-fix", "live-code", "privacy", "funds")
 # Entries a merged pull request's recheck found fixed on master. They sit below
 # `## Refuted`, so the finding-heading rule above never sees them. The same
 # three patterns are in labels.py; change them together.
@@ -111,11 +103,8 @@ FIXED_SECTION_LOOSE = re.compile(r"^#{1,6}\s*[*_]*\s*Fixed\s+on\s+master", re.MU
 STAMP_FIXED = re.compile(r"<!--\s*deep-scan\b[^>]*?\sfixedOnMaster=(\d+)", re.IGNORECASE)
 STAMP = re.compile(r"<!--\s*deep-scan\b([^>]*)-->", re.IGNORECASE)
 STAMP_PRIVACY = re.compile(r"\sprivacy=(\d+)\b", re.IGNORECASE)
-# What a privacy break reads like. Loose on purpose: a harmless review sent
-# private costs a maintainer a minute, a privacy break sent public is
-# permanent. Tuned against every review this repository published: it
-# matches the privacy findings among them and not TLS fingerprints, the
-# linker, `link-local`, `origin/base` or Doxygen.
+STAMP_FUNDS = re.compile(r"\sfunds=(\d+)\b", re.IGNORECASE)
+# Privacy-break wording.
 _WHO = (r"(?:sender|recipient|receiver|payer|payee|origin(?!/)|real\s+(?:spend|input|output)|"
         r"true\s+spend|change\s+(?:amount|address|output|enote)|"
         r"which\s+(?:one|outputs?|address(?:es)?|wallets?|enotes?|inputs?))\b")
@@ -144,12 +133,35 @@ PRIVACY_BREAK = re.compile(
     r"|\bdistinguish(?:es|ed|able)?\b[^.\n]{0,40}\b(?:wallets?|transactions?|users?|txs?)\b",
     re.IGNORECASE,
 )
-# Words that name a privacy mechanism. In a defect entry they mean the defect
-# is about that mechanism; in a summary of a clean review they mean nothing.
 PRIVACY_TOPIC = re.compile(r"\bdecoys?\b|\bring\s+members?\b|\bview[\s-]+tags?\b",
                            re.IGNORECASE)
 DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|earlier findings|"
                              r"needs human review|comment discrepancy)\b", re.IGNORECASE)
+# Soundness, inflation and burning wording.
+_PROOF = (r"(?:proofs?|signatures?|range\s+proofs?|bulletproofs?|clsag|mlsag|"
+          r"membership|commitments?|key\s+images?|sa/?l|ring\s+signatures?)")
+FUNDS_BREAK = re.compile(
+    r"\bunsound"
+    r"|\b(?:breaks?|broken|loses?|lost|violat\w*)\s+(?:the\s+)?soundness\b"
+    r"|\bsoundness\s+(?:bug|break|flaw|hole|failure|issue)"
+    r"|\bforg(?:e|es|ed|ing|ery|eries)\b[^.\n]{0,40}\b" + _PROOF +
+    r"|\b" + _PROOF + r"\b[^.\n]{0,40}\bforg(?:e|es|ed|ing|ery|eries)\b"
+    r"|\binflation\s+(?:bug|attack|flaw|hole)|\binflates?\s+(?:the\s+)?(?:supply|money\s+supply|coins?)"
+    r"|\bcounterfeit"
+    r"|\b(?:create|creates|created|creating|mint|mints|minted|minting|print|prints)\b[^.\n]{0,30}"
+    r"\b(?:monero|xmr|coins?|money|funds)\b[^.\n]{0,20}\b(?:from\s+nothing|out\s+of\s+(?:thin\s+air|nothing)|that\s+do(?:es)?\s+not\s+exist)"
+    r"|\b(?:can|could|lets?|allows?|enables?|to)\b[^.\n]{0,40}\bdouble[\s-]+spend\b"
+    r"|\bspen(?:d|ds|t)\s+(?:the\s+same|one|an?)\s+(?:output|enote|coin|key\s+image)s?\s+(?:twice|more\s+than\s+once)"
+    r"|\bburn(?:s|ed|t|ing)?\b[^.\n]{0,40}\b(?:outputs?|enotes?|funds|coins?|monero|xmr|amounts?|payments?)\b"
+    r"|\b(?:outputs?|enotes?|funds|coins?|monero|xmr|amounts?|payments?)\b[^.\n]{0,40}\bburn(?:s|ed|t|ing)?\b"
+    r"|\bburning\s+bug"
+    r"|\bunspendable\b"
+    r"|\b(?:can|could)\s*not\s+(?:ever\s+)?be\s+spent\b|\bnever\s+be\s+spent\b"
+    r"|\bpermanently\s+(?:lost|locked|unspendable)\b",
+    re.IGNORECASE,
+)
+FUNDS_TOPIC = re.compile(r"\bsoundness\b|\binflation\b|\bdouble[\s-]+spen(?:d|ds|t|ding)\b",
+                         re.IGNORECASE)
 SAFE_SECTIONS = re.compile(r"^(?:refuted|checked and clear|coverage)\b", re.IGNORECASE)
 
 
@@ -190,25 +202,49 @@ def severe_fixed_on_master(text):
     return bool(stamps) and int(stamps[-1]) > len(heads)
 
 
-def privacy_break(text):
-    """True when the stamp counts a privacy break or lacks the count, or any
-    section that reports a problem reads like one."""
-    # No stamp, or no count on it, is an unknown count: private.
+def stamp_counts(text, field):
+    """True when the stamp counts one, or there is no stamp or no count on
+    it: an unknown count is treated as a non-zero one."""
     stamps = STAMP.findall(text)
-    count = STAMP_PRIVACY.search(" " + stamps[-1]) if stamps else None
-    if not count or int(count.group(1)) > 0:
-        return True
+    count = field.search(" " + stamps[-1]) if stamps else None
+    return not count or int(count.group(1)) > 0
+
+
+def reporting_sections(text):
+    """(name, body) for every section that reports a problem: all but
+    `## Refuted`, `## Checked and clear` and `## Coverage`. The preamble,
+    with the title and the Result line, is the one named ""."""
     bounds = [(m.start(), m.group(1).strip()) for m in SECTION.finditer(text)]
     starts = [0] + [b[0] for b in bounds]
     names = [""] + [b[1] for b in bounds]
     for i, start in enumerate(starts):
         end = starts[i + 1] if i + 1 < len(starts) else len(text)
-        if SAFE_SECTIONS.match(names[i].lstrip("*_ ")):
-            continue
-        body = STAMP.sub("", text[start:end])
+        name = names[i].lstrip("*_ ")
+        if not SAFE_SECTIONS.match(name):
+            yield name, STAMP.sub("", text[start:end])
+
+
+def privacy_break(text):
+    """True when the stamp counts a privacy break or lacks the count, or any
+    section that reports a problem reads like one."""
+    if stamp_counts(text, STAMP_PRIVACY):
+        return True
+    for name, body in reporting_sections(text):
         if PRIVACY_BREAK.search(body):
             return True
-        if DEFECT_SECTIONS.match(names[i].lstrip("*_ ")) and PRIVACY_TOPIC.search(body):
+        if DEFECT_SECTIONS.match(name) and PRIVACY_TOPIC.search(body):
+            return True
+    return False
+
+
+def funds_break(text):
+    """The same, for a soundness, inflation or burning bug."""
+    if stamp_counts(text, STAMP_FUNDS):
+        return True
+    for name, body in reporting_sections(text):
+        if FUNDS_BREAK.search(body):
+            return True
+        if (name == "" or DEFECT_SECTIONS.match(name)) and FUNDS_TOPIC.search(body):
             return True
     return False
 
@@ -235,6 +271,8 @@ def route(text):
         return "private", "fixed-on-master"
     if privacy_break(text):
         return "private", "privacy"
+    if funds_break(text):
+        return "private", "funds"
     return "public", ""
 
 
