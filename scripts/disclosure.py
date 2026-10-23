@@ -41,6 +41,8 @@ A review goes private when any of these holds:
                 defect sits in the base branch or a release).
   privacy       a privacy break, at any severity: `privacy=N` on the stamp
                 (missing counts), `reason=privacy`, or the report's text.
+                Except a LOW finding in code an unmerged change introduces:
+                the stamp leaves it out, and the text test skips its block.
   funds         a soundness, inflation or burning bug, on the same tests with
                 `funds=N` and `reason=funds`.
 
@@ -224,12 +226,35 @@ def reporting_sections(text):
             yield name, STAMP.sub("", text[start:end])
 
 
+def without_low_introduced(text):
+    """The report without the block of any LOW finding introduced by this
+    change. Its locator must not say pre-existing or newly reachable."""
+    cuts = []
+    for match in HEADING.finditer(text):
+        head = match.group(0)
+        if not re.match(r"###[ \t]+\[LOW\][ \t]", head) or re.search(r"\b(?:CRITICAL|HIGH|MEDIUM)\b", head, re.IGNORECASE):
+            continue
+        section = None
+        for section in SECTION.finditer(text, 0, match.start()):
+            pass
+        if not section or not re.match(r"findings\b", section.group(1).strip(), re.IGNORECASE):
+            continue
+        end = BLOCK_END.search(text, match.end())
+        block = text[match.end():end.start() if end else len(text)]
+        made = INTRODUCED.search(block)
+        if made and made.group(1).lower().startswith("introduced") and not PRE_EXISTING.search(block):
+            cuts.append((match.start(), end.start() if end else len(text)))
+    for start, stop in reversed(cuts):
+        text = text[:start] + text[stop:]
+    return text
+
+
 def privacy_break(text):
     """True when the stamp counts a privacy break or lacks the count, or any
     section that reports a problem reads like one."""
     if stamp_counts(text, STAMP_PRIVACY):
         return True
-    for name, body in reporting_sections(text):
+    for name, body in reporting_sections(without_low_introduced(text)):
         if PRIVACY_BREAK.search(body):
             return True
         if DEFECT_SECTIONS.match(name) and PRIVACY_TOPIC.search(body):

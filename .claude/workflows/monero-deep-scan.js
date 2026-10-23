@@ -2458,8 +2458,10 @@ return {
     confirmed: holds.length,
     published: findings.length,
     merged: mergedAway,
-    // Stamped as privacy= and funds=; see scripts/disclosure.py.
-    privacyCandidates: results.filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy ||
+    // Stamped as privacy= and funds=; see scripts/disclosure.py. A LOW
+    // privacy candidate in code an unmerged change introduces is not counted.
+    privacyCandidates: results.filter((r) => !(r.severity === 'LOW' && r.provenance === 'introduced' &&
+      !r.protocolPrivacy && !MASTER)).filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy ||
       (r.votes || []).some((v) => v && (v.protocolPrivacy || v.consequenceClass === 'privacy-loss')) ||
       PRIVACY_TEXT.test([r.candidate.title, r.candidate.reaches, r.candidate.rationale,
         r.candidate.untrustedInput].join(' '))).length,
