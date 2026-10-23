@@ -16,7 +16,7 @@ Verified against master `8308dee67` (2026-10-13).
 
 ## `src/crypto/` — the primitives
 
-`cncrypto` is five things that live together for historical reasons.
+`cncrypto` is six things that live together for historical reasons.
 
 1. **Ed25519 group and scalar arithmetic**, plain C: `crypto-ops.c` and
    `crypto-ops-data.c` (precomputed tables, no functions). SUPERCOP `ref10` with Monero-specific additions grafted on —
@@ -34,7 +34,7 @@ Verified against master `8308dee67` (2026-10-13).
    reject a key image with torsion (`l*I != identity`), and `multiexp.cc` uses
    it to skip identity terms. The Carrot X25519 conversions
    (`ge_p3_to_x25519`, `edwards_bytes_to_x25519_vartime`) have no callers
-   outside `crypto-ops.c` on master.
+   outside `crypto-ops.c` on master except `tests/unit_tests/x25519.cpp`.
 2. **The CryptoNote key API**: `crypto.h` / `crypto.cpp`. Key derivation
    (`generate_key_derivation` = `r*A` then mul-by-8), `derive_public_key`,
    `derive_subaddress_public_key`, `derive_view_tag`, Schnorr signatures, tx
@@ -55,6 +55,12 @@ Verified against master `8308dee67` (2026-10-13).
    cache encryption.
 5. **Proof-of-work**: `slow-hash.c` (legacy CryptoNight) and `rx-slow-hash.c`
    (the RandomX shim) — see below.
+6. **X25519**: `x25519.h` / `x25519.cpp`, a thin wrapper over the
+   `external/mx25519` submodule (`x25519_scmul_base_unclamped`,
+   `x25519_scmul_key_unclamped`; unclamped, so not RFC 7748). The backend is
+   picked at run time with `MX25519_TYPE_AUTO`. Groundwork for Carrot: nothing
+   calls the wrapper on master; `tests/unit_tests/x25519.cpp` calls mx25519
+   directly.
 
 **`src/crypto/wallet/` is a build-time swap, and it is not opt-in.**
 `MONERO_WALLET_CRYPTO_LIBRARY` defaults to `auto`; `monero_crypto_autodetect`
@@ -262,7 +268,7 @@ manifest. Upstream has already had to correct them once: commit `25a7c97bb`,
 "fix T,U,V generator raw values". The desync runs in either direction: that
 commit moved the C++ `T`, `U` and `V` to the monero-oxide `31c26d96` values
 while `Cargo.toml` still pinned `71da8f03`, whose `CompressedPoint::T` held
-the old value, and only a later pin bump closed the gap (find it with
+the old value, and only a later pin bump closed the gap (the oldest hit of
 `git log --oneline -S 31c26d96 -- src/fcmp_pp/fcmp_pp_rust/Cargo.toml`; on its parent
 `generators.cpp` already has `T` marked `//Source: 31c26d96`). So a change
 to `generators.cpp` alone needs the same comparison against the pinned
