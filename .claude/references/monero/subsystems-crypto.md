@@ -234,10 +234,18 @@ exports the hash-init points, `hash_grow_helios` / `hash_grow_selene`
 (wrapping `full_chain_membership_proofs::tree::hash_grow`), Selene/Helios
 point-to-cycle-scalar conversion, `selene_scalar_from_bytes`, zero scalars and
 to-bytes helpers. There is no prove, verify, key-image or spend-authorization (SA/L) entry point.
-Functions return `-1` for a null out-pointer and `-2` for a Rust-side
-failure; `tower_cycle.cpp` is the only C++ caller. Input pointers other than
-the out-pointer are not null-checked (`selene_scalar_from_bytes` reads 32
-bytes unconditionally).
+The `int`-returning exports return `-1` for a null out-pointer and `-2` for a
+Rust-side failure; `tower_cycle.cpp` is the only C++ caller. Input pointers
+other than the out-pointer are not null-checked (`selene_scalar_from_bytes`
+reads 32 bytes unconditionally; `hash_grow_helios`/`hash_grow_selene` check
+`hash_out` but not `new_children.buf` when `len` is non-zero — a `Slice` may
+carry a null `buf` only when `len` is 0, see `slice_from_raw_parts_0able` and
+`impl<T> From<Slice<T>> for &[T]`). The four `*_to_bytes` exports
+(`helios_scalar_to_bytes`, `selene_scalar_to_bytes`, `helios_point_to_bytes`,
+`selene_point_to_bytes`, macro `ec_elem_to_bytes`) return `void` and
+null-check neither `obj` nor `bytes_out`: they build the 32-byte slice with
+`core::slice::from_raw_parts_mut(bytes_out, 32)` unconditionally
+(`git grep -n is_null -- src/fcmp_pp/fcmp_pp_rust/src/lib.rs`).
 
 **The C++ side hard-codes generators the Rust side also defines.**
 `src/crypto/generators.cpp` carries the FCMP++ generators `T`, `U` and `V` as
@@ -251,7 +259,14 @@ and `FCMP_PLUS_PLUS_U` / `FCMP_PLUS_PLUS_V`
 So **a monero-oxide pin bump that leaves `generators.cpp` unchanged can desync
 C++ from Rust** — compare the constants against the new revision, not just the
 manifest. Upstream has already had to correct them once: commit `25a7c97bb`,
-"fix T,U,V generator raw values".
+"fix T,U,V generator raw values". The desync runs in either direction: that
+commit moved the C++ `T`, `U` and `V` to the monero-oxide `31c26d96` values
+while `Cargo.toml` still pinned `71da8f03`, whose `CompressedPoint::T` held
+the old value, and only a later pin bump closed the gap (find it with
+`git log --oneline -S 31c26d96 -- src/fcmp_pp/fcmp_pp_rust/Cargo.toml`; on its parent
+`generators.cpp` already has `T` marked `//Source: 31c26d96`). So a change
+to `generators.cpp` alone needs the same comparison against the pinned
+revision.
 
 CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
 FFI API header 'fcmp++.h' has broken compatibility with C" if the checked-in,
