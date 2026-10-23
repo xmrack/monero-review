@@ -206,8 +206,10 @@ refutations".
 Carrot is present only as groundwork: `CarrotOutputPairV1` in
 `src/fcmp_pp/fcmp_pp_types.h` and the Ed25519-to-X25519 helpers
 `ge_p3_to_x25519` / `edwards_bytes_to_x25519_vartime` in
-`src/crypto/crypto-ops.c`, which nothing outside that file calls
-(`grep -rn x25519 src tests`). There is no Carrot address, output type or
+`src/crypto/crypto-ops.c`, which nothing outside that file calls except
+`tests/unit_tests/x25519.cpp`, plus the unused X25519 wrapper
+`src/crypto/x25519.h` over `external/mx25519`
+(`git grep -n x25519 -- src tests`). There is no Carrot address, output type or
 scanning code on master.
 
 **It also means Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a

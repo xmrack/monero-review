@@ -38,7 +38,7 @@ randomx  rapidjson  supercop  polyseed  utf8proc  mx25519       (external/, subm
      |
    epee ......................... contrib/epee: portable_storage, Levin, HTTP, TLS
      |
- cncrypto ....................... src/crypto  (-> epee, randomx)
+ cncrypto ....................... src/crypto  (-> epee, mx25519, randomx)
      |
   common ........................ src/common  (-> cncrypto, unbound)
      |
@@ -185,8 +185,10 @@ reach `src/` through one edge only: `target_link_libraries` in
 `polyseed_wrapper`, which links `polyseed_static`, `utf8proc`, `sodium` and
 `cryptonote_basic`. `mx25519` (X25519, with MPL-2.0 assembly backends
 behind the `MX25519_COPYLEFT` option) is added `EXCLUDE_FROM_ALL` in
-`external/CMakeLists.txt`, and nothing in `src/` links it on master; a PR
-that links it brings a new scalar-multiplication path into the build.
+`external/CMakeLists.txt` and reaches `src/` through `cncrypto`, which links
+`mx25519_static` PUBLIC in `src/crypto/CMakeLists.txt`, so every library
+above `cncrypto` carries it. On master only the `src/crypto/x25519.cpp`
+wrapper and `tests/unit_tests/x25519.cpp` call it.
 `contrib/epee/` is Monero's own but
 predates most of `src/` and follows its own conventions (the epee dialect
 in `coding-style.md`).
