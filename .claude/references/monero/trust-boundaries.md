@@ -224,7 +224,14 @@ A network attacker is usually equivalent. `--daemon-ssl` defaults to
 (`blocked_mode_client::connect` in `net_helper.h`). Even when TLS succeeds, the
 verify callback in `contrib/epee/src/net_ssl.cpp` accepts an **unverified**
 certificate and only logs "SSL peer has not been verified". Only a
-fingerprint or a CA-verified mode authenticates the node.
+fingerprint or a CA-verified mode authenticates the node, and of the CA modes
+only `system_ca` checks the hostname. The same verify callback in
+`ssl_options_t::configure` gates the check on
+`verification != ssl_verification_t::system_ca || host.empty() || MONERO_HOSTNAME_VERIFY(host)(preverified, ctx)`,
+so the user-CA modes verify the chain but skip the hostname: `user_certificates`
+(from `--daemon-ssl-ca-certificates`) and `user_ca` (with
+`--daemon-ssl-allow-chained`). In those modes any certificate the user's CA
+issued authenticates as any node.
 
 `--trusted-daemon` (assumed by `make_basic` when the address is `localhost`,
 `*.localhost` or a loopback literal, via `tools::is_local_address`) enables
