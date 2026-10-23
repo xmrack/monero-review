@@ -231,7 +231,8 @@ def without_low_introduced(text):
     change. Its locator must not say pre-existing or newly reachable."""
     cuts = []
     for match in HEADING.finditer(text):
-        if match.group(1).upper() != "LOW" or not match.group(0).startswith("###"):
+        head = match.group(0)
+        if not re.match(r"###[ \t]+\[LOW\][ \t]", head) or re.search(r"\b(?:CRITICAL|HIGH|MEDIUM)\b", head, re.IGNORECASE):
             continue
         section = None
         for section in SECTION.finditer(text, 0, match.start()):
