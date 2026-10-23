@@ -254,10 +254,19 @@ consistency check for transactions the wallet did not just build itself:
 `sanity_check_pending_tx_set` (signed and multisig sets, via the `wallet2`
 wrappers of the same names in `parse_tx_from_str`, `load_multisig_tx`,
 `sign_multisig_tx`, `cold_sign_tx`, `make_multisig_tx_set`), and
-`check_consistent_ins_outs` across a set. It re-derives input amounts,
-commitments, key images, ring members and destinations against
-`m_transfers` and the account keys, and requires non-zero change to go to
-the sender. Its header states what it cannot check: URL destinations,
+`check_consistent_ins_outs` across a set. `sanity_check_pending_tx` /
+`sanity_check_pending_tx_set` re-derive input amounts, commitments, key
+images, ring members and destinations against `m_transfers` and the
+account keys, and require non-zero change to go to the sender.
+`sanity_check_unsigned_tx_set` (and the static `sanity_check_unsigned_tx`
+under it) takes only the `tx_construction_data`, the account keys and the
+subaddress map, so it **never sees `m_transfers`** (see their signatures in
+`pending_tx_validation.cpp`). And in the `wallet2::sign_tx` overload taking
+an `unsigned_tx_set&`, a `std::vector<pending_tx>&` and a `signed_tx_set&`, the `m_transfers` checks (the
+`selected_transfers` bound and `sanity_check_pending_tx_set` in the "check
+the local tx copies" loop) run **after** `import_outputs` has already
+rewritten `m_transfers` from the same unsigned blob, so they check the blob
+against itself. Its header states what it cannot check: URL destinations,
 `tx_construction_data::extra` versus the final `tx_extra`, and `mixRing`
 on deserialized txs. In `commit_tx` the check runs only to decide whether
 to record rings; a failure is logged at `MINFO` and **the transaction is
