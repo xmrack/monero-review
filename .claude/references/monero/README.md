@@ -36,6 +36,20 @@ suspect of it and what has already been refuted:
 | **`lenses.md`** | you were given a weakness class: where in this tree that class lives, what to ask, and the parallel implementations a guard has to cover |
 | **`refutations.md`** | **before reporting anything** — the recurring reasons candidate findings here turn out to be unreachable |
 
+The four below are the **history half** — what audits, papers and past
+incidents found, and the diff shapes that would repeat them. They were checked
+against master `8340be5e9`, fcmp++-stage `62bb16299` and monero-oxide
+`31c26d96e`; cite the audit, paper or disclosure a section names.
+
+| file | read it when |
+|---|---|
+| **`audits-crypto.md`** | the diff touches key images, ring signatures (CLSAG/MLSAG), Bulletproofs or BP+, the multi-exponentiation code, RingCT amounts, hashing or hash-to-point, RandomX, multisig, or off-chain protocols (atomic swaps, payment channels) |
+| **`audits-fcmp-carrot.md`** | the diff touches FCMP++, the membership proof, SA/L, Generalized Bulletproofs, the divisor gadget, curve trees, Helios/Selene, monero-oxide, Carrot, or Seraphis and post-quantum successors; its "Looks like a bug, is not" section goes with `refutations.md` before calling a torsion or "unconstrained value" observation a bug |
+| **`past-vulnerabilities.md`** | the diff touches wallet scanning and `tx_extra`, deserialization, RPC or P2P handlers, hardware wallets, decoy selection or P2Pool-facing code: what broke before and the diff shape that would break it again |
+| **`privacy-and-network.md`** | the diff touches decoy selection, relay and Dandelion++, anonymity networks, peer selection, what the wallet asks a daemon, or subaddresses and address privacy; and for every privacy (OBSERVER-angle) verdict |
+
+> Nothing in this resource is intended to express any opinions for any audit firms. Please review their source documents for their own words. Summaries here may not fully cover the nuances of their opinions and observations.
+
 ## Suggested order for a change you have not seen before
 
 1. `architecture.md` — 5 minutes, and it prevents most category errors.
@@ -65,13 +79,15 @@ suspect of it and what has already been refuted:
    `wallet_api` and `monero-wallet-cli` have different threat models and
    different concurrency. Name the one you mean.
 
-## The two halves, and why both
+## The three halves, and why all of them
 
 Most of this directory describes **what the code is**. `trust-boundaries.md`,
 `codebase-notes.md` and `refutations.md` describe **what to suspect of it**.
-Use both: the first half to understand the code, the second to judge it. A
-finding that skips the first is usually a category error; one that skips the
-second has usually already been refuted.
+The audit, vulnerability and privacy files record **what has already been
+found**. Use all three: the first to understand the code, the second to judge
+it, the third to recognise a known bug class or a settled question. A finding
+that skips the first is usually a category error; one that skips the others
+has usually already been refuted or reported.
 
 ## Keeping it honest
 

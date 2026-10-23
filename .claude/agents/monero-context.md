@@ -91,7 +91,9 @@ On demand: `macros.md` **before you trust a grep** (most control flow and
 every wire-facing serializer is macro-generated), `flows.md`,
 `errors-and-concurrency.md` before you call something unhandled or a race,
 `navigation.md`, `architecture.md`, `codebase-notes.md`, `coding-style.md`,
-`build-and-tests.md`.
+`build-and-tests.md`. For what audits, papers and past incidents found:
+`audits-crypto.md`, `audits-fcmp-carrot.md`, `past-vulnerabilities.md`, and
+`privacy-and-network.md` for every privacy verdict.
 
 ## Rules every agent here applies the same way
 

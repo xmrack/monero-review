@@ -711,6 +711,8 @@ const CONTEXT = [
   'subsystems-fcmp-carrot.md for src/fcmp_pp, src/carrot_*, the curve trees and',
   'external/mx25519. macros.md BEFORE TRUSTING A GREP: most control flow and every',
   'wire-facing serializer is macro-generated and has no text form.',
+  'What audits, papers and past incidents found: audits-crypto.md,',
+  'audits-fcmp-carrot.md, past-vulnerabilities.md, privacy-and-network.md.',
   'The candidate standard: .claude/skills/monero-deep-review/specs/finding-spec.md',
   '',
   'Callers: rtool callers <fn> prints cscope (src+contrib, then tests) AND every',
