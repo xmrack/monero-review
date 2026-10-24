@@ -269,6 +269,25 @@ design, and changing one changes the consensus tree. A width-0/1 proposal
 against `CurveTrees` is hardening, not a finding; it becomes one only if a
 pull request lets a width arrive from outside the source.
 
+## `linenoiseReadLine` has no length cap by design
+
+`linenoiseReadLine` in `external/linenoise/linenoise.c`, the blocking reader
+behind non-TTY input and history-file loading, grows its buffer without a
+limit. That is intended: the comment in `linenoise()` says "In this mode we
+don't want any limit to the line size", and a failed `realloc` frees the
+buffer and returns NULL rather than running on. Nothing outside the library
+reaches it -- check with
+`git grep -nE 'linenoise\(|linenoiseHistoryLoad' -- ':!external/linenoise'`,
+which returns nothing. epee's console in
+`contrib/epee/src/readline_buffer.cpp` uses only the multiplexed
+`linenoiseEditStart`/`linenoiseEditFeed` API, whose non-TTY reader is
+`linenoiseNoTTYFeed`, not `linenoiseReadLine`.
+
+An unbounded-growth proposal against `linenoiseReadLine` is not a finding; it
+becomes one only if a pull request adds a caller of `linenoise()` or
+`linenoiseHistoryLoad` that feeds it attacker-written input. Re-run the grep
+on the head you are reviewing.
+
 ## It is test-only code
 
 Changes under `tests/` do not ship. They matter if they also modify non-test
