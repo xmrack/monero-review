@@ -492,9 +492,14 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 - **Commits are not fsynced by default during initial sync.** The default
   `fast:async:1` opens LMDB with `MDB_NOSYNC` (`DBF_FAST`) and instead dispatches
   `store_blockchain` to `m_async_service` after each block, so a crash can
-  lose recent commits. `MDB_NOSYNC` stays set until
-  `on_connection_synchronized` calls `safesyncmode(true)` — a no-op if the
-  user pinned `--db-sync-mode` (`m_db_default_sync` false).
+  lose recent commits. The flag toggles over the node's life rather than
+  staying set until first sync: `on_connection_synchronized` calls
+  `safesyncmode(true)`, and so does `on_connection_close` when the target
+  recomputed after a peer closes falls below current height + 5;
+  `process_payload_sync_data` calls `safesyncmode(false)` again only for a
+  public peer at least 5 blocks ahead. `safesyncmode` is a no-op if the user
+  pinned `--db-sync-mode` (`m_db_default_sync` false). Check with
+  `git grep -n safesyncmode -- src/cryptonote_protocol/cryptonote_protocol_handler.inl`.
 - `mlog_configure` sets `DisableApplicationAbortOnFatalLog`, so **`MFATAL` does
   not terminate**. Several init failures rely on an explicit `return false`
   right after the `MFATAL`; dropping that return turns a fatal into a warning.
