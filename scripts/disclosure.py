@@ -55,8 +55,9 @@ EXCEPT a review whose findings are all LOW, or that has none, which is public
 whatever the privacy and funds tests say. Only a `security-fix`, `live-code`
 or unknown marker, or the pre-existing and fixed-on-master rules, still send
 it private. Read strictly: every severity heading a plain `### [LOW]`, as many
-as the stamp's `published=`, `unverified=0`, no non-zero `unaccounted=`, and
-nothing under `## Needs human review`.
+as the stamp's `published=`, `unverified=0`, no non-zero `unaccounted=`,
+nothing under `## Needs human review`, and no earlier finding above LOW quoted
+anywhere, except a MEDIUM marked Fixed.
 
 Anything else is public.
 
@@ -351,6 +352,11 @@ def only_low(text):
     for name, body in reporting_sections(text):
         if re.match(r"needs human review\b", name, re.IGNORECASE) and body.partition("\n")[2].strip():
             return False
+        # An earlier finding above LOW, quoted here, may be a private one.
+        for line in body.splitlines():
+            was = re.search(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM)\s*\)", line, re.IGNORECASE)
+            if was and (was.group(1).upper() != "MEDIUM" or not re.match(r"[-*\s]*\**Fixed\b", line)):
+                return False
         for match in HEADING.finditer(body):
             head = match.group(0)
             if not re.match(r"###[ \t]+\[LOW\][ \t]", head) or \
