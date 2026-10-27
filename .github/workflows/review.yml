@@ -133,7 +133,9 @@ env:
   # when scripts/disclosure.py routes it private: a CRITICAL or HIGH finding
   # already in live code, an obvious security patch by Monero developers,
   # which a public review would point attackers at before the release ships,
-  # or any privacy break except a LOW one an unmerged change introduces.
+  # any CRITICAL or HIGH finding in a merged pull request, any privacy break
+  # except a LOW one an unmerged change introduces, or any review of a pull
+  # request whose earlier review is open there.
   #
   # Needs the DISCLOSURE_TOKEN secret: a fine-grained token with Issues
   # read/write on this repository only. Without it nothing is reviewed at all
@@ -648,8 +650,10 @@ jobs:
           git -c protocol.allow=never -c protocol.https.allow=always \
             submodule update -q --init --recursive
           # The consensus suite only when consensus code or its tests move.
+          # Not `grep -q`: it stops reading, git dies of SIGPIPE on a long list,
+          # and pipefail reads that as no match.
           if git diff --name-only "$base_sha...pr" \
-               | grep -qE '^src/(cryptonote_core|cryptonote_basic|ringct|fcmp_pp|hardforks|blockchain_db|crypto|carrot_[a-z]+)/|^tests/core_tests/'; then
+               | grep -E '^src/(cryptonote_core|cryptonote_basic|ringct|fcmp_pp|hardforks|blockchain_db|crypto|carrot_[a-z]+)/|^tests/core_tests/' >/dev/null; then
             echo "CORE=core" >> "$GITHUB_ENV"
           fi
       # Per pull request: the build runs the pull request's CMake with the
@@ -663,7 +667,6 @@ jobs:
         timeout-minutes: 180
         run: |
           WORK="$PWD/pr-tests-work" bash harness/scripts/pr_tests.sh src "$BASE_SHA" PR_TESTS.md ${CORE:-}
-          cat PR_TESTS.md
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -1200,7 +1203,9 @@ jobs:
           : > "$RUNNER_TEMP/submodule-diffs.md"
           # -z, so a path is exactly what git means by it: each record is the
           # meta field, NUL, the path, NUL.
-          git diff origin/base...HEAD --raw --no-abbrev -z 2>/dev/null |
+          # --no-renames: a rename record carries two paths, and would put every
+          # record after it out of step.
+          git diff --no-renames origin/base...HEAD --raw --no-abbrev -z 2>/dev/null |
             while IFS= read -r -d '' meta && IFS= read -r -d '' sub; do
               read -r omode nmode old new _ <<< "${meta#:}"
               [ "$omode" = 160000 ] || [ "$nmode" = 160000 ] || continue
@@ -1638,7 +1643,10 @@ jobs:
           path: ${{ runner.temp }}/pr-tests
       - name: Hand over the test results
         run: |
-          if [ -s "$RUNNER_TEMP/pr-tests/PR_TESTS.md" ]; then
+          # Only results for the head under review: the author may have pushed
+          # while the tests ran.
+          if [ -s "$RUNNER_TEMP/pr-tests/PR_TESTS.md" ] &&
+             grep -m1 '^Head: ' "$RUNNER_TEMP/pr-tests/PR_TESTS.md" | grep -q "^Head: ${HEAD_SHA_FULL:0:12}\."; then
             cp "$RUNNER_TEMP/pr-tests/PR_TESTS.md" PR_TESTS.md
             echo "PR_TESTS.md: $(wc -l < PR_TESTS.md) lines"
           else
@@ -2833,10 +2841,30 @@ jobs:
           # private review a stranger can pick out.
           fail() { echo "::error::publish failed"; outcome "$1"; exit 1; }
 
-          # Three tries, because one 502 used to cost a finished review.
+          # Three tries, because one 502 used to cost a finished review. A
+          # 502 can come after the issue was made, so a retry first counts the
+          # newest issues with this title: one more than before is that issue.
           create() {
-            local i
+            local i repo title before now
+            local -a args=("$@")
+            for ((i = 0; i < ${#args[@]}; i++)); do
+              case "${args[i]}" in
+                --repo) repo=${args[i+1]} ;;
+                --title) title=${args[i+1]} ;;
+              esac
+            done
+            same() {
+              local t
+              t=$(gh issue list --repo "$repo" --state all --limit 30 --json title \
+                --jq '.[].title' 2>/dev/null) || return 1
+              printf '%s\n' "$t" | grep -cxF -- "$title" || true
+            }
+            before=$(same) || before=""
             for i in 1 2 3; do
+              if [ "$i" -gt 1 ] && [ -n "$before" ] && now=$(same) &&
+                 [ "$now" -gt "$before" ]; then
+                return 0
+              fi
               gh issue create "$@" > "$RUNNER_TEMP/private-state/created" 2>/dev/null && return 0
               sleep $(( i * 10 ))
             done
@@ -2916,6 +2944,18 @@ jobs:
             exit 0
           fi
 
+          # An open private review of this pull request keeps the next one
+          # private: the reason it went there may not show in this report. A
+          # lookup that fails counts as one.
+          also=()
+          if [ "$route" = public ] && { [ -z "${DISCLOSURE_TOKEN:-}" ] || ! titles=$(GH_TOKEN="$DISCLOSURE_TOKEN" \
+              gh issue list --repo "$DISCLOSURE_REPO" --state open --label "pr-${{ matrix.pr }}" \
+              --limit 100 --json title --jq '.[].title' 2>/dev/null) || \
+              printf '%s\n' "$titles" | grep -q "^Review: $UPSTREAM#${{ matrix.pr }} @ "; }; then
+            route=private
+            also=(previously-private)
+          fi
+
           if [ "$route" = private ]; then
             # THE PRIVATE ROUTE. Same title, so the dedup record in
             # select_prs.py reads both repositories alike, and the same
@@ -2931,7 +2971,7 @@ jobs:
             {
               echo "> Filed privately. Do not repost, summarise or link this outside the disclosure process."
               echo
-              python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --summary review.md
+              python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --summary review.md "${also[@]}"
               echo
               python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --strip review.md
             } > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed

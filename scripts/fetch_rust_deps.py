@@ -376,18 +376,21 @@ def unpack_crate(data, dest):
     (3.12+) rejects absolute paths, `..`, links pointing outside, and device
     nodes; the fallback does the same checks by hand for an older interpreter,
     because silently extracting unfiltered would be the wrong way to degrade.
+    Neither filter drops `.git`, whose config names commands git runs, so
+    every member under one is left out.
     """
     total = 0
     try:
         with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
-            members = tar.getmembers()
+            members = [m for m in tar.getmembers()
+                       if ".git" not in m.name.replace("\\", "/").lower().split("/")]
             for m in members:
                 total += max(0, m.size)
                 if total > MAX_UNPACKED_BYTES:
                     return False, f"unpacks to more than {MAX_UNPACKED_BYTES} bytes"
             os.makedirs(dest, exist_ok=True)
             try:
-                tar.extractall(dest, filter="data")
+                tar.extractall(dest, members=members, filter="data")
             except TypeError:
                 safe = []
                 for m in members:
