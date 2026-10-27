@@ -414,7 +414,7 @@ const VERDICT_SCHEMA = {
     // wallet's or node's choice. Floors the published severity at HIGH.
     protocolPrivacy: { type: 'boolean' },
   },
-  required: ['holds', 'reasoning', 'decidingLine', 'consequence', 'consequenceClass'],
+  required: ['holds', 'reasoning', 'decidingLine', 'provenance', 'consequence', 'consequenceClass'],
 }
 
 // One finding read again on upstream master, for a merged pull request. One
@@ -587,9 +587,10 @@ function lensFloor(paths) {
   for (const [re, lenses] of FLOOR_BY_PATH) if (src.some((p) => re.test(p))) lenses.forEach((l) => out.add(l))
   return [...out]
 }
-// Paths no exclusion may remove: production source and build files. A mapper
-// that calls one "generated" or "a pure reformat" sends it back into a unit.
-const MUST_READ = (p) => !TEST_OR_DOC.test(p) && (SOURCE_FILE.test(p) || BUILD_FILE.test(p) || CONSENSUS_TEST.test(p))
+// Paths no exclusion may remove: production source, build files and consensus
+// tests. A mapper that calls one "generated" or "a pure reformat" sends it
+// back into a unit.
+const MUST_READ = (p) => CONSENSUS_TEST.test(p) || (!TEST_OR_DOC.test(p) && (SOURCE_FILE.test(p) || BUILD_FILE.test(p)))
 // Two angles at standard, three at deep. REACHABILITY and GUARD are the two
 // kept, because they are the two ways a candidate is actually wrong: nothing
 // untrusted gets there, or something in between already stops it. IMPACT
@@ -1913,7 +1914,18 @@ const judged = await parallel(candidates.map((c) => () =>
   const provVotes = agreeing.map((v) => v.provenance).filter(Boolean)
   const provAgreed = provVotes.length && provVotes.every((p) => p === provVotes[0])
     ? provVotes[0] : null
+  const ratedSeverities = agreeing.map((v) => v.severity).filter(Boolean)
+  // A protocol-level privacy break is HIGH at least, whatever the position
+  // it needs. Floored when at least half the confirming votes call it that.
+  const protocolVotes = agreeing.filter((v) => v.protocolPrivacy === true).length
+  const protocolPrivacy = agreeing.length > 0 && protocolVotes * 2 >= agreeing.length
+  const settled = ratedSeverities.length ? settleSeverity(c.severity, ratedSeverities) : c.severity
+  const severity = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
+  // Except at CRITICAL and HIGH, where any confirming verifier's
+  // `pre-existing` settles it: that label is what files the review privately,
+  // and a severe finding wrongly called this change's own is published.
   const provenance = provAgreed
+    || (sevRank(severity) <= sevRank('HIGH') && provVotes.includes('pre-existing') ? 'pre-existing' : null)
     || (provVotes.includes(c.provenance) ? c.provenance : null)
     || (provVotes.length
         ? provVotes.reduce((a, b) => (provRankV(b) > provRankV(a) ? b : a))
@@ -1922,13 +1934,6 @@ const judged = await parallel(candidates.map((c) => () =>
         : c.provenance)
   const provenanceDisputed = provVotes.length > 1 && !provAgreed
     ? { proposed: c.provenance, votes: provVotes, settled: provenance } : null
-  const ratedSeverities = agreeing.map((v) => v.severity).filter(Boolean)
-  // A protocol-level privacy break is HIGH at least, whatever the position
-  // it needs. Floored when at least half the confirming votes call it that.
-  const protocolVotes = agreeing.filter((v) => v.protocolPrivacy === true).length
-  const protocolPrivacy = agreeing.length > 0 && protocolVotes * 2 >= agreeing.length
-  const settled = ratedSeverities.length ? settleSeverity(c.severity, ratedSeverities) : c.severity
-  const severity = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
   const severitySplit = new Set(ratedSeverities).size > 1 ? ratedSeverities : null
   const rejecting = cast.filter((v) => v.holds === false).length
   return {
@@ -2247,9 +2252,12 @@ let findings = assembled.map((entry) => {
   // Take the strongest attribution, because a diff that introduced any site of
   // a defect is implicated in it, and flag the mix so the report says which
   // site is which rather than tarring every site with the worst answer.
+  // Except a CRITICAL or HIGH site that is pre-existing: that is a live bug,
+  // and the entry must say so for the review to be filed privately.
   const provRank = (p) => { const i = PROVENANCES.indexOf(p); return i < 0 ? PROVENANCES.length : i }
-  const provenance = members.reduce((p, m) =>
-    (provRank(m.provenance) < provRank(p) ? m.provenance : p), members[0].provenance)
+  const provenance = members.some((m) => m.provenance === 'pre-existing' && sevRank(m.severity) <= sevRank('HIGH'))
+    ? 'pre-existing'
+    : members.reduce((p, m) => (provRank(m.provenance) < provRank(p) ? m.provenance : p), members[0].provenance)
   const provenanceMixed = members.some((m) => m.provenance !== provenance)
   return {
     ...primary,
@@ -2409,6 +2417,10 @@ findings.sort((x, y) => sevRank(x.severity) - sevRank(y.severity) ||
                         CONFIDENCES.indexOf(x.confidence) - CONFIDENCES.indexOf(y.confidence))
 findings.forEach((f, i) => { f.id = 'F' + (i + 1) })
 
+// The entry each confirmed candidate is published in, merged or not.
+const publishedIn = new Map(findings.flatMap((f) =>
+  (f.merged ? f.merged.sites.map((x) => x.id) : [f.candidate.id]).map((id) => [id, f])))
+
 if (unverified.length) log(unverified.length + ' candidate(s) got no answer from any angle')
 log(holds.length + ' stood up, ' + refuted.length + ' taken apart' +
     (mergedAway ? ', ' + mergedAway + ' folded by merging' : '') +
@@ -2461,9 +2473,13 @@ return {
     published: findings.length,
     merged: mergedAway,
     // Stamped as privacy= and funds=; see scripts/disclosure.py. A LOW
-    // privacy candidate in code an unmerged change introduces is not counted.
-    privacyCandidates: results.filter((r) => !(r.severity === 'LOW' && r.provenance === 'introduced' &&
-      !r.protocolPrivacy && !MASTER)).filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy ||
+    // privacy candidate in code an unmerged change introduces is not counted,
+    // unless the entry it is published in is above LOW or not introduced.
+    privacyCandidates: results.filter((r) => {
+      const f = publishedIn.get(r.candidate.id) || r
+      return !([r, f].every((x) => x.severity === 'LOW' && x.provenance === 'introduced') &&
+        !r.protocolPrivacy && !MASTER)
+    }).filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy ||
       (r.votes || []).some((v) => v && (v.protocolPrivacy || v.consequenceClass === 'privacy-loss')) ||
       PRIVACY_TEXT.test([r.candidate.title, r.candidate.reaches, r.candidate.rationale,
         r.candidate.untrustedInput].join(' '))).length,
@@ -2539,8 +2555,8 @@ return {
     'paraphrase drops the label. coverage.provenanceCounts is the breakdown,',
     'coverage.provenanceCorrected names every entry whose proposer got the label',
     'wrong and the panel fixed it, and coverage.provenanceDisputed names the ones',
-    'the confirming verifiers disagreed on (the proposer\'s label stands if one backs',
-    'it): both go on the Coverage **Corrections.** line. A `relationToDiff` saying the',
+    'the confirming verifiers disagreed on (below HIGH the proposer\'s label stands if one',
+    'backs it): both go on the Coverage **Corrections.** line. A `relationToDiff` saying the',
     'change restores a released behaviour goes in **Where it came from.** On a merged entry `provenanceMixed`',
     'means the sites differ, so give each site its own answer rather than one',
     'label for all of them.',

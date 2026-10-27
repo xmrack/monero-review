@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Rewrite references to upstream pull requests and issues so GitHub does not
-turn them into cross-reference events on the upstream repository.
+"""Rewrite references to pull requests and issues so GitHub does not turn them
+into cross-reference events on upstream or any other repository.
 
     python3 scripts/neutralise.py FILE [UPSTREAM]
 
@@ -23,7 +23,8 @@ import sys
 
 
 def neutralise(text, upstream):
-    repo = re.escape(upstream)
+    # Any repository's, not only upstream's: each one notifies its target.
+    repo = r"([A-Za-z0-9-]+/[A-Za-z0-9_.-]+?)"
     url = re.compile(
         r"(?:https?://)?(?:www\.)?github\.com/" + repo
         + r"/(?:pull|issues)/(\d+)(?:/[^\s)\]>]*)?(?:#[^\s)\]>]*)?",
@@ -35,7 +36,8 @@ def neutralise(text, upstream):
     def sub(match):
         nonlocal count
         count += 1
-        return f"{upstream} PR {match.group(1)}"
+        name = upstream if match.group(1).lower() == upstream.lower() else match.group(1)
+        return f"{name} PR {match.group(2)}"
 
     text = url.sub(sub, text)
     text = short.sub(sub, text)
@@ -45,7 +47,7 @@ def neutralise(text, upstream):
 LINK_HOSTS = ("github.com", "www.github.com")
 CODE = re.compile(r"(^```.*?^```[^\n]*$|^~~~.*?^~~~[^\n]*$|(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\2(?!`))",
                   re.MULTILINE | re.DOTALL)
-MENTION = re.compile(r"(?<![\w/.@-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?)\b")
+MENTION = re.compile(r"(?<![A-Za-z0-9/.@-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9-])")
 IMAGE = re.compile(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
 MDLINK = re.compile(r"(?<!!)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
 AUTOLINK = re.compile(r"<(https?://[^>\s]+)>")
