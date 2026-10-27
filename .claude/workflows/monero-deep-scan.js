@@ -2474,10 +2474,11 @@ return {
     merged: mergedAway,
     // Stamped as privacy= and funds=; see scripts/disclosure.py. A LOW
     // privacy candidate in code an unmerged change introduces is not counted,
-    // judged by the entry it is published in: merged into a HIGH, it counts.
+    // unless the entry it is published in is above LOW or not introduced.
     privacyCandidates: results.filter((r) => {
       const f = publishedIn.get(r.candidate.id) || r
-      return !(f.severity === 'LOW' && f.provenance === 'introduced' && !r.protocolPrivacy && !MASTER)
+      return !([r, f].every((x) => x.severity === 'LOW' && x.provenance === 'introduced') &&
+        !r.protocolPrivacy && !MASTER)
     }).filter((r) => r.candidate.category === 'privacy' || r.protocolPrivacy ||
       (r.votes || []).some((v) => v && (v.protocolPrivacy || v.consequenceClass === 'privacy-loss')) ||
       PRIVACY_TEXT.test([r.candidate.title, r.candidate.reaches, r.candidate.rationale,
