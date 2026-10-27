@@ -157,8 +157,11 @@ PRIVACY_BREAK = re.compile(
 )
 PRIVACY_TOPIC = re.compile(r"\bdecoys?\b|\bring\s+members?\b|\bview[\s-]+tags?\b",
                            re.IGNORECASE)
-DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|"
+DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|earlier findings|"
                              r"needs human review|comment discrepancy)\b", re.IGNORECASE)
+# The title in an Earlier findings line: "· `#N` · <title> (was SEVERITY)".
+EARLIER_TITLE = re.compile(r"`#\d+`\s*·[^\n]*?\(\s*was\s+(?:CRITICAL|HIGH|MEDIUM|LOW)\s*\)",
+                           re.IGNORECASE)
 # Soundness, inflation and burning wording.
 _PROOF = (r"(?:proofs?|signatures?|range\s+proofs?|bulletproofs?|clsag|mlsag|"
           r"membership|commitments?|key\s+images?|sa/?l|ring\s+signatures?)")
@@ -344,10 +347,11 @@ def text_findings(text, matches):
     first, with the words that matched."""
     found = []
     for name, body in reporting_sections(text):
-        # Quoted from this repository's public issues only (prior_findings.py),
-        # so their words are public already.
+        # An earlier finding's title is quoted from this repository's public
+        # issues only (prior_findings.py), so its words are public already.
+        # What the run wrote about it is read as usual.
         if re.match(r"earlier findings\b", name, re.IGNORECASE):
-            continue
+            body = EARLIER_TITLE.sub("", body)
         for i, chunk in enumerate(re.split(r"(?m)^(?=#{3,6}\s)", body)):
             hit = matches(name, chunk)
             if not hit:
