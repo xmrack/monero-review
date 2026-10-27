@@ -4,7 +4,7 @@ disclosure repository.
 
     python3 scripts/disclosure.py [review.md]          # decide
     python3 scripts/disclosure.py --strip review.md    # body for the issue
-    python3 scripts/disclosure.py --summary review.md  # why it is private
+    python3 scripts/disclosure.py --summary review.md [reason...]  # why it is private
 
 Deciding prints two lines and nothing else:
 
@@ -43,6 +43,10 @@ A review goes private when any of these holds:
                 the surviving list as pre-existing, but which still affects
                 code that is live (the change is already merged, or the same
                 defect sits in the base branch or a release).
+  merged        a surviving CRITICAL or HIGH finding when `PR_STATE` in the
+                environment is not `open` or `closed`: the pull request is
+                merged, or its state is unknown, so the code is live whatever
+                the report says.
   privacy       a privacy break, at any severity: `privacy=N` on the stamp
                 (missing counts), `reason=privacy`, or the report's text.
                 Except a LOW finding in code an unmerged change introduces:
@@ -59,6 +63,7 @@ of candidate findings, and "public" would let that reach a public artifact.
 Filing a harmless review in the private repository costs a maintainer a
 minute; filing a harmful one in public cannot be undone.
 """
+import os
 import re
 import sys
 
@@ -93,6 +98,8 @@ INTRODUCED = re.compile(
 # `## Refuted`, beside the other stamps. Lazy and across lines, so neither a
 # line break nor a `>` inside the comment hides it.
 MARKER = re.compile(r"<!--\s*disclosure\b(.*?)-->", re.IGNORECASE | re.DOTALL)
+# Any comment naming disclosure, so a misspelt marker is not read as none.
+LOOSE_MARKER = re.compile(r"<!-(?:(?!-->).)*?\bdisclosure\b", re.IGNORECASE | re.DOTALL)
 MARKER_REASON = re.compile(r"\breason\s*=\s*([a-z-]+)", re.IGNORECASE)
 KNOWN_REASONS = ("security-fix", "live-code", "privacy", "funds")
 # Entries a merged pull request's recheck found fixed on master. They sit below
@@ -171,6 +178,13 @@ FUNDS_TOPIC = re.compile(r"\bsoundness\b|\binflation\b|\bdouble[\s-]+spen(?:d|ds
 SAFE_SECTIONS = re.compile(r"^(?:refuted|checked and clear|coverage)\b", re.IGNORECASE)
 
 
+def marked_refuted(match):
+    """True when a heading's bracket, not its title, says refuted: a title
+    like "bounds check refuted by the caller" is a finding like any other."""
+    bracket = (match.group(2) or "").split("]", 1)
+    return len(bracket) == 2 and bool(re.search(r"refuted", bracket[0], re.IGNORECASE))
+
+
 def severe_pre_existing(text):
     """True when a surviving CRITICAL or HIGH finding predates the PR, or does
     not say that it does not."""
@@ -187,7 +201,7 @@ def pre_existing_findings(text):
     for match in HEADING.finditer(text):
         if match.group(1).upper() not in ("CRITICAL", "HIGH"):
             continue
-        if re.search(r"refuted", match.group(2) or "", re.IGNORECASE):
+        if marked_refuted(match):
             continue
         section = None
         for section in SECTION.finditer(text, 0, match.start()):
@@ -198,6 +212,26 @@ def pre_existing_findings(text):
         block = text[match.end():end.start() if end else len(text)]
         if PRE_EXISTING.search(block) or not INTRODUCED.search(block):
             found.append(heading_title(match.group(0)))
+    return found
+
+
+def merged_findings(text):
+    """The surviving CRITICAL and HIGH findings, when the pull request may be
+    merged."""
+    if os.environ.get("PR_STATE") in ("open", "closed"):
+        return []
+    found = []
+    for match in HEADING.finditer(text):
+        if match.group(1).upper() not in ("CRITICAL", "HIGH"):
+            continue
+        if marked_refuted(match):
+            continue
+        section = None
+        for section in SECTION.finditer(text, 0, match.start()):
+            pass
+        if section and REFUTED_SECTION.match(section.group(0)):
+            continue
+        found.append(heading_title(match.group(0)))
     return found
 
 
@@ -332,7 +366,7 @@ def marker_reason(text):
     reason is missing or not one we know, or None when there is no marker."""
     match = MARKER.search(text)
     if not match:
-        return None
+        return "unknown" if LOOSE_MARKER.search(text) else None
     reason = MARKER_REASON.search(match.group(1))
     if reason and reason.group(1).lower() in KNOWN_REASONS:
         return reason.group(1).lower()
@@ -345,6 +379,8 @@ def route(text):
         return "private", reason
     if severe_pre_existing(text):
         return "private", "pre-existing"
+    if merged_findings(text):
+        return "private", "merged"
     if severe_fixed_on_master(text):
         return "private", "fixed-on-master"
     if privacy_break(text):
@@ -361,6 +397,9 @@ WHY = {
     "unknown": "A disclosure marker with a reason this script does not know. Routed private by default.",
     "pre-existing": "A CRITICAL or HIGH finding is not this pull request's own, so it is "
                     "already in live code.",
+    "merged": "A CRITICAL or HIGH finding in a pull request that is merged, or whose state "
+              "could not be read, so the code is live.",
+    "previously-private": "An earlier review of this pull request is still open here.",
     "fixed-on-master": "A CRITICAL or HIGH finding is fixed on master but not yet in a release, "
                        "or its severity could not be read.",
     "privacy": "A privacy break. Only a LOW finding introduced by an unmerged change is exempt.",
@@ -368,15 +407,17 @@ WHY = {
 }
 
 
-def summary(text):
-    """Every reason the report is private, each once, with what met it."""
-    reasons = {}
+def summary(text, extra=()):
+    """Every reason the report is private, each once, with what met it, after
+    any reasons the workflow decided itself."""
+    reasons = {reason: [] for reason in extra if reason in WHY}
     if not text.strip():
         return "**Why this is private**: the report is empty.\n"
     marker = marker_reason(text)
     if marker:
         reasons[marker] = []
     for reason, find in (("pre-existing", pre_existing_findings),
+                         ("merged", merged_findings),
                          ("fixed-on-master", fixed_on_master_findings),
                          ("privacy", privacy_findings), ("funds", funds_findings)):
         found = find(text)
@@ -409,7 +450,7 @@ def main():
         path = args[1] if len(args) > 1 else "review.md"
         try:
             with open(path, errors="replace") as fh:
-                sys.stdout.write(summary(fh.read()))
+                sys.stdout.write(summary(fh.read(), args[2:]))
         except Exception:  # noqa: BLE001 -- the summary must not block filing
             sys.stdout.write("**Why this is private**: the report could not be read.\n")
         return
