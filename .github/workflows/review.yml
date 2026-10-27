@@ -1630,8 +1630,10 @@ jobs:
       # the workspace, so the model can run it but never rewrite it.
       # PR_CALLERS.md lists the callers of every changed function up front.
       # Written by the tests job, when it ran. Downloaded outside the
-      # workspace first, so a missing artifact leaves no file at all.
+      # workspace first, so a missing artifact leaves no file at all. Only when
+      # the tests job ran, or every run carries a failed download.
       - uses: actions/download-artifact@v8
+        if: needs.tests.result != 'skipped'
         continue-on-error: true
         with:
           name: pr-tests-${{ matrix.pr }}
