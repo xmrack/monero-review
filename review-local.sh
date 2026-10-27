@@ -107,6 +107,8 @@ git -C "$CACHE" checkout --quiet --force "pr-$PR"
 PR_STATE=$(printf '%s' "$PR_META" \
            | jq -r 'if .merged then "merged" else .state // empty end' 2>/dev/null) || PR_STATE=""
 [ -n "$PR_STATE" ] || echo "!! could not read the PR's state; findings will not be checked against master" >&2
+# disclosure.py reads it: a CRITICAL or HIGH finding in merged code is private.
+export PR_STATE
 MASTER_SHA=""
 if [ "$PR_STATE" = "merged" ]; then
   # The base branch's tip already contains a merged pull request; diff against
