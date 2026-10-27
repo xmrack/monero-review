@@ -150,7 +150,7 @@ PRIVACY_BREAK = re.compile(
 )
 PRIVACY_TOPIC = re.compile(r"\bdecoys?\b|\bring\s+members?\b|\bview[\s-]+tags?\b",
                            re.IGNORECASE)
-DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|earlier findings|"
+DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|"
                              r"needs human review|comment discrepancy)\b", re.IGNORECASE)
 # Soundness, inflation and burning wording.
 _PROOF = (r"(?:proofs?|signatures?|range\s+proofs?|bulletproofs?|clsag|mlsag|"
@@ -310,6 +310,10 @@ def text_findings(text, matches):
     first, with the words that matched."""
     found = []
     for name, body in reporting_sections(text):
+        # Quoted from this repository's public issues only (prior_findings.py),
+        # so their words are public already.
+        if re.match(r"earlier findings\b", name, re.IGNORECASE):
+            continue
         for i, chunk in enumerate(re.split(r"(?m)^(?=#{3,6}\s)", body)):
             hit = matches(name, chunk)
             if not hit:
