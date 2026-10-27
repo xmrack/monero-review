@@ -4,6 +4,7 @@ disclosure repository.
 
     python3 scripts/disclosure.py [review.md]          # decide
     python3 scripts/disclosure.py --strip review.md    # body for the issue
+    python3 scripts/disclosure.py --summary review.md  # why it is private
 
 Deciding prints two lines and nothing else:
 
@@ -13,6 +14,9 @@ Deciding prints two lines and nothing else:
 --strip prints the report with every disclosure marker removed, using the same
 pattern that decided the route, so a marker that routed a review private can
 never survive into the issue it files.
+
+--summary prints a markdown list of every reason that applies, each with the
+findings that met it, for the top of the private issue.
 
 NEVER echo the decision into the job log, and never hand it to a later step
 through `env:` or a step output: GitHub prints a step's `env:` block in the
@@ -170,6 +174,16 @@ SAFE_SECTIONS = re.compile(r"^(?:refuted|checked and clear|coverage)\b", re.IGNO
 def severe_pre_existing(text):
     """True when a surviving CRITICAL or HIGH finding predates the PR, or does
     not say that it does not."""
+    return bool(pre_existing_findings(text))
+
+
+def heading_title(line):
+    return line.strip().lstrip("#").strip()
+
+
+def pre_existing_findings(text):
+    """The headings of the findings severe_pre_existing counts."""
+    found = []
     for match in HEADING.finditer(text):
         if match.group(1).upper() not in ("CRITICAL", "HIGH"):
             continue
@@ -183,8 +197,8 @@ def severe_pre_existing(text):
         end = BLOCK_END.search(text, match.end())
         block = text[match.end():end.start() if end else len(text)]
         if PRE_EXISTING.search(block) or not INTRODUCED.search(block):
-            return True
-    return False
+            found.append(heading_title(match.group(0)))
+    return found
 
 
 def severe_fixed_on_master(text):
@@ -192,16 +206,25 @@ def severe_fixed_on_master(text):
 
     Fails closed: an entry heading without `(was SEVERITY)`, or a stamp
     counting more entries than the section holds, counts as severe."""
+    return bool(fixed_on_master_findings(text))
+
+
+def fixed_on_master_findings(text):
+    """The entries severe_fixed_on_master counts, or a note on what could not
+    be read."""
     sections = list(FIXED_SECTION.finditer(text))
     if len(FIXED_SECTION_LOOSE.findall(text)) > len(sections):
-        return True
+        return ["a `Fixed on master` section that could not be read"]
     heads = [h.group(1) for m in sections for h in FIXED_ENTRY.finditer(m.group(1))]
+    found = []
     for head in heads:
         was = FIXED_WAS.search(head)
         if not was or was.group(1).upper() in ("CRITICAL", "HIGH"):
-            return True
+            found.append(heading_title(head))
     stamps = STAMP_FIXED.findall(text)
-    return bool(stamps) and int(stamps[-1]) > len(heads)
+    if stamps and int(stamps[-1]) > len(heads):
+        found.append(f"the stamp counts {stamps[-1]} fixed entries, the section holds {len(heads)}")
+    return found
 
 
 def stamp_counts(text, field):
@@ -252,26 +275,56 @@ def without_low_introduced(text):
 def privacy_break(text):
     """True when the stamp counts a privacy break or lacks the count, or any
     section that reports a problem reads like one."""
-    if stamp_counts(text, STAMP_PRIVACY):
-        return True
-    for name, body in reporting_sections(without_low_introduced(text)):
-        if PRIVACY_BREAK.search(body):
-            return True
-        if DEFECT_SECTIONS.match(name) and PRIVACY_TOPIC.search(body):
-            return True
-    return False
+    return bool(privacy_findings(text))
 
 
 def funds_break(text):
     """The same, for a soundness, inflation or burning bug."""
-    if stamp_counts(text, STAMP_FUNDS):
-        return True
+    return bool(funds_findings(text))
+
+
+def stamp_note(text, field, name):
+    """Why the stamp counts, or None when it does not."""
+    if not stamp_counts(text, field):
+        return None
+    stamps = STAMP.findall(text)
+    count = field.search(" " + stamps[-1]) if stamps else None
+    if not count:
+        return f"the scan stamp has no `{name}=` count, which counts as one"
+    return (f"the scan stamp counts {count.group(1)} {name} candidate(s), refuted ones "
+            "included; it does not name them")
+
+
+def text_findings(text, matches):
+    """Where `matches(section name, chunk)` returns a match, per finding: the
+    heading of each matching finding, or the section's name for text above its
+    first, with the words that matched."""
+    found = []
     for name, body in reporting_sections(text):
-        if FUNDS_BREAK.search(body):
-            return True
-        if (name == "" or DEFECT_SECTIONS.match(name)) and FUNDS_TOPIC.search(body):
-            return True
-    return False
+        for i, chunk in enumerate(re.split(r"(?m)^(?=#{3,6}\s)", body)):
+            hit = matches(name, chunk)
+            if not hit:
+                continue
+            label = heading_title(chunk.split("\n", 1)[0]) if i else (f"the `{name}` section" if name else "the report's opening")
+            words = " ".join(hit.group(0).split())[:80]
+            found.append(f"{label}: matched \"{words}\"")
+    return found
+
+
+def privacy_findings(text):
+    note = stamp_note(text, STAMP_PRIVACY, "privacy")
+    return ([note] if note else []) + text_findings(
+        without_low_introduced(text),
+        lambda name, body: PRIVACY_BREAK.search(body)
+        or (DEFECT_SECTIONS.match(name) and PRIVACY_TOPIC.search(body)))
+
+
+def funds_findings(text):
+    note = stamp_note(text, STAMP_FUNDS, "funds")
+    return ([note] if note else []) + text_findings(
+        text,
+        lambda name, body: FUNDS_BREAK.search(body)
+        or ((name == "" or DEFECT_SECTIONS.match(name)) and FUNDS_TOPIC.search(body)))
 
 
 def marker_reason(text):
@@ -301,6 +354,43 @@ def route(text):
     return "public", ""
 
 
+WHY = {
+    "security-fix": "The pull request fixes a critical or high severity security bug. "
+                    "A public review would point at it before a release ships.",
+    "live-code": "A CRITICAL or HIGH finding affects code that is already live.",
+    "unknown": "A disclosure marker with a reason this script does not know. Routed private by default.",
+    "pre-existing": "A CRITICAL or HIGH finding is not this pull request's own, so it is "
+                    "already in live code.",
+    "fixed-on-master": "A CRITICAL or HIGH finding is fixed on master but not yet in a release, "
+                       "or its severity could not be read.",
+    "privacy": "A privacy break. Only a LOW finding introduced by an unmerged change is exempt.",
+    "funds": "A soundness, inflation or burning bug.",
+}
+
+
+def summary(text):
+    """Every reason the report is private, each with what met it."""
+    reasons = []
+    if not text.strip():
+        return "**Why this is private**: the report is empty.\n"
+    marker = marker_reason(text)
+    if marker:
+        reasons.append((marker, []))
+    for reason, find in (("pre-existing", pre_existing_findings),
+                         ("fixed-on-master", fixed_on_master_findings),
+                         ("privacy", privacy_findings), ("funds", funds_findings)):
+        found = find(text)
+        if found:
+            reasons.append((reason, found))
+    lines = ["**Why this is private**", ""]
+    for reason, found in reasons:
+        lines.append(f"- **{reason}**: {WHY[reason]}")
+        lines.extend(f"  - {item}" for item in found)
+    if not reasons:
+        lines.append("- No reason could be read, so it routes private by default.")
+    return "\n".join(lines) + "\n"
+
+
 def strip(text):
     """The report with every marker, and the line it sat on when alone, cut."""
     text = re.sub(r"(?m)^[ \t]*" + MARKER.pattern + r"[ \t]*\n?", "", text,
@@ -314,6 +404,14 @@ def main():
         path = args[1] if len(args) > 1 else "review.md"
         with open(path, errors="replace") as fh:
             sys.stdout.write(strip(fh.read()))
+        return
+    if args[:1] == ["--summary"]:
+        path = args[1] if len(args) > 1 else "review.md"
+        try:
+            with open(path, errors="replace") as fh:
+                sys.stdout.write(summary(fh.read()))
+        except Exception:  # noqa: BLE001 -- the summary must not block filing
+            sys.stdout.write("**Why this is private**: the report could not be read.\n")
         return
     path = args[0] if args else "review.md"
     try:

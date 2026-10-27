@@ -2921,18 +2921,17 @@ jobs:
             # select_prs.py reads both repositories alike, and the same
             # severity labels, which come from the report's own findings.
             #
-            # NOTHING SAYS WHY IT WENT PRIVATE. No reason label, no reason in
-            # the header, and the disclosure marker is cut out of the body by
-            # the same pattern that routed it. A review of a quiet security
-            # patch must not describe itself as one, even here: an issue that
-            # announces "this pull request fixes a critical bug" is the one
-            # sentence the whole route exists to keep unwritten, and it would
-            # travel with any copy, forward or screenshot.
+            # The header says why it went private: every reason that applies,
+            # with the findings that met it, so a maintainer can tell what to
+            # withhold and what could be made public. No reason label, and the
+            # disclosure marker is still cut out of the body.
             [ -n "${DISCLOSURE_TOKEN:-}" ] || fail publish-failed
             export GH_TOKEN="$DISCLOSURE_TOKEN"
             repo="$DISCLOSURE_REPO"
             {
               echo "> Filed privately. Do not repost, summarise or link this outside the disclosure process."
+              echo
+              python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --summary review.md
               echo
               python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --strip review.md
             } > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
