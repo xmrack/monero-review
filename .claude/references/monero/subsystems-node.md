@@ -590,8 +590,19 @@ order the code takes them (`add_host_fail` → `block_host`;
 - `--igd` / `--no-igd` are accepted and do nothing; UPnP was removed.
 - `i2p_address::store` writes port **1**, not 0, for compatibility.
 - In `src/net/parse.cpp`, `get_network_address` returns
-  `net::error::unsupported_address` for anything hostname-shaped, and callers
-  treat that specific error as "try DNS".
+  `net::error::unsupported_address` for anything hostname-shaped. Only the
+  `--add-peer` loop in `node_server::init` (`src/p2p/net_node.inl`) narrows
+  the DNS fallback to that error, with
+  `CHECK_AND_ASSERT_MES(adr == net::error::unsupported_address, ...)`.
+  `node_server::parse_peers_and_add_to_container` (`--add-exclusive-node`,
+  `--add-priority-node`, `--seed-node`) calls `append_net_address`, a DNS
+  resolve, after *any* `get_network_address` error, including
+  `invalid_port` and the tor/i2p parse errors on a `.onion`/`.i2p` name
+  (`grep -n -A22 'parse_peers_and_add_to_container(const' src/p2p/net_node.inl`).
+  The `.onion`/`.i2p` TLD test is a plain, case-sensitive `ends_with`
+  (`grep -n ends_with src/net/parse.cpp`), so an upper-case `.ONION`/`.I2P`
+  host or one with a trailing dot counts as hostname-shaped, returns
+  `unsupported_address`, and is DNS-resolved.
 
 ---
 
