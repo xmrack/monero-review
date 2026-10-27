@@ -657,8 +657,8 @@ zero-day. You write nothing extra for it.
 **Privacy breaks and soundness, inflation or burning bugs go private** at
 any severity. Copy `privacy=` and `funds=` exactly, and add the matching
 marker below whenever anything in the report describes one. One exception:
-a LOW privacy finding introduced by an unmerged change is public, and
-needs no marker.
+a review whose findings are all LOW, or that has none, is public whatever
+it describes. Add the marker anyway; the harness reads the findings.
 
 **You add the marker for four more cases.** It is an HTML comment on its own
 line, directly above the `<!-- workflow-updates -->` stamp, or above the
