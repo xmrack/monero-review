@@ -63,9 +63,17 @@ requests. Before them, `net_node.inl` handles `handle_handshake`,
 (`BEGIN_INVOKE_MAP2(node_server)` in `net_node.h`).
 
 **Two ways into the peer list.** Peerlists arrive only in the **responses**
-from peers we dial: `local_peerlist_new` is in `COMMAND_HANDSHAKE_T::response`
+to requests we send: `local_peerlist_new` is in `COMMAND_HANDSHAKE_T::response`
 and `COMMAND_TIMED_SYNC_T::response`, and `handle_remote_peerlist` is called
-from `do_handshake_with_peer` and `do_peer_timed_sync`. The other way in is an
+from `do_handshake_with_peer` and `do_peer_timed_sync`. That is not limited to
+peers we dial: `peer_sync_idle_maker` (run from `idle_worker` on
+`m_peer_handshake_idle_maker_interval`) sends `COMMAND_TIMED_SYNC` to every
+connection with `cntxt.peer_id` set, and `handle_handshake` sets
+`context.peer_id = arg.node_data.peer_id` for inbound connections too. The
+`do_peer_timed_sync` callback checks `context.m_is_income` only around
+`set_peer_just_seen`, after `handle_remote_peerlist`, so an inbound peer that
+dialled us feeds its `local_peerlist_new` in through the timed-sync response
+(all in `src/p2p/net_node.inl`). The other way in is an
 inbound handshake. It carries a peer-chosen `node_data.my_port`;
 `handle_handshake` pings that port back and, on success, puts the peer in the
 white list. Both feed the eclipse surface. Inbound requests also carry
