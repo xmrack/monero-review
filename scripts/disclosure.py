@@ -51,8 +51,17 @@ A review goes private when any of these holds:
                 (missing counts), `reason=privacy`, or the report's text.
                 Except a LOW finding in code an unmerged change introduces:
                 the stamp leaves it out, and the text test skips its block.
+                That matters only beside a finding above LOW; see EXCEPT.
   funds         a soundness, inflation or burning bug, on the same tests with
                 `funds=N` and `reason=funds`.
+
+EXCEPT a review whose findings are all LOW, or that has none, which is public
+whatever the privacy and funds tests say. Only a `security-fix`, `live-code`
+or unknown marker, or the pre-existing and fixed-on-master rules, still send
+it private. Read strictly: every severity heading a plain `### [LOW]`, as many
+as the stamp's `published=`, `unverified=0`, no non-zero `unaccounted=`,
+nothing under `## Needs human review`, and no earlier finding above LOW quoted
+anywhere, except a MEDIUM marked Fixed.
 
 Anything else is public.
 
@@ -150,6 +159,9 @@ PRIVACY_TOPIC = re.compile(r"\bdecoys?\b|\bring\s+members?\b|\bview[\s-]+tags?\b
                            re.IGNORECASE)
 DEFECT_SECTIONS = re.compile(r"^(?:findings|fixed on master|earlier findings|"
                              r"needs human review|comment discrepancy)\b", re.IGNORECASE)
+# The title in an Earlier findings line: "· `#N` · <title> (was SEVERITY)".
+EARLIER_TITLE = re.compile(r"`#\d+`\s*·[^\n]*?\(\s*was\s+(?:CRITICAL|HIGH|MEDIUM|LOW)\s*\)",
+                           re.IGNORECASE)
 # Soundness, inflation and burning wording.
 _PROOF = (r"(?:proofs?|signatures?|range\s+proofs?|bulletproofs?|clsag|mlsag|"
           r"membership|commitments?|key\s+images?|sa/?l|ring\s+signatures?)")
@@ -335,6 +347,11 @@ def text_findings(text, matches):
     first, with the words that matched."""
     found = []
     for name, body in reporting_sections(text):
+        # An earlier finding's title is quoted from this repository's public
+        # issues only (prior_findings.py), so its words are public already.
+        # What the run wrote about it is read as usual.
+        if re.match(r"earlier findings\b", name, re.IGNORECASE):
+            body = EARLIER_TITLE.sub("", body)
         for i, chunk in enumerate(re.split(r"(?m)^(?=#{3,6}\s)", body)):
             hit = matches(name, chunk)
             if not hit:
@@ -361,28 +378,65 @@ def funds_findings(text):
         or ((name == "" or DEFECT_SECTIONS.match(name)) and FUNDS_TOPIC.search(body)))
 
 
-def marker_reason(text):
-    """The reason on the first disclosure marker, `unknown` for a marker whose
-    reason is missing or not one we know, or None when there is no marker."""
-    match = MARKER.search(text)
-    if not match:
-        return "unknown" if LOOSE_MARKER.search(text) else None
-    reason = MARKER_REASON.search(match.group(1))
-    if reason and reason.group(1).lower() in KNOWN_REASONS:
-        return reason.group(1).lower()
-    return "unknown"
+def only_low(text):
+    """True when the report's findings are all LOW, or it has none. See the
+    docstring."""
+    stamps = STAMP.findall(text)
+    if not stamps:
+        return False
+    published = re.search(r"\spublished=(\d+)\b", " " + stamps[-1])
+    unverified = re.search(r"\sunverified=(\d+)\b", " " + stamps[-1])
+    unaccounted = re.search(r"\sunaccounted=(\d+)\b", " " + stamps[-1])
+    if not published or not unverified or int(unverified.group(1)) or \
+            (unaccounted and int(unaccounted.group(1))):
+        return False
+    lows = 0
+    for name, body in reporting_sections(text):
+        if re.match(r"needs human review\b", name, re.IGNORECASE) and body.partition("\n")[2].strip():
+            return False
+        # An earlier finding above LOW, quoted here, may be a private one.
+        for line in body.splitlines():
+            was = re.search(r"\(\s*was\s+(CRITICAL|HIGH|MEDIUM)\s*\)", line, re.IGNORECASE)
+            if was and (was.group(1).upper() != "MEDIUM" or not re.match(r"[-*\s]*\**Fixed\b", line)):
+                return False
+        for match in HEADING.finditer(body):
+            head = match.group(0)
+            if not re.match(r"###[ \t]+\[LOW\][ \t]", head) or \
+                    re.search(r"\b(?:CRITICAL|HIGH|MEDIUM)\b", head, re.IGNORECASE):
+                return False
+            if re.match(r"findings\b", name, re.IGNORECASE):
+                lows += 1
+    return lows == int(published.group(1))
+
+
+def markers(text):
+    """The reason on every disclosure marker, `unknown` for one whose reason
+    is missing or not one we know."""
+    found = []
+    for match in MARKER.finditer(text):
+        reason = MARKER_REASON.search(match.group(1))
+        found.append(reason.group(1).lower() if reason and reason.group(1).lower() in KNOWN_REASONS
+                     else "unknown")
+    if not found and LOOSE_MARKER.search(text):
+        found.append("unknown")
+    return found
 
 
 def route(text):
-    reason = marker_reason(text)
-    if reason:
-        return "private", reason
+    reasons = markers(text)
+    for reason in reasons:
+        if reason not in ("privacy", "funds"):
+            return "private", reason
     if severe_pre_existing(text):
         return "private", "pre-existing"
     if merged_findings(text):
         return "private", "merged"
     if severe_fixed_on_master(text):
         return "private", "fixed-on-master"
+    if only_low(text):
+        return "public", ""
+    if reasons:
+        return "private", reasons[0]
     if privacy_break(text):
         return "private", "privacy"
     if funds_break(text):
@@ -402,7 +456,7 @@ WHY = {
     "previously-private": "An earlier review of this pull request is still open here.",
     "fixed-on-master": "A CRITICAL or HIGH finding is fixed on master but not yet in a release, "
                        "or its severity could not be read.",
-    "privacy": "A privacy break. Only a LOW finding introduced by an unmerged change is exempt.",
+    "privacy": "A privacy break in a review that has a finding above LOW.",
     "funds": "A soundness, inflation or burning bug.",
 }
 
@@ -413,9 +467,8 @@ def summary(text, extra=()):
     reasons = {reason: [] for reason in extra if reason in WHY}
     if not text.strip():
         return "**Why this is private**: the report is empty.\n"
-    marker = marker_reason(text)
-    if marker:
-        reasons[marker] = []
+    for marker in markers(text):
+        reasons.setdefault(marker, [])
     for reason, find in (("pre-existing", pre_existing_findings),
                          ("merged", merged_findings),
                          ("fixed-on-master", fixed_on_master_findings),

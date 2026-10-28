@@ -133,9 +133,9 @@ env:
   # when scripts/disclosure.py routes it private: a CRITICAL or HIGH finding
   # already in live code, an obvious security patch by Monero developers,
   # which a public review would point attackers at before the release ships,
-  # any CRITICAL or HIGH finding in a merged pull request, any privacy break
-  # except a LOW one an unmerged change introduces, or any review of a pull
-  # request whose earlier review is open there.
+  # any CRITICAL or HIGH finding in a merged pull request, a privacy,
+  # soundness, inflation or burning bug unless every finding is LOW, or any
+  # review of a pull request whose earlier review is open there.
   #
   # Needs the DISCLOSURE_TOKEN secret: a fine-grained token with Issues
   # read/write on this repository only. Without it nothing is reviewed at all
