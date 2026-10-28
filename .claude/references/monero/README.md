@@ -4,7 +4,7 @@ What the `monero-project/monero` tree is, how its parts fit together, and how
 to read it without being misled. **Shared by every skill in this repository** —
 this directory belongs to no one skill.
 
-Written against master `8308dee67` (2026-10-13). Where a file names its own
+Written against master `3fd0f88c2` (2026-10-25). Where a file names its own
 verification commit, that commit is what it was last checked against. Every
 path and symbol was confirmed against a checkout. Cite files and symbols, never line numbers or
 counts that drift; give the grep that finds them instead. When something disagrees with the tree in front of you, **the tree
@@ -38,7 +38,7 @@ suspect of it and what has already been refuted:
 
 The four below are the **history half** — what audits, papers and past
 incidents found, and the diff shapes that would repeat them. They were checked
-against master `8340be5e9`, fcmp++-stage `62bb16299` and monero-oxide
+against master `3fd0f88c2`, fcmp++-stage `f25388d` and monero-oxide
 `31c26d96e`; cite the audit, paper or disclosure a section names.
 
 | file | read it when |
@@ -82,7 +82,7 @@ against master `8340be5e9`, fcmp++-stage `62bb16299` and monero-oxide
 ## The three halves, and why all of them
 
 Most of this directory describes **what the code is**. `trust-boundaries.md`,
-`codebase-notes.md` and `refutations.md` describe **what to suspect of it**.
+`codebase-notes.md`, `lenses.md` and `refutations.md` describe **what to suspect of it**.
 The audit, vulnerability and privacy files record **what has already been
 found**. Use all three: the first to understand the code, the second to judge
 it, the third to recognise a known bug class or a settled question. A finding

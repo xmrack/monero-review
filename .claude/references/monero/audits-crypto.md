@@ -2,7 +2,7 @@
 
 > Nothing in this resource is intended to express any opinions for any audit firms. Please review their source documents for their own words. Summaries here may not fully cover the nuances of their opinions and observations.
 
-Written against master `8340be5e9` (2026-10-19).
+Written against master `3fd0f88c2` (2026-10-25).
 
 Past audits and papers on the cryptography Monero runs without FCMP++ or
 Carrot: key images, ring signatures, Bulletproofs and BP+, RingCT amounts,
@@ -41,7 +41,8 @@ exists only if `I` is in the prime-order subgroup.
   pool and block transactions.
 - `crypto_ops::check_ring_signature` (`src/crypto/crypto.cpp`, pre-RingCT
   and reserve proofs) has rejected identity and torsioned key images itself
-  (`ge_p3_is_point_at_infinity_vartime` on `l*I`) only since August 2026.
+  (`ge_p3_is_point_at_infinity_vartime` on `l*I`) only since PR #11155
+  (merged September 2026).
 - `verRctCLSAGSimple` and `MLSAG_Ver` reject only `I == identity`. **For
   RingCT the subgroup check exists only in the core domain check.**
 - `ge_frombytes_vartime` rejects non-canonical encodings, so a valid key
@@ -275,7 +276,7 @@ master status below is from the code.
   `bos_coster_heap_conv_robust`, which production no longer calls.
 - **5.5 silently discarded element in Pippenger, Critical.** The top bit was
   lost when the largest scalar was a power of two. `pippenger_p3` and
-  `straus_p3` now loop on `!(maxscalar < pow2(groups))`.
+  `straus_p3` now loop while `!(maxscalar < pow2(...))`.
 - **5.6 invalid Verify input parameters, High.** Scalars are `is_reduced`,
   points decode inside `rct::scalarmult8`, sizes are capped; no subgroup
   check on proof points (1.3).
@@ -352,7 +353,7 @@ setup. None has a Monero implementation or audit.
   `BULLETPROOF_PLUS_MAX_OUTPUTS` (16), `L.size() == 6+logM`, `max_length < 32`.
 - **multiexp.** `straus` and `pippenger` with cached generator tables
   (`STRAUS_SIZE_LIMIT`, `PIPPENGER_SIZE_LIMIT`, `get_pippenger_c`); zero
-  scalars and identity points are skipped.
+  scalars are skipped, and `straus_p3` also skips identity points.
 - The two files define their own static `multiexp`, `is_reduced`,
   `get_exponent`, `invert`, `Hi_p3`, `Gi_p3`; check which file a hunk is in.
 
@@ -524,8 +525,9 @@ reuses a tag or omits one.
 `generate_tx_proof` / `check_tx_proof` prove `log_{G or B}(R) = log_A(D)`. The
 v1 challenge `Hs(msg || D || X || Y)` binds neither `R`, `A` nor `B`; v2 adds
 `HASH_KEY_TXPROOF_V2`, `R`, `A`, `B`. The wallet still accepts v1 proofs.
-`check_tx_proof` checks only that `D` is on the curve; wallet callers pass
-torsion-cleared keys (`crypto::pubkey_clear_torsion`).
+`check_tx_proof` checks only that its points decode, with no identity or
+subgroup check; wallet callers pass torsion-cleared keys
+(`crypto::pubkey_clear_torsion`).
 
 **A PR is risky here if it** extends v1 acceptance, adds a DLEQ-style proof
 without statement and context in the challenge, or uses `check_tx_proof` on a

@@ -2,7 +2,7 @@
 
 How to find things here, and the specific ways a search misleads you.
 
-Every recipe below was run against master `8308dee67` (2026-10-13). Paths are relative to
+Every recipe below was run against master `3fd0f88c2` (2026-10-25). Paths are relative to
 the Monero checkout root.
 
 ---
@@ -55,7 +55,7 @@ rtool callers <function>           # both databases plus every git grep -w match
 
 A hit is reliable. **A miss is not.** cscope does not see a call written
 inside a macro argument, and most guards here are exactly that:
-`passes_max_size_check` is called four times, all inside
+every call to `passes_max_size_check` sits inside
 `CHECK_AND_ASSERT_MES(...)`, and `cscope -L3` returns none of them. Before
 calling anything uncalled, read the `git grep -w` matches as well; `rtool
 callers` prints both. A miss on `cscope.out` alone says nothing about tests
@@ -213,7 +213,7 @@ enormous — always pipe through `grep`.
 | the C++ LMDB wrapper (`lmdb::database`) | `src/lmdb/` — **not** the block store, which is `src/blockchain_db/lmdb/` |
 | the RandomX shim | `src/crypto/rx-slow-hash.c`; there is no `rx-slow-hash.h`, the declarations are in `hash-ops.h` |
 | `slow_hash_allocate_state` | declared in no header at all — callers (`blockchain.cpp`, `miner.cpp`) write a local `extern "C"` |
-| FCMP++ / curve trees | `src/fcmp_pp/` (`curve_trees`, `tower_cycle`, `fcmp_pp_crypto`) over the Rust FFI. On master nothing outside `src/fcmp_pp` and `tests/` includes it; `ringct` only links it. Carrot has no code yet (one comment in `cryptonote_format_utils.cpp`) |
+| FCMP++ / curve trees | `src/fcmp_pp/` (`curve_trees`, `tower_cycle`, `fcmp_pp_crypto`) over the Rust FFI. On master nothing outside `src/fcmp_pp` and `tests/` includes it; `ringct` only links it. `src/carrot_core` and `src/carrot_impl` are not on master; only Carrot-spec primitives are (`src/crypto/x25519.cpp`, `ge_p3_to_x25519` in `crypto-ops.h`) |
 
 ## Things that look like one thing and are another
 

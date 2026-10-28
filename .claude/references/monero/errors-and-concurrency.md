@@ -18,7 +18,7 @@ depends entirely on which directory you are in.
 | `DB_EXCEPTION` via `throw0` / `throw1` | `src/blockchain_db` (all in `lmdb/db_lmdb.cpp`) |
 | `std::runtime_error` via `CHECK_AND_ASSERT_THROW_MES` | `multisig`, `fcmp_pp`, `device_trezor`, and `ringct` *construction* |
 | `bool` with a catch-all that converts any exception to `false` | `ringct` *verification* (`verRct`, `verRctSemanticsSimple`, `verRctNonSemanticsSimple`, … in `rctSigs.cpp`) |
-| `expect<T>` + custom `std::error_code` categories | `src/common`, `src/net`, `src/lmdb`, `src/rpc/zmq_*`, address parsing in `src/p2p`, epee `wire` |
+| `expect<T>` + custom `std::error_code` categories | `src/common`, `src/net`, `src/lmdb`, `src/rpc/zmq_*`, address parsing in `src/p2p`; epee `wire` defines the categories but throws them (`WIRE_DLOG_THROW`) |
 | `bool` + a sticky status object | `src/wallet/api` |
 | `int` status code across the Rust FFI (`0` ok, negative error) | `src/fcmp_pp/fcmp_pp_rust/src/lib.rs`; `tower_cycle.cpp` turns non-zero into a throw (`CHECK_FFI_RES`) |
 | process exit — no channel at all | `src/crypto` C files (`abort()`); `crypto.cpp`'s `local_abort` (`_exit(1)` under `NDEBUG`); a Rust panic (below) |
@@ -232,7 +232,7 @@ In `Blockchain::prepare_handle_incoming_blocks`
 takes `m_incoming_tx_lock` with a bare `.lock()`, and `Blockchain::prepare_handle_incoming_blocks`
 takes `m_tx_pool.lock()`; both are released only in the matching
 `cleanup_handle_incoming_blocks`. Every caller (the protocol handler's
-`try_add_next_blocks`, `core::handle_incoming_blocks`, `blockchain_import`)
+`try_add_next_blocks`, `core::handle_block_found`, `blockchain_import`)
 must pair them on every exit path; `core::prepare_handle_incoming_blocks`
 calls cleanup itself on failure. A new early return between the two leaks
 both locks.
@@ -303,12 +303,9 @@ that break the obvious mental model (all in `src/common/threadpool.cpp`):
   `src/fcmp_pp/curve_trees.cpp`) throws if run as a leaf job.
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking — including jobs other submitters queued.
-- **`threadpool::run` catches only `std::exception`** from a queued job and
-  records it with `e.wo->set_error()` without checking `e.wo` for null, although
-  `submit` documents a null waiter as allowed. Every current `submit` call in
-  `src/` passes a waiter; a new call with `nullptr` whose job throws would
-  dereference null. Anything not derived from `std::exception` escapes the
-  worker thread, which terminates the process.
+- **A queued job's exception never reaches the waiter.** `threadpool::run`
+  catches everything, calls `e.wo->set_error()` when there is a waiter, and
+  drops the exception; `waiter::wait()` only returns false.
 
 So "this runs on a worker thread" is never guaranteed, which matters for any
 reasoning about reentrancy or thread-local state. `create` spawns `max - 1`
@@ -345,7 +342,7 @@ from another thread.) Serialization is the front end's job:
   (`wallet_idle_thread`) and taken by many commands via `LOCK_IDLE_SCOPE()`
   (directly or through `SCOPED_WALLET_UNLOCK()`) — **not every one**.
   `on_command` takes no lock, so handlers without it (e.g. `show_transfer`,
-  `unspent_outputs`, `freeze_thaw`, `address_book`) run concurrently with the
+  `freeze_thaw`, `address_book`) run concurrently with the
   idle refresh. Check the handler.
 - **wallet-rpc**: one network thread, which also runs the auto-refresh idle
   handler, and five `std::atomic` members (`m_stop`, `m_teardown`,

@@ -7,7 +7,7 @@ questions to ask of a pull request that brings part of it to master.
 and Carrot is absent (`codebase-notes.md`, "FCMP++ work"). The integration is
 built on the `fcmp++-stage` branch of `seraphis-migration/monero` and reaches
 master in pieces. Claims marked **(branch)** were checked against that branch
-at `62bb16299` (2026-10-05); **(master)** against master `183b5e962`. Design
+at `f25388d` (2026-10-21); **(master)** against master `3fd0f88c2`. Design
 claims come from the Carrot specification and the FCMP++
 integration notes.
 
@@ -126,7 +126,8 @@ splits.
   consensus rejects torsion in Carrot `K_o` and `C` through
   `rct::verPointsForTorsion`, called from `ver_non_input_consensus` and
   `Blockchain::validate_miner_transaction`.
-- From the fork a coinbase needs at least one output. The comment in
+- A coinbase needs at least one output from the fork, and already from the
+  first coinbase whose `unlock_time` reaches the fork height. The comment in
   `validate_miner_transaction` says this keeps every usable tree root unique.
 
 ### Storage, migration, reorgs (branch)
@@ -244,9 +245,9 @@ using the `external/mx25519` submodule (`tevador/mx25519`) for X25519.
 ### The enote (branch)
 
 On chain: `K_o`, view tag, encrypted anchor, `C_a` in `outPk`, an 8-byte
-encrypted amount in `ecdhInfo`. X25519 ephemeral keys `D_e` go in `tx_extra`,
-one shared by two outputs or one per output
-(`store_carrot_ephemeral_pubkeys_to_extra`). `store_carrot_to_transaction_v1`
+encrypted amount in `ecdhInfo`. X25519 ephemeral keys `D_e` go in `tx_extra`:
+one shared key (one output, or two outputs with the same `D_e`), else one per
+output (`store_carrot_ephemeral_pubkeys_to_extra`). `store_carrot_to_transaction_v1`
 always writes an 8-byte encrypted payment ID. A transaction counts as Carrot by
 its first output's type (`carrot::is_carrot_transaction_v1`); consensus makes
 all outputs share one type. Every derivation is keyed Blake2b over a fixed
@@ -259,8 +260,9 @@ transcript (`hash_functions.cpp`, `transcript_fixed.h`, separators in
   calls `mx25519_scmul_base_unclamped` and `mx25519_scmul_key_unclamped`.
   Adding clamping, or swapping the library, changes every shared secret.
 - It picks portable, ARM64, AMD64 or AMD64-MULX code at run time. All must give
-  identical bytes. X25519 is wallet-only (nothing in `cryptonote_core` uses
-  it), so a mismatch hides funds; it does not split the chain.
+  identical bytes. No consensus check uses X25519; the daemon uses it only to
+  build a Carrot coinbase (`construct_miner_tx`). A mismatch hides funds; it
+  does not split the chain.
 - The sender rejects an address view key outside the prime-order subgroup
   (`try_make_carrot_shared_key_sender`, `verify_point_is_in_main_subgroup`)
   and uses no cofactor.
@@ -400,7 +402,7 @@ Questions:
 11. **Tests.** Format changes update `carrot_convergence.cpp`; tree changes add
     a pop-and-replay test. Branch tests: `tests/unit_tests/curve_trees.cpp`,
     `tree_cache.cpp`, `fcmp_pp.cpp`, `carrot_*.cpp`, `wallet_scanning.cpp`,
-    `wallet_tx_builder.cpp`, fuzz target `tests/fuzz/fcmp_pp.cpp`.
+    `wallet_tx_builder.cpp`.
 
 **Rating.** Use `trust-boundaries.md` "Severity" with modifier 5 (staged code
 is rated as it will run):

@@ -242,9 +242,9 @@ silently. One constructor that skips the check therefore halts tree growth
 for every output in that call, and the other torsion classes go into the
 tree unnoticed.
 
-Nothing in the tree constructs a `CarrotOutputPairV1` -- check with
-`git grep -n CarrotOutputPairV1` -- so no untrusted point reaches the skip
-today. Two limits:
+Nothing on master constructs a `CarrotOutputPairV1` (the FCMP++ branch
+does) -- check with `git grep -n CarrotOutputPairV1` -- so no untrusted point
+reaches the skip there. Two limits:
 
 - **It expires when a constructor appears.** Code that wraps outputs in a
   `CarrotOutputPairV1` must first check BOTH the output pubkey and the
@@ -408,7 +408,7 @@ Three limits:
   `wallet_internal_error` on a key image or public key it cannot find
   ("key image not found", "public key not found"), and `handle_reorg` throws before
   calling it at all when the reorg height is below `m_blockchain.offset()`
-  (message "Daemon claims reorg below last checkpoint"; the offset is where
+  and the wallet holds hashes past the offset (message "Daemon claims reorg below last checkpoint"; the offset is where
   the wallet trimmed its hash chain, via `m_blockchain.trim` in
   `fast_refresh` at a compiled-in checkpoint, `trim_hashchain` or
   `import_blockchain`).

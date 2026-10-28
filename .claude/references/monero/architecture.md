@@ -4,7 +4,7 @@ How the Monero tree fits together: the layers, what depends on what, and the
 handful of structural facts that explain most of what looks strange when you
 open a file here.
 
-Verified against `monero-project/monero` master `183b5e962` (2026-10-18).
+Verified against `monero-project/monero` master `3fd0f88c2` (2026-10-25).
 Line counts and link edges move; the shape does not. Re-check anything you are
 about to put in a finding.
 

@@ -7,7 +7,7 @@ projects, written as incident history to match a pull request against. Each
 entry gives the mechanism, where the guard lives today, and the diff shape
 that would bring it back.
 
-Written against master `8340be5e9` (2026-10-19). Every path and symbol was
+Written against master `3fd0f88c2` (2026-10-25). Every path and symbol was
 confirmed on that commit. Files and symbols are named, never line numbers.
 Where the tree disagrees with this file, the tree wins.
 
@@ -111,8 +111,9 @@ too, on purpose.
 `tx_money_got_in_outs`, `m_transfers` or `m_pub_keys` above the decode;
 weakens the zero return; or makes `tools::decodeRct` return a non-zero
 fallback. Its `switch` has a `default:` that returns 0: a new `RCTType*` not
-added there decodes every output as 0 and skips it. `wallet2::import_key_images`
-also calls `tools::decodeRct`; a contract change must cover both callers.
+added there decodes every output as 0 and skips it. `wallet2::import_key_images`,
+`wallet2::check_tx_key_helper_at` and `wallet2::check_reserve_proof` also call
+`tools::decodeRct`; a contract change must cover every caller.
 
 ## Deserialization and allocation
 
@@ -320,8 +321,9 @@ per-peer sync state into a structure shared across connections.
 **Mechanism.** Block transactions entered the pool as `relay_method::block`,
 for which `tx_memory_pool::add_tx` skips the fee, `MAX_TX_EXTRA_SIZE` and
 unlock-time rules and keeps a transaction whose input check fails, and
-`tx_memory_pool::prune` never evicts it. PoW was checked after insertion,
-so a block without valid PoW could plant permanent junk.
+`tx_memory_pool::prune` never evicts it; only `remove_stale` does, after
+`CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME` (a week). PoW was checked
+after insertion, so a block without valid PoW could plant a week of junk.
 
 **Fix today.** Block transactions travel in a `pool_supplement`
 (`src/cryptonote_core/tx_verification_utils.h`).
@@ -329,9 +331,10 @@ so a block without valid PoW could plant permanent junk.
 `ver_non_input_consensus`. `Blockchain::handle_alternative_block` adds them
 to the pool with `relay_method::block` only after the PoW check and
 `ver_non_input_consensus` ("Now that we have the PoW verification out of the
-way"). The other `relay_method::block` callers return transactions from
-already-connected blocks (`Blockchain::pop_block_from_blockchain`, the
-"return taken transactions" path).
+way"). The other `relay_method::block` callers put back transactions the
+node already held: `Blockchain::pop_block_from_blockchain` (popped blocks)
+and the `return_txs_to_pool` lambda in `Blockchain::handle_block_to_main_chain`
+(only transactions it took from the pool).
 
 **A PR reintroduces this if it** calls `add_tx` with `relay_method::block`
 (or sets `kept_by_block`) before PoW; moves the supplement-to-pool loop
