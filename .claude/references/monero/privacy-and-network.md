@@ -203,7 +203,8 @@ force a spend to be rebuilt on the new branch (section 2, ring reuse).
    outputs (`HF_VERSION_MIN_2_OUTPUTS`), which MRL adopted after single-output
    transactions were found linkable (2019). `tx_memory_pool::add_tx` refuses
    to relay a nonzero `unlock_time` or `tx_extra` above `MAX_TX_EXTRA_SIZE`
-   (MRL agreed on timelock 0 in 2024). Consensus sets only a minimum fee
+   (MRL agreed on timelock 0 in 2024); on the FCMP++ branch both are
+   consensus from v17. Consensus sets only a minimum fee
    (`Blockchain::check_fee`); Rucknium (2024) estimated about 5% of
    transactions pay non-standard fees.
 8. **Joint spending is discouraged.** `wallet2::get_output_relatedness` scores
