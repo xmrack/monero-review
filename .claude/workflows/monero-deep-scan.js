@@ -1692,7 +1692,11 @@ const provenanceTally = () => {
 // that still holds, what the panel made of its re-proposal. Filled in once
 // finding ids exist; `priorAccount(null)` is the no-candidate case.
 let panelResults = []
-const priorAccount = (findingIdOf) => PRIOR.map((p) => {
+// Report order: like statuses together, as `## Earlier findings` lists them.
+const PRIOR_ORDER = ['still-holds', 'fixed', 'does-not-hold', 'refuted-now']
+const priorRank = (e) => (PRIOR_ORDER.includes(e.now) ? PRIOR_ORDER.indexOf(e.now) : PRIOR_ORDER.length)
+const priorAccount = (findingIdOf) => priorEntries(findingIdOf).sort((a, b) => priorRank(a) - priorRank(b))
+const priorEntries = (findingIdOf) => PRIOR.map((p) => {
   const v = priorVerdict.get(p.id)
   const rs = panelResults
     .filter((r) => (r.candidate.priorIds || []).includes(p.id))
@@ -1719,7 +1723,9 @@ const priorNext = PRIOR.length ? [
   'Fixed or Does not hold (with `evidence`), Refuted now (the panel rejected the',
   're-proposal; give the deciding line), or Not settled (unverified, cannot-tell,',
   'not-read or holds-unproposed; those also go under **Not covered**). Every entry is',
-  'listed, so a finding an earlier run published never silently disappears.',
+  'listed, so a finding an earlier run published never silently disappears. Keep',
+  'the `priorFindings` order: it groups the statuses as Still holds, Fixed, Does not',
+  'hold, Refuted now, Not settled.',
   'Stamp prior=<number of entries>.',
 ] : []
 
