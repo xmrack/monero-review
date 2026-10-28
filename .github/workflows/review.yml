@@ -4229,8 +4229,16 @@ jobs:
 
           # No lease and no force: this branch is new every run, so there is
           # nothing on the remote to overwrite and nothing to be raced for.
-          # The retry is for network failures only.
+          # Each try first moves the commit onto the default branch's current
+          # tip. GitHub compares a new branch with the default branch, so one
+          # cut from this run's older checkout reads as reverting any workflow
+          # merged since, and the token may not push that (run 40730322801).
           for i in 1 2 3 4; do
+            if git fetch -q origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH" &&
+               ! git rebase -q --onto "origin/$DEFAULT_BRANCH" HEAD~1; then
+              git rebase --abort || true
+              echo "::warning::the edits conflict with $DEFAULT_BRANCH; pushing them on this run's base"
+            fi
             git push -u origin "$BRANCH" && break
             [ "$i" = 4 ] && exit 1
             echo "push failed, retry $i"; sleep $((2 ** i))
