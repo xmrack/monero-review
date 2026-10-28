@@ -602,9 +602,9 @@ jobs:
 
           python3 scripts/select_prs.py >> "$GITHUB_OUTPUT"
 
-  # BUILD AND TEST THE PULL REQUEST, the one place its code runs. Deep runs
-  # always; standard runs when the PR_TESTS variable is 1, because a sanitizer
-  # build costs about an hour of runner time per pull request.
+  # BUILD AND TEST THE PULL REQUEST, the one place its code runs. Only when
+  # the PR_TESTS variable is 1, in either mode, because a sanitizer build costs
+  # about an hour of runner time per pull request.
   #
   # Its own job so nothing secret is anywhere near it: no issues scope, no
   # Claude token, no transcript key. Inside, pr_tests.sh runs every build and
@@ -613,7 +613,7 @@ jobs:
   # an artifact and read there as untrusted.
   tests:
     needs: select
-    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' && (inputs.mode == 'deep' || vars.PR_TESTS == '1')
+    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' && vars.PR_TESTS == '1'
     runs-on: ubuntu-latest
     timeout-minutes: 200
     permissions:

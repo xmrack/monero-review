@@ -44,12 +44,12 @@ gh variable set REVIEW_PAUSED --body 1 --repo xmrack/monero-review
 
 `--body 0` resumes. Reviewing a PR by number still works while paused.
 
-Deep reviews first build the PR head with ASan and UBSan and run its unit
-tests, plus `core_tests` when consensus code moved, in an offline container in
-a job that holds no secrets. The result reaches the reviewers as
-`PR_TESTS.md`: a lead to read, never a finding. A failing test is run again on
-base, so the file says which failures the PR brought. Standard reviews get it
-too when the variable is set (about an hour of runner time per PR):
+With the variable set, a review first builds the PR head with ASan and UBSan
+and runs its unit tests, plus `core_tests` when consensus code moved, in an
+offline container in a job that holds no secrets. The result reaches the
+reviewers as `PR_TESTS.md`: a lead to read, never a finding. A failing test is
+run again on base, so the file says which failures the PR brought. It is off
+by default in both tiers (about an hour of runner time per PR):
 
 ```bash
 gh variable set PR_TESTS --body 1 --repo xmrack/monero-review
@@ -79,7 +79,7 @@ Every PR the sweep picks up gets a **standard** scan. I can manually launch a
 | a second look at every unit | no | yes |
 | verifier angles per candidate | 2 (reachability, guard) | 3 (reachability, guard, impact) |
 | an advocate for a candidate one vote short | yes (1-1) | yes (2-1) |
-| sanitizer build and tests | when `PR_TESTS=1` | yes |
+| sanitizer build and tests | when `PR_TESTS=1` | when `PR_TESTS=1` |
 | findings that are one defect merged into one entry | yes | yes |
 | chosen by | default, always | a human, by PR number |
 
