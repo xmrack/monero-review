@@ -535,8 +535,14 @@ Coinbase uses only the normal check. Internal enotes need none, since
 
 ### 3.4 View tags
 
-Three bytes of `SecretDerive(s_sr ‖ input_context ‖ K_o)`, for speed only. The
-follow-up (§3.1) withdrew the v1.0 audit's two security uses of `vt`. **A PR is
+A 3-byte hash, for speed only. (branch) `make_carrot_view_tag` in
+`src/carrot_core/enote_utils.cpp` calls `derive_bytes_3`: `blake2b_monero`
+keyed by `s_sr` over `len ‖ "Carrot view tag" ‖ input_context ‖ K_o`, with
+`s_sr` the key, not part of the message. `hash_base`
+(`src/carrot_core/hash_functions.cpp`) passes the output length to
+`blake2b_monero`, which sets `P.digest_length = outlen`
+(`src/crypto/blake2b.c`). Blake2b binds the digest length, so the tag is not
+the first three bytes of the 32-byte `SecretDerive`. The follow-up (§3.1) withdrew the v1.0 audit's two security uses of `vt`. **A PR is
 risky if** a view-tag match stands in for, or skips, the commitment or Janus
 check.
 

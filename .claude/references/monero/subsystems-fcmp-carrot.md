@@ -250,9 +250,16 @@ one shared key (one output, or two outputs with the same `D_e`), else one per
 output (`store_carrot_ephemeral_pubkeys_to_extra`). `store_carrot_to_transaction_v1`
 always writes an 8-byte encrypted payment ID. A transaction counts as Carrot by
 its first output's type (`carrot::is_carrot_transaction_v1`); consensus makes
-all outputs share one type. Every derivation is keyed Blake2b over a fixed
+all outputs share one type. Most derivations are keyed Blake2b over a fixed
 transcript (`hash_functions.cpp`, `transcript_fixed.h`, separators in
-`carrot_core/config.h`).
+`carrot_core/config.h`). The exception is the enote ephemeral private key
+`d_e`: unkeyed `H_n` over `anchor_norm`, input context, `K^j_s`, `K^j_v` and
+`pid`. `make_carrot_enote_ephemeral_privkey` (`enote_utils.cpp`) passes
+`nullptr` as the key to `derive_scalar`, and `hash_base` (`hash_functions.cpp`)
+then uses key length 0. It cannot be keyed: the recipient recomputes `d_e` from
+the decrypted anchor in the normal Janus check, so anyone who can decrypt
+`anchor_norm` knows `d_e`, and its secrecy rests on the 16-byte `anchor_norm`.
+Find the other unkeyed calls with `git grep -n 'derive_.*nullptr' -- src/carrot_core`.
 
 ### X25519 (branch)
 
@@ -267,8 +274,13 @@ transcript (`hash_functions.cpp`, `transcript_fixed.h`, separators in
   (`try_make_carrot_shared_key_sender`, `verify_point_is_in_main_subgroup`)
   and uses no cofactor.
 - The receiver computes `k_v · D_e` with no check on `D_e`
-  (`try_make_carrot_shared_key_receiver`). Rejecting a crafted `D_e` is left to
-  the amount-commitment and Janus checks.
+  (`try_make_carrot_shared_key_receiver`). Only the normal Janus check rejects
+  a crafted `D_e`; the amount-commitment check does not. For a low-order `D_e`
+  with `u = 0`, `s_sr = k_v · D_e` is zero for every wallet, so the sender
+  knows `s^ctx_sr` and can make the view tag, the decrypted amount and `C_a`
+  all match (`try_get_carrot_amount` is keyed only by `s^ctx_sr`).
+  `verify_carrot_normal_janus_protection` recomputes `D_e'` from `d_e` and
+  compares its bytes with `D_e`, which rejects the enote.
 
 ### What the scan checks (branch)
 
