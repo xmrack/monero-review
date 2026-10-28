@@ -462,22 +462,22 @@ WHY = {
 
 
 def summary(text, extra=()):
-    """Every reason the report is private, each with what met it, after any
-    reasons the workflow decided itself."""
-    reasons = [(reason, []) for reason in extra if reason in WHY]
+    """Every reason the report is private, each once, with what met it, after
+    any reasons the workflow decided itself."""
+    reasons = {reason: [] for reason in extra if reason in WHY}
     if not text.strip():
         return "**Why this is private**: the report is empty.\n"
-    for marker in dict.fromkeys(markers(text)):
-        reasons.append((marker, []))
+    for marker in markers(text):
+        reasons.setdefault(marker, [])
     for reason, find in (("pre-existing", pre_existing_findings),
                          ("merged", merged_findings),
                          ("fixed-on-master", fixed_on_master_findings),
                          ("privacy", privacy_findings), ("funds", funds_findings)):
         found = find(text)
         if found:
-            reasons.append((reason, found))
+            reasons.setdefault(reason, []).extend(found)
     lines = ["**Why this is private**", ""]
-    for reason, found in reasons:
+    for reason, found in reasons.items():
         lines.append(f"- **{reason}**: {WHY[reason]}")
         lines.extend(f"  - {item}" for item in found)
     if not reasons:

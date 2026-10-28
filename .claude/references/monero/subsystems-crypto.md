@@ -10,7 +10,7 @@ agree bit for bit. So the highest-value question about a change here is usually
 not "is this instruction correct" but **"do all the paths still produce the
 same bytes"**.
 
-Verified against master `8308dee67` (2026-10-13).
+Verified against master `3fd0f88c2` (2026-10-25).
 
 ---
 
@@ -258,7 +258,7 @@ null-check neither `obj` nor `bytes_out`: they build the 32-byte slice with
 raw constants, each with a `//Source:` comment naming where it came from;
 `init_gens` only `static_assert`s their first byte, and only debug-build
 `assert`s reproduce them in full (they matched monero-oxide at the pinned
-`rev` on `8308dee67`). They must equal
+`rev` on `3fd0f88c2`). They must equal
 monero-oxide's `CompressedPoint::T` (`monero-oxide/ed25519/src/compressed_point.rs`)
 and `FCMP_PLUS_PLUS_U` / `FCMP_PLUS_PLUS_V`
 (`monero-oxide/ringct/fcmp++/generators/src/lib.rs`) at the pinned revision.
@@ -269,8 +269,9 @@ manifest. Upstream has already had to correct them once: commit `25a7c97bb`,
 commit moved the C++ `T`, `U` and `V` to the monero-oxide `31c26d96` values
 while `Cargo.toml` still pinned `71da8f03`, whose `CompressedPoint::T` held
 the old value, and only a later pin bump closed the gap (the oldest hit of
-`git log --oneline -S 31c26d96 -- src/fcmp_pp/fcmp_pp_rust/Cargo.toml`; on its parent
-`generators.cpp` already has `T` marked `//Source: 31c26d96`). So a change
+`git log --first-parent --oneline -S 31c26d96 -- src/fcmp_pp/fcmp_pp_rust/Cargo.toml`,
+the merge of #10361; on its first parent `generators.cpp` already has `T`
+marked `//Source: 31c26d96`). So a change
 to `generators.cpp` alone needs the same comparison against the pinned
 revision.
 
@@ -396,9 +397,9 @@ top block.
   caller is a miner thread.
 - **`RANDOMX_FLAG_SECURE` is added for non-miner JIT VMs only**
   (`if ((flags & RANDOMX_FLAG_JIT) && !miner_thread)`).
-- **The VM alias names invert the `softAes` boolean** —
-  `CompiledVmDefault = CompiledVm<…, true, false>` where the `true` is *not*
-  soft AES. Read the template parameters, not the name.
+- **A VM alias without `HardAes` in its name uses soft AES** —
+  `CompiledVmDefault` and `CompiledVmLargePage` pass `softAes = true`. Read
+  the template parameters, not the name.
 - **Two unrelated families of `get_block_longhash`** exist, and the
   `blockchain.cpp` calls that look like they pass a thread count do not.
   `get_altblock_longhash` calls `rx_slow_hash` unconditionally — it does not
@@ -421,6 +422,7 @@ top block.
 The fuzz target list tells you which surfaces upstream already treats as
 attacker-reachable. Cryptography-relevant targets: `bulletproof`,
 `bulletproof-plus`, `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`,
-`signature`, `cold-outputs`, `cold-transaction`. A PR touching a surface with
+`signature`, `cold-outputs`, `cold-transaction`, `multisig_kex`,
+`multisig_tx`, `multisig_info`. A PR touching a surface with
 an existing target is touching something known to be reachable; a PR that
 *weakens* a harness is worth a note even though it ships nothing.

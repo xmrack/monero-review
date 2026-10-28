@@ -8,10 +8,10 @@ keys are in the process. Severity is high because a defect here loses funds or
 deanonymises the user directly.
 
 **"Affects the wallet" is not specific enough.** There are three consumers with
-genuinely different threat models, and a finding real in one is often
+different threat models, and a finding real in one is often
 unreachable in another. Always name the one you mean.
 
-Verified against master `8308dee67` (2026-10-13).
+Verified against master `3fd0f88c2` (2026-10-25).
 
 No FCMP++ or Carrot code is in the wallet on master: `grep -rli 'fcmp\|carrot' src/wallet src/simplewallet src/device`
 finds nothing. Wallet-side FCMP++/Carrot work lives off master.
@@ -33,7 +33,7 @@ Consequences worth carrying:
 - Anything that **requires user interaction to trigger** may be unreachable
   under wallet-rpc — but anything that **processes daemon responses
   automatically** is *worse* there, because nobody is watching.
-- `wallet_api` is the only consumer with genuinely **concurrent** access to
+- `wallet_api` is the only consumer with **concurrent** access to
   `wallet2`: a background refresh runs alongside caller-driven calls. State
   that the CLI touches serially can be touched concurrently there.
 - `wallet_api` is `EXCLUDE_FROM_ALL`, so a default build does not produce
@@ -77,7 +77,7 @@ encrypted under keys derived from `m_custom_background_key` (itself
 so the password that opens the background cache is deliberately not the wallet
 password.
 
-Four things follow, and a diff can break each of them:
+Five things follow, and a diff can break each of them:
 
 - **The background instance must not hold a spend key.** A separate `wallet2`
   is built in `process_background_cache_on_open` with `m_is_background_wallet
@@ -180,16 +180,19 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 
 - **`THROW_WALLET_EXCEPTION_IF` is a bare `if (cond) { … }`** with no
   `do { } while(0)` wrapper — unlike `THROW_WALLET_EXCEPTION`, which has one.
-  An `else` after it binds to the macro's hidden `if`.
+  Under an outer `if`, a following `else` fails to compile; without the `;`
+  it binds to the macro's hidden `if`.
 - **`wallet2::encrypt_keys(key)` leaves the view key in plaintext.** It calls
   `account_base::encrypt_keys` (XOR of spend, view, multisig keys, polyseed
   and passphrase with a chacha20 keystream) and then `decrypt_viewkey` to undo
-  the view-key part; `wallet2::decrypt_keys` does the reverse after
+  the view-key part; `wallet2::decrypt_keys` does the reverse. Both first call
   `verify_password_with_cached_key`. The names describe the spend key only.
 - **`hashchain::size()` is a height, not a container size** — it returns
   `m_blockchain.size() + m_offset`, and `operator[]` subtracts the offset.
 - **`m_global_output_index` comes from the daemon and is stored unverified.**
-  It is unused during scanning and used later to build ring offsets.
+  Scanning uses it only to match other transactions' ring members against
+  owned outputs (`m_uses`, background sync); spending uses it to build ring
+  offsets.
 - **In the main refresh path the daemon's tx blobs are never checked against
   the block's `tx_hashes`.** The txid recorded on a `transfer_details` comes
   from the block header; the contents come from a separate blob.
@@ -218,7 +221,7 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   one and absent from the other reads back default-constructed after a
   round-trip through the other, which is how a wallet silently loses state.
 - `tx_construction_data`'s serialized `use_rct` field is a **bitfield carrying
-  construction flags** (`construction_flags`: `_use_rct = 1<<0`,
+  construction flags** (enum `construction_flags_`: `_use_rct = 1<<0`,
   `_use_view_tags = 1<<1`) under a boolean-sounding name; the in-memory
   `use_rct` member is a plain `bool`.
 - `gamma_picker` holds `const std::vector<uint64_t> &rct_offsets` **by
@@ -244,7 +247,7 @@ LMDB or decode errors. Callers treat empty as absent — `ringdb::get_ring` via
 `all_outs.front().empty()`, `wallet2::get_outs` via `!all_outs[i].empty()`
 when filling `existing_rings` — and `wallet2::get_rings` turns any exception
 into `false`. `wallet2::commit_tx` records the rings (`add_rings`) **before**
-relaying, so a ring sent to a daemon is reused on rebuild even if the relay
+relaying when `sanity_check_pending_tx` passes, so a ring sent to a daemon is reused on rebuild even if the relay
 failed.
 
 **`pending_tx_validation.{h,cpp}`** (`namespace tools::wallet`) is the
@@ -252,7 +255,7 @@ consistency check for transactions the wallet did not just build itself:
 `sanity_check_unsigned_tx_set` (offline signing input, from
 `parse_unsigned_tx_from_str` and `sign_tx`), `sanity_check_pending_tx` /
 `sanity_check_pending_tx_set` (signed and multisig sets, via the `wallet2`
-wrappers of the same names in `parse_tx_from_str`, `load_multisig_tx`,
+wrappers of the same names in `parse_tx_from_str`, `parse_multisig_tx_from_str`, `load_multisig_tx`,
 `sign_multisig_tx`, `cold_sign_tx`, `make_multisig_tx_set`), and
 `check_consistent_ins_outs` across a set. It re-derives input amounts,
 commitments, key images, ring members and destinations against
@@ -320,7 +323,7 @@ and `false` returns the cached pool view). A new handler is unrestricted unless 
   `contrib/epee/include/net/http_server_handlers_map2.h`) and the request is
   rejected.
 - A handler that returns false without setting `er.code` produces
-  `{"error":{"code":0,…}}`; an escaping exception produces
+  `{"error":{"code":0,…}}`; an escaping `std::exception` produces
   `{"error":{"code":0,"message":""}}`.
 - **`get_tx_key` and `check_tx_key` are not blocked in restricted mode**, while
   `query_key` is.
@@ -335,9 +338,10 @@ and `false` returns the cached pool view). A new handler is unrestricted unless 
   `cryptonote`.
 - `tests/fuzz/fuzz_rpc` targets the **daemon** only — `core_rpc_server`
   (`fuzz_rpc.cpp`) and the ZMQ publisher `zmq_pub` (`fuzz_zmq.cpp`). There
-  is no wallet-RPC fuzz target; the wallet fuzz targets are
-  `tests/fuzz/cold-outputs.cpp` (`import_outputs_from_str`) and
-  `cold-transaction.cpp` (`sign_tx`).
+  is no wallet-RPC fuzz target. The `wallet2` fuzz targets in `tests/fuzz/` are
+  `cold-outputs.cpp` (`import_outputs_from_str`), `cold-transaction.cpp`
+  (`sign_tx`), `signature.cpp` (`verify`), `multisig_tx.cpp`
+  (`load_multisig_tx`) and `multisig_info.cpp` (`import_multisig`).
 - `WALLET_RPC_VERSION_MINOR` (`#define` in
   `src/wallet/wallet_rpc_server_commands_defs.h`) must be bumped on **any**
   change to that file; MAJOR bumps reset it.

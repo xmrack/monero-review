@@ -9,8 +9,8 @@ checked in.
 
 | tag | tree | commit |
 |---|---|---|
-| **(master)** | `monero-project/monero` master | `8340be5e9` (2026-10-19) |
-| **(branch)** | `seraphis-migration/monero` `fcmp++-stage` | `62bb16299` (2026-10-05) |
+| **(master)** | `monero-project/monero` master | `3fd0f88c2` (2026-10-25) |
+| **(branch)** | `seraphis-migration/monero` `fcmp++-stage` | `f25388d` (2026-10-21) |
 | **(oxide)** | `monero-oxide` `fcmp++` | `31c26d96e` (2026-08-18), the revision the branch pins in `src/fcmp_pp/fcmp_pp_rust/Cargo.toml` |
 
 (oxide) paths are relative to the monero-oxide root. Master has the leaf
@@ -302,7 +302,8 @@ Function Analysis observations (no ratings):
   `mul8_is_identity`. **That pre-check is gone on master and the branch.**
   `get_valid_torsion_cleared_point_vartime` (master `src/crypto/crypto.cpp`,
   branch `src/fcmp_pp/fcmp_pp_crypto.cpp`) now rejects small-order points only
-  through `torsion_cleared_out == EC_I`.
+  through `torsion_cleared_out == EC_I`. (branch) `outputs_to_leaves` can
+  instead use `get_valid_torsion_cleared_point_fast_vartime`, which keeps it.
 - `unbiased_hash_to_ec` had no domain tag; clearing the cofactor before the sum
   is equivalent to RFC 9380's order. (master, branch) It now uses
   `blake2b_monero`, which sets the "Monero" personalization.
@@ -333,7 +334,7 @@ clearing, are skipped. Proof length is fixed by `(inputs, n_tree_layers)`
 - moves `fe_c`, `fe_a_inv_3` or the Weierstrass formulas without a known-answer
   test. Trail of Bits found the `fe_c` sign by comparing with the IETF draft;
 - adds a caller of `ge_double_scalarmult_*_p3` with possibly-zero scalars on a
-  tree without `ge_p3_0(r3)` (the branch at `62bb16299`).
+  tree without `ge_p3_0(r3)` (the branch at `f25388d`).
 
 ### 2.2 Key image generator and transparent commitments
 

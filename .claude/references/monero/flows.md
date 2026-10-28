@@ -9,7 +9,7 @@ Read the flow that covers whatever a diff touches before forming a theory. A
 change that looks local usually sits somewhere in one of these six, and its
 blast radius is whatever comes after it in the list.
 
-Traced against master `8308dee67` (2026-10-13). Symbols were confirmed by
+Traced against master `3fd0f88c2` (2026-10-25). Symbols were confirmed by
 reading the code; line numbers are not given because they rot fastest. Find a
 symbol with `git grep -n`, not with a remembered line.
 
@@ -354,7 +354,7 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
 2. **`boosted_tcp_server::handle_accept` → `connection<T>::start_internal`** →
    per-IP and total connection caps (`is_host_limit`,
    `contrib/epee/include/net/http_server_impl_base.h`; keyed by
-   `get_rpc_connection_limit_key`, which groups IPv6 by /64). The counters are
+   `get_rpc_connection_limit_key`, which groups public IPv6 addresses by /64). The counters are
    incremented later, in `simple_http_connection_handler::after_init_connection`:
    check and increment are separate critical sections on `config.m_lock`, not
    one atomic step. No content validation. Idle timeouts shrink as the server
@@ -518,9 +518,11 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
    handler. Chooses *who* to talk to; validates nothing about honesty.
 2. **`process_payload_sync_data`** — the peer's claimed height is **taken at
    face value as the sync target** (`set_target_blockchain_height`); its
-   claimed cumulative difficulty is not read. Only the hard-fork version and
-   the pruning seed shape are checked; a downward height revision costs one
-   score point (`hit_score`), not a disconnect.
+   claimed cumulative difficulty is not read. Only the hard-fork version, the
+   pruning seed shape and, on the public zone when the claimed top id is a
+   block we hold, the claimed height against that block are checked; a
+   downward height revision costs one score point (`hit_score`), not a
+   disconnect.
 3. **`NOTIFY_REQUEST_CHAIN` / `handle_response_chain_entry`** — the densest
    validation point in the flow. Unsolicited response, response past the
    expected height, empty id list, more than `BLOCKS_IDS_SYNCHRONIZING_MAX_COUNT`

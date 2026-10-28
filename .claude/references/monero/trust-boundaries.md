@@ -5,7 +5,7 @@ how bad each outcome is. Use it to answer the reachability question concretely
 (name the boundary, then trace the call sequence from it to the changed code)
 and to rate what you find.
 
-Verified against master `183b5e962` (2026-10-18). The severity tiers follow the
+Verified against master `3fd0f88c2` (2026-10-25). The severity tiers follow the
 classes of vulnerability the project has actually had to fix and how it rated
 them. Verify locations against the checkout — this is a
 map, not a substitute for reading the tree. Where a symbol index has been built
@@ -221,8 +221,8 @@ own is in scope. Severity is high because the wallet holds keys and because
 
 A network attacker is usually equivalent. `--daemon-ssl` defaults to
 `autodetect`. That mode reconnects in plaintext when the TLS handshake fails
-(`blocked_mode_client::connect` in `net_helper.h`). Even when TLS succeeds, the
-verify callback in `contrib/epee/src/net_ssl.cpp` accepts an **unverified**
+(`blocked_mode_client::connect` in `net_helper.h`). Even when TLS succeeds in
+that mode, the verify callback in `contrib/epee/src/net_ssl.cpp` accepts an **unverified**
 certificate and only logs "SSL peer has not been verified". Only a
 fingerprint or a CA-verified mode authenticates the node.
 
@@ -314,8 +314,8 @@ under `device_trezor/trezor/`) is untrusted input. A change that widens what
 the host accepts belongs in a review even though "the device is trusted"
 sounds like it settles the question. The Trezor `BridgeTransport` speaks HTTP
 and JSON to `127.0.0.1:21325` (or `TREZOR_BRIDGE_PORT`), so whatever local
-process holds that port can pose as the device. `UdpTransport` is compiled only
-with `WITH_DEVICE_TREZOR_UDP`.
+process holds that port can pose as the device. `UdpTransport` is always compiled
+but used only with `WITH_DEVICE_TREZOR_UDP` or `WITH_TREZOR_DEBUGGING`.
 
 ## 8. Wallet cache, key files and other blobs the user is handed
 
@@ -357,7 +357,7 @@ between layers can silently stop running on some path.
 | Layer | What it enforces | Where it does not run |
 | --- | --- | --- |
 | `ver_non_input_consensus` (`tx_verification_utils.cpp`) → `core::check_tx_semantic` | blob ≤ `CRYPTONOTE_MAX_TX_SIZE`, weight ≤ `get_transaction_weight_limit`, version bounds, output point validity (`check_outs_valid`), amount overflow (`check_inputs_overflow`, `check_outs_overflow`), key-image domain (`check_tx_inputs_keyimages_domain`) and uniqueness within the tx, RingCT semantics and batched range proofs | below the fast-sync height |
-| `Blockchain::check_tx_outputs` | which RCT types, output types and view tags each fork allows | — |
+| `Blockchain::check_tx_outputs` | which RCT types, output types and view tags each fork allows | below the fast-sync height (only `ver_non_input_consensus` calls it) |
 | `Blockchain::check_tx_inputs` | ring size, at least two outputs, inputs sorted by key image, the 10-block minimum age (`CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE`), unlock times, key image not already spent, ring signatures | below the fast-sync height, and for alt-chain blocks until a reorg applies them |
 | `prevalidate_miner_transaction`, `validate_miner_transaction` | the coinbase: one `txin_gen` at the block height, unlock at height + `CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW`, the RCT type and version each fork requires, and the claimed amount against reward plus fees | the coinbase never goes through `check_tx_semantic`, so its output keys are not checked as valid points the way other outputs are |
 | The DB | no duplicate key image or txid anywhere in the chain | — |
@@ -366,9 +366,13 @@ between layers can silently stop running on some path.
 Two consequences reviewers miss:
 
 - **Relay rules are not consensus.** Fee, `tx_extra` size and unlock time are
-  pool policy today. A change to them is not a fork, and a change that applies
-  them to block validation **is** one. Several become consensus rules at the
-  FCMP++ fork, so check which version a change targets.
+  pool policy on master. A change to them is not a fork. Applying one to block
+  validation tightens consensus: a soft fork if every node does it, a chain
+  split for the nodes that do if not, and Monero gates it on a hard-fork
+  version either way. On the FCMP++ branch `tx_extra` size and `unlock_time ==
+  0` become consensus at v17 (`HF_VERSION_REJECT_LARGE_EXTRA`,
+  `HF_VERSION_REJECT_UNLOCK_TIME`); the fee stays policy. Check which version
+  a change targets.
 - **The pool feeds the block template.** `fill_block_template` takes pool
   transactions without re-running `ver_non_input_consensus`; it relies on
   `tx_memory_pool::validate` re-checking the pool when the fork changes. A pool
@@ -405,8 +409,8 @@ by what it does to fees and to the cost of verifying a block.
 `DIFFICULTY_WINDOW`, `DIFFICULTY_CUT` dropped from each end, `DIFFICULTY_LAG`)
 has two callers that must agree: `get_difficulty_for_next_block`, which is
 cached, and `get_next_difficulty_for_alternative_chain`. `check_hash` has
-64-bit and 128-bit paths. `check_block_timestamp` requires a timestamp above
-the median of the last `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW` blocks and below
+64-bit and 128-bit paths. `check_block_timestamp` requires a timestamp not below
+the median of the last `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW` blocks and not above
 local time + `CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT`. The upper bound reads the
 node's **clock**, so it is the one acceptance rule that is not a function of
 the chain. That is tolerable only because the rejection is not permanent.
@@ -460,9 +464,12 @@ a split risk.
 **Canonical encodings.** Key images are compared byte for byte, which is only
 sound because decoding is canonical: `ge_frombytes_vartime` and
 `fe_frombytes_vartime` reject non-canonical points, and `sc_check` rejects
-non-canonical scalars. Replacing a decoder (a Rust library, `mx25519`, a new
-`ge_*` routine) must keep identical accept and reject behaviour on every
-input, or two encodings of one key image both become spendable.
+non-canonical scalars. Replacing a decoder (a Rust library, a new `ge_*`
+routine) must keep identical accept and reject behaviour on every input, or
+two encodings of one key image both become spendable. `mx25519` is not one: it
+works on X25519, not the Ed25519 points key images live on, and no consensus
+check calls it. Wallets use it, and on the FCMP++ branch the daemon uses it
+only to build a Carrot coinbase (`construct_miner_tx`).
 
 **FCMP++ and Carrot** (`src/fcmp_pp/`). Built and linked into `ringct`, but
 on master it has no caller in `src/` outside its own directory. Carrot is not

@@ -197,7 +197,8 @@ the directory calls into it; its only callers are tests
 `tests/unit_tests/crypto.cpp`. The primitive under it,
 `crypto::get_valid_torsion_cleared_point_vartime` (`src/crypto/crypto.cpp`),
 **is** live through `crypto::pubkey_clear_torsion`: `wallet2` uses it for
-payment-ID decryption in `process_new_transaction` and in `get_tx_proof`, and
+payment-ID decryption in `process_new_transaction`, in the tx proofs
+(`get_tx_proof`, `check_tx_proof`) and the reserve proofs, and
 `src/device_trezor/trezor/protocol.cpp` uses it on tx public keys. `RCTType`
 still stops at `RCTTypeBulletproofPlus = 6`. A defect in the dormant code is
 still a finding, rated as it will run once live: see `refutations.md`, "Not
