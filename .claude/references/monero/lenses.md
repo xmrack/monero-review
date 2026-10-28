@@ -24,9 +24,11 @@ without a fork gate, platform-dependent arithmetic, and a check that runs on
 one path into the chain but not another (see "Parallel implementations").
 
 Policy is not consensus. A check that sits in `tx_memory_pool::add_tx` behind
-`!kept_by_block`, such as the `MAX_TX_EXTRA_SIZE` cap, is a relay rule: a
-block can still carry what it rejects. Moving a check between the two is a
-consensus change in either direction.
+`!kept_by_block`, such as the `MAX_TX_EXTRA_SIZE` cap on master, is a relay
+rule: a block can still carry what it rejects. Moving a check between the two
+is a consensus change in either direction. On the FCMP++ branch the extra cap
+and `unlock_time == 0` are consensus from v17 (`HF_VERSION_REJECT_LARGE_EXTRA`,
+`HF_VERSION_REJECT_UNLOCK_TIME` in `ver_non_input_consensus`).
 
 ## fork-gating
 

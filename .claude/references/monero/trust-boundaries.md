@@ -366,9 +366,13 @@ between layers can silently stop running on some path.
 Two consequences reviewers miss:
 
 - **Relay rules are not consensus.** Fee, `tx_extra` size and unlock time are
-  pool policy today. A change to them is not a fork, and a change that applies
-  them to block validation **is** one. Several become consensus rules at the
-  FCMP++ fork, so check which version a change targets.
+  pool policy on master. A change to them is not a fork. Applying one to block
+  validation tightens consensus: a soft fork if every node does it, a chain
+  split for the nodes that do if not, and Monero gates it on a hard-fork
+  version either way. On the FCMP++ branch `tx_extra` size and `unlock_time ==
+  0` become consensus at v17 (`HF_VERSION_REJECT_LARGE_EXTRA`,
+  `HF_VERSION_REJECT_UNLOCK_TIME`); the fee stays policy. Check which version
+  a change targets.
 - **The pool feeds the block template.** `fill_block_template` takes pool
   transactions without re-running `ver_non_input_consensus`; it relies on
   `tx_memory_pool::validate` re-checking the pool when the fork changes. A pool
@@ -460,9 +464,12 @@ a split risk.
 **Canonical encodings.** Key images are compared byte for byte, which is only
 sound because decoding is canonical: `ge_frombytes_vartime` and
 `fe_frombytes_vartime` reject non-canonical points, and `sc_check` rejects
-non-canonical scalars. Replacing a decoder (a Rust library, `mx25519`, a new
-`ge_*` routine) must keep identical accept and reject behaviour on every
-input, or two encodings of one key image both become spendable.
+non-canonical scalars. Replacing a decoder (a Rust library, a new `ge_*`
+routine) must keep identical accept and reject behaviour on every input, or
+two encodings of one key image both become spendable. `mx25519` is not one: it
+works on X25519, not the Ed25519 points key images live on, and no consensus
+check calls it. Wallets use it, and on the FCMP++ branch the daemon uses it
+only to build a Carrot coinbase (`construct_miner_tx`).
 
 **FCMP++ and Carrot** (`src/fcmp_pp/`). Built and linked into `ringct`, but
 on master it has no caller in `src/` outside its own directory. Carrot is not
