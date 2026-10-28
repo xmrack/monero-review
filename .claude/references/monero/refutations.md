@@ -444,6 +444,25 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## An identity spend key does not get past the address parser
+
+An address whose spend public key is the identity cannot be used as a miner
+address or as a transfer destination through the standard parser:
+`get_account_address_from_str` in
+`src/cryptonote_basic/cryptonote_basic_impl.cpp` calls `check_address`, which
+rejects an identity key or one outside the main subgroup.
+
+That matters for multisig. The `multisig_account` constructor in
+`src/multisig/multisig_account.cpp` initialises `m_multisig_pubkey` to
+`rct::identity()`, and it stays the identity until the final key-exchange
+round, so an unfinished M-of-N multisig address has an identity spend key.
+The daemon's `core_rpc_server::on_start_mining` (`src/rpc/core_rpc_server.cpp`)
+refuses it, and so does any sender that parses the address string. A proposal
+that a co-signer can steal funds sent to such an address therefore needs a
+sender that bypasses this parser; name it, and re-read
+`get_account_address_from_str` and `check_address` on the head you are
+reviewing.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
