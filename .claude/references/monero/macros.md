@@ -7,7 +7,7 @@ found by grepping for their names.
 **Read this before believing a grep result**, and before saying "nothing calls
 this" or "this field is unvalidated".
 
-Verified against master `8308dee67` (2026-10-13).
+Verified against master `3fd0f88c2` (2026-10-25).
 
 To count uses of a macro, run
 `grep -rhoP "(?<![A-Za-z_])NAME\(" src contrib tests | wc -l`; the count

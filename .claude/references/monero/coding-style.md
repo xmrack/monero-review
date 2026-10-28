@@ -5,7 +5,7 @@ a licence header and almost nothing else**, plus vendored code that follows
 nobody's rules but its own. Carrying a rule from one dialect into another is
 the most common way to be wrong about style here.
 
-All counts measured at master `8308dee67` (2026-10-13).
+All counts measured at master `3fd0f88c2` (2026-10-25).
 
 ---
 

@@ -3,7 +3,7 @@
 The build system and the test topology, from the point of view of somebody
 who has to judge whether a change to either is safe.
 
-Measured at master `8308dee67` (2026-10-13).
+Measured at master `3fd0f88c2` (2026-10-25).
 
 ---
 
@@ -45,12 +45,12 @@ The resulting library dependency graph is in `architecture.md`.
 | `BUILD_SHARED_LIBS` | ON for a non-`STATIC` debug build, else OFF | internal libraries as shared |
 | `SANITIZE` | OFF | `-fsanitize=address,undefined` |
 | `NO_AES` | OFF | selects a different `cn_slow_hash` implementation |
-| `USE_DEVICE_TREZOR` | ON (env-overridable, `cmake/CheckTrezor.cmake`) | builds `src/device_trezor`; **silently switched off** if protobuf is missing unless `USE_DEVICE_TREZOR_MANDATORY` (set by CI and Guix) |
+| `USE_DEVICE_TREZOR` | ON (env-overridable, `cmake/CheckTrezor.cmake`) | builds `src/device_trezor`; **switched off with only a CMake warning** if protobuf is missing unless `USE_DEVICE_TREZOR_MANDATORY` (set by CI and Guix) |
 | `BUILD_GUI_DEPS` | OFF | gates `libwallet_api_tests`; it and `trezor_tests` (`TREZOR_DEBUG`) are the only targets that link `wallet_api` (`EXCLUDE_FROM_ALL`) |
 | `ENABLE_FUZZ_TEST` | OFF | adds `tests/fuzz` to a normal build |
-| `STACK_TRACE` | OFF in release, else platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** (`--wrap` when static, `dlsym(RTLD_NEXT)` otherwise); Guix forces it OFF on `*linux-gnu*` |
+| `STACK_TRACE` | OFF in release, else platform | compiles `src/common/stack_trace.cpp`, which **interposes on `__cxa_throw` process-wide** (`--wrap` when static or for a shared Linux GCC build, `dlsym(RTLD_NEXT)` otherwise); Guix forces it OFF on `*linux-gnu*` |
 | `MX25519_COPYLEFT` | ON when Monero is the top-level project, OFF as a dependency (`external/CMakeLists.txt`) | includes mx25519's MPL-2.0 assembly backends (ARM64, AMD64, AMD64X); OFF defines `MX25519_NO_COPYLEFT`, leaving only the portable C backend. `cncrypto` links `mx25519_static` |
-| `COVERAGE`, `STRIP_TARGETS`, `MANUAL_SUBMODULES`, `BUILD_DEBUG_UTILITIES`, `USE_READLINE`, `BOOST_IGNORE_SYSTEM_PATHS` | | |
+| `COVERAGE`, `STRIP_TARGETS`, `MANUAL_SUBMODULES`, `BUILD_DEBUG_UTILITIES`, `BOOST_IGNORE_SYSTEM_PATHS` | | |
 
 `MONERO_WALLET_CRYPTO_LIBRARY` (`src/crypto/wallet/CMakeLists.txt`) defaults
 to `auto`, which takes whatever `monero_crypto_autodetect`
@@ -89,8 +89,8 @@ after the hardening block) and `-ftemplate-depth=900`.
 
 **`external/` is configured before any of this** (`add_subdirectory(external)`
 precedes the flag block), so its targets — LMDB, easylogging++, qrcodegen,
-RandomX — compile without `C_SECURITY_FLAGS`. Only `polyseed_static` and
-`utf8proc` get them, via an explicit `set_property` after the block. Linker
+RandomX — compile without `C_SECURITY_FLAGS`. Only `polyseed_static`,
+`utf8proc` and (when built) `linenoise` get them, via an explicit `set_property` after the block. Linker
 flags still apply at the final executable link. Submodule pins are checked at
 configure time by `check_submodule` unless `MANUAL_SUBMODULES`; a submodule
 bump in a diff is a vendored-code change.
@@ -98,7 +98,7 @@ bump in a diff is a vendored-code change.
 ## `contrib/depends` — the cross-build dependency tree
 
 A self-contained make-based builder: `packages/` (boost, openssl, sodium,
-unbound, zeromq, protobuf, native_protobuf, hidapi, libusb, readline, ncurses, plus
+unbound, zeromq, protobuf, native_protobuf, hidapi, libusb, plus
 `android_ndk`, `darwin_sdk`, `freebsd_base`), `hosts/` (android, darwin,
 freebsd, linux, mingw32, default), `patches/`, `builders/`, and
 `toolchain.cmake.in`.
@@ -222,7 +222,8 @@ built and still register their CTest entries `hash-target` and
 attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`, `cold-outputs`,
 `cold-transaction`, `http-client`, `levin`, `load_from_binary`,
-`load_from_json`, `network_address`, `parse_url`, `signature`, `transaction`,
+`load_from_json`, `multisig_info`, `multisig_kex`, `multisig_tx`,
+`network_address`, `parse_url`, `signature`, `transaction`,
 `tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
 this list: it is the kind of thing a pull request adds to.
 
@@ -248,8 +249,8 @@ despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
   `::wallet_accessor_test` and `::wallet_pool_test`. Renaming one breaks the
   build of `src/`, and those tests can reach `wallet2` private state.
 - **`IN_UNIT_TESTS` changes access control** in
-  `src/cryptonote_core/blockchain.h` for the three translation units that
-  define it.
+  `src/cryptonote_core/blockchain.h` for the translation units that define it
+  (`grep -rl 'define IN_UNIT_TESTS' tests`).
 - **`add_custom_target(tests DEPENDS enabled_tests)`** (`tests/CMakeLists.txt`)
   — `DEPENDS` takes target and file names, not a variable name, so
   `make tests` does **not** build the list above it.

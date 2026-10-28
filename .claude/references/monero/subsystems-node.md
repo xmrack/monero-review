@@ -8,7 +8,7 @@ Wallet subsystems are in `subsystems-wallet.md`; crypto in
 `subsystems-crypto.md`; the end-to-end paths through all of these are in
 `flows.md`.
 
-Verified against master `8308dee67` (2026-10-13). Symbols confirmed by grep; cited by file
+Verified against master `3fd0f88c2` (2026-10-25). Symbols confirmed by grep; cited by file
 and enclosing function or symbol, not line number.
 
 ---
@@ -45,8 +45,10 @@ throw rather than return:
   and `serialize_map<is_store, t_storage>` are emitted by
   `BEGIN_KV_SERIALIZE_MAP()`. Grep for the field name, not the function.
 - **`KV_SERIALIZE_N` discards its result.** The macro body is a bare
-  expression statement — no `if`, no `return`. A missing or wrong-typed field
-  leaves the member at its value-initialised default and parsing continues.
+  expression statement — no `if`, no `return`. A missing field, or a non-object
+  where an object is expected, leaves the member unchanged and parsing
+  continues. A scalar that does not convert to the member's type throws
+  (`ASSERT_AND_THROW_WRONG_CONVERSION`, `portable_storage_val_converters.h`).
 - **`load` and `_load` are different.** `load` wraps `serialize_map` in
   try/catch and logs "Exception on unserializing"; `_load` does not catch, and
   nested objects go through `_load`.
@@ -95,9 +97,9 @@ machine. It is where total request size is bounded — `m_bytes_read` against
 (1048576) for the daemon (`core_rpc_server::init`) and 100× that for
 wallet-rpc — plus `HTTP_MAX_URI_LEN` (9000) and `HTTP_MAX_HEADER_LEN`
 (100000). Request bodies are framed only by `Content-Length`:
-`parse_cached_header` rejects any `Transfer-Encoding` header, and
-`get_len_from_content_lenght` rejects repeated or comma-listed
-`Content-Length` values that disagree.
+`parse_cached_header` rejects any `Transfer-Encoding` header and repeated
+`Content-Length` headers that disagree, and `get_len_from_content_lenght`
+rejects a comma-listed value whose entries disagree.
 
 **Traps.** The connection filter (`is_remote_host_allowed`) and connection
 limit (`is_host_limit`) are virtuals called from
@@ -396,8 +398,8 @@ output index returned wrong is a chain split.
 
 **Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
 `migrate_4_5` ladder run from `open()` via `migrate()`. `open()` opens the
-sub-databases (`grep -n 'lmdb_db_open(txn, LMDB_' db_lmdb.cpp`; two are
-conditional) under `mdb_env_set_maxdbs(m_env, 32)`. The DUPFIXED tables use a dummy 8-byte all-zero key
+sub-databases (the `lmdb_db_open(txn, LMDB_` calls in `open()`; `migrate_0_1`
+repeats some; two in `open()` are conditional) under `mdb_env_set_maxdbs(m_env, 32)`. The DUPFIXED tables use a dummy 8-byte all-zero key
 (`zerokval`), so the logical key is the first field of the *data*.
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
@@ -524,7 +526,8 @@ the comment says so.
   height silently fails closed.
 - **`m_expected_heights` is a vector of hashes, not heights.**
 - `handle_notify_new_transactions` passes `relay_method::forward` as the
-  incoming relay method for non-public zones (`stem` for public), but
+  incoming relay method for non-public zones (`stem` for public; `fluff` if
+  the sender set `dandelionpp_fluff`), but
   `tx_memory_pool::add_tx` never copies `forward` into `tvc.m_relay`, so the
   later switch on `tvc.m_relay` treats `forward` as "not supposed to happen
   here" and relays nothing for it.
@@ -587,7 +590,8 @@ order the code takes them (`add_host_fail` → `block_host`;
 - `block_subnet` and `unblock_subnet` are asymmetric: unblock erases blocked
   hosts inside the range and splits each stored subnet around it
   (`subtract_ipv4_subnet`), keeping the remainder blocked.
-- `--igd` / `--no-igd` are accepted and do nothing; UPnP was removed.
+- `--igd` / `--no-igd` are accepted and do nothing (a non-default `--igd`
+  only logs a warning); UPnP was removed.
 - `i2p_address::store` writes port **1**, not 0, for compatibility.
 - In `src/net/parse.cpp`, `get_network_address` returns
   `net::error::unsupported_address` for anything hostname-shaped, and callers

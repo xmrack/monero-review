@@ -6,7 +6,7 @@ Published research on Monero's on-chain and network privacy, turned into
 questions for reviewing a pull request. Read the `privacy` section of
 `lenses.md` and the adversary table in `trust-boundaries.md` first.
 
-Paths and symbols were checked on master `8340be5e9` (2026-10-19); when the
+Paths and symbols were checked on master `3fd0f88c2` (2026-10-25); when the
 tree disagrees, the tree wins. Cite files and symbols, never line numbers.
 Paper numbers are quoted as stated and attributed. Where a paper describes an
 older release and master differs, this file says so.
@@ -193,7 +193,7 @@ force a spend to be rebuilt on the new branch (section 2, ring reuse).
    from `existing_rings` (`ringdb`, `src/wallet/ringdb.cpp`). MRL-0007: two
    rings with one key image on two branches reveal the spend in their
    intersection.
-6. **Sanity floor.** `tx_sanity_check` (`tx_sanity_check.cpp`) requires at
+6. **Sanity floor.** `tx_sanity_check` (`src/cryptonote_core/tx_sanity_check.cpp`) requires at
    least 80% unique indices and a median index at least 60% of available
    outputs, catching a daemon that skews decoys old. `get_outs` retries on
    failure; `on_send_raw_tx` runs it when `do_sanity_checks` is set.
@@ -316,7 +316,7 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   downgraded to `local` there; a `fluff_flush` comment says I2P and Tor stand
   in for Dandelion++'s Sybil protection.
 - **Visibility gates.** `matches_category(..., relay_category::legacy)` keeps
-  stem transactions out of ZMQ (`core::notify_txpool_event`,
+  stem transactions out of ZMQ (`core::add_new_tx`,
   `core::on_transactions_relayed`). RPC pool queries use
   `allow_sensitive = !request_has_rpc_origin || !restricted`, and
   `on_getblocktemplate` passes `include_sensitive` only when unrestricted;
@@ -458,9 +458,9 @@ What the daemon learns, and from which call:
   tell which is real (section 2), but can recognise the resulting rings on
   chain and tie a transaction relayed elsewhere to the requesting IP.
 - **Key images.** `wallet2::rescan_spent` and `import_key_images` with
-  `check_spent` send them to `/is_key_image_spent`; `simple_wallet::rescan_spent`,
-  `wallet_rpc_server::on_rescan_spent` and `on_import_key_images` refuse
-  without a trusted daemon. `check_reserve_proof` sends the prover's, not the
+  `check_spent` send them to `/is_key_image_spent`; `simple_wallet::rescan_spent`
+  and `import_key_images`, `wallet_rpc_server::on_rescan_spent` and
+  `on_import_key_images` refuse without a trusted daemon. `check_reserve_proof` sends the prover's, not the
   verifier's.
 - **Specific transaction ids.** jeffro256's `find_and_save_rings` post-mortem
   (2025; HIGH with untrusted daemons, MEDIUM otherwise): wallets v0.12.0.0 to

@@ -5,7 +5,7 @@ how bad each outcome is. Use it to answer the reachability question concretely
 (name the boundary, then trace the call sequence from it to the changed code)
 and to rate what you find.
 
-Verified against master `183b5e962` (2026-10-18). The severity tiers follow the
+Verified against master `3fd0f88c2` (2026-10-25). The severity tiers follow the
 classes of vulnerability the project has actually had to fix and how it rated
 them. Verify locations against the checkout — this is a
 map, not a substitute for reading the tree. Where a symbol index has been built
@@ -221,8 +221,8 @@ own is in scope. Severity is high because the wallet holds keys and because
 
 A network attacker is usually equivalent. `--daemon-ssl` defaults to
 `autodetect`. That mode reconnects in plaintext when the TLS handshake fails
-(`blocked_mode_client::connect` in `net_helper.h`). Even when TLS succeeds, the
-verify callback in `contrib/epee/src/net_ssl.cpp` accepts an **unverified**
+(`blocked_mode_client::connect` in `net_helper.h`). Even when TLS succeeds in
+that mode, the verify callback in `contrib/epee/src/net_ssl.cpp` accepts an **unverified**
 certificate and only logs "SSL peer has not been verified". Only a
 fingerprint or a CA-verified mode authenticates the node.
 
@@ -314,8 +314,8 @@ under `device_trezor/trezor/`) is untrusted input. A change that widens what
 the host accepts belongs in a review even though "the device is trusted"
 sounds like it settles the question. The Trezor `BridgeTransport` speaks HTTP
 and JSON to `127.0.0.1:21325` (or `TREZOR_BRIDGE_PORT`), so whatever local
-process holds that port can pose as the device. `UdpTransport` is compiled only
-with `WITH_DEVICE_TREZOR_UDP`.
+process holds that port can pose as the device. `UdpTransport` is always compiled
+but used only with `WITH_DEVICE_TREZOR_UDP` or `WITH_TREZOR_DEBUGGING`.
 
 ## 8. Wallet cache, key files and other blobs the user is handed
 
@@ -357,7 +357,7 @@ between layers can silently stop running on some path.
 | Layer | What it enforces | Where it does not run |
 | --- | --- | --- |
 | `ver_non_input_consensus` (`tx_verification_utils.cpp`) → `core::check_tx_semantic` | blob ≤ `CRYPTONOTE_MAX_TX_SIZE`, weight ≤ `get_transaction_weight_limit`, version bounds, output point validity (`check_outs_valid`), amount overflow (`check_inputs_overflow`, `check_outs_overflow`), key-image domain (`check_tx_inputs_keyimages_domain`) and uniqueness within the tx, RingCT semantics and batched range proofs | below the fast-sync height |
-| `Blockchain::check_tx_outputs` | which RCT types, output types and view tags each fork allows | — |
+| `Blockchain::check_tx_outputs` | which RCT types, output types and view tags each fork allows | below the fast-sync height (only `ver_non_input_consensus` calls it) |
 | `Blockchain::check_tx_inputs` | ring size, at least two outputs, inputs sorted by key image, the 10-block minimum age (`CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE`), unlock times, key image not already spent, ring signatures | below the fast-sync height, and for alt-chain blocks until a reorg applies them |
 | `prevalidate_miner_transaction`, `validate_miner_transaction` | the coinbase: one `txin_gen` at the block height, unlock at height + `CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW`, the RCT type and version each fork requires, and the claimed amount against reward plus fees | the coinbase never goes through `check_tx_semantic`, so its output keys are not checked as valid points the way other outputs are |
 | The DB | no duplicate key image or txid anywhere in the chain | — |
@@ -405,8 +405,8 @@ by what it does to fees and to the cost of verifying a block.
 `DIFFICULTY_WINDOW`, `DIFFICULTY_CUT` dropped from each end, `DIFFICULTY_LAG`)
 has two callers that must agree: `get_difficulty_for_next_block`, which is
 cached, and `get_next_difficulty_for_alternative_chain`. `check_hash` has
-64-bit and 128-bit paths. `check_block_timestamp` requires a timestamp above
-the median of the last `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW` blocks and below
+64-bit and 128-bit paths. `check_block_timestamp` requires a timestamp not below
+the median of the last `BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW` blocks and not above
 local time + `CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT`. The upper bound reads the
 node's **clock**, so it is the one acceptance rule that is not a function of
 the chain. That is tolerable only because the rejection is not permanent.

@@ -15,7 +15,7 @@ Look at `Blockchain::check_tx_inputs`, `check_tx_outputs`,
 `validate_miner_transaction`, `check_block_timestamp`,
 `get_difficulty_for_next_block`, `core::check_tx_semantic` and
 `ver_non_input_consensus` (shared by `Blockchain` and the pool) and
-`verRctNonSemanticsSimple` in `tx_verification_utils.cpp`.
+`ver_input_proofs_rings` in `tx_verification_utils.cpp`.
 
 Ask whether two honest nodes can reach different verdicts on the same block
 or transaction. The usual causes: a rule that depends on local state (pool
@@ -75,7 +75,9 @@ Ask what bounds each count, length and index before it is used. Known caps:
 `EPEE_PORTABLE_STORAGE_RECURSION_LIMIT_INTERNAL` and the string and object
 counts in `portable_storage_from_bin.h`, `CRYPTONOTE_MAX_TX_SIZE`,
 `passes_max_size_check` on the transaction parse path, and
-`P2P_DEFAULT_PACKET_MAX_SIZE`. A cap on the blob is not a cap on what one
+`LEVIN_INITIAL_MAX_PACKET_SIZE` before the handshake and
+`LEVIN_DEFAULT_MAX_PACKET_SIZE` after it (`P2P_DEFAULT_PACKET_MAX_SIZE` is set
+but never enforced). A cap on the blob is not a cap on what one
 field inside it may claim.
 
 ## serialization-compat
