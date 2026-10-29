@@ -594,8 +594,20 @@ order the code takes them (`add_host_fail` → `block_host`;
   only logs a warning); UPnP was removed.
 - `i2p_address::store` writes port **1**, not 0, for compatibility.
 - In `src/net/parse.cpp`, `get_network_address` returns
-  `net::error::unsupported_address` for anything hostname-shaped, and callers
-  treat that specific error as "try DNS".
+  `net::error::unsupported_address` for anything hostname-shaped. The
+  `.onion` / `.i2p` dispatch there (`host_str_ref.ends_with(".onion")`) runs
+  on the raw host and is case-sensitive, so an upper-case TLD counts as
+  hostname-shaped. Callers in `src/p2p/net_node.inl` disagree on what
+  triggers DNS:
+  - only the `arg_p2p_add_peer` (`--add-peer`) loop in
+    `node_server::handle_command_line` checks
+    `CHECK_AND_ASSERT_MES(adr == net::error::unsupported_address ...)` before
+    calling `append_net_address`;
+  - `node_server::parse_peers_and_add_to_container`, which serves
+    `--add-exclusive-node`, `--add-priority-node` and `--seed-node`, calls
+    `append_net_address` directly after `if (adr)`, so it falls back to DNS
+    on *any* `get_network_address` error, including tor/i2p parse errors and
+    `invalid_port`.
 
 ---
 
