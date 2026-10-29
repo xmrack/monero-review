@@ -526,6 +526,14 @@ signed hashes.
   accepted. So a resolver or on-path attacker can supply the first peers of a
   new node, which helps an eclipse attack. Seed lookups are skipped behind
   `--proxy` unless `--proxy-allow-dns-leaks` is set.
+- **Peer hostnames on the command line.** Hostnames given to `--add-peer`,
+  `--add-exclusive-node`, `--add-priority-node` and `--seed-node` go to the
+  system resolver through `append_net_address`
+  (`ip::tcp::resolver::resolve`). That happens in `handle_command_line`,
+  which `node_server::init` calls before it reads `--proxy` and applies
+  `proxy_dns_leaks_allowed` to `m_enable_dns_seed_nodes`, so
+  `--proxy-allow-dns-leaks` does not gate these lookups
+  (`grep -n 'append_net_address\|proxy_dns_leaks_allowed' src/p2p/net_node.inl`).
 - **TXT records** (`load_txt_records_from_dns`: DNSSEC-valid, at least two,
   majority agreement) feed update checks (`--check-updates`, default
   `notify`), DNS checkpoints (only with `--enforce-dns-checkpointing`) and the
