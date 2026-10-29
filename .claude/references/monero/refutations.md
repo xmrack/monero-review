@@ -282,6 +282,22 @@ code, or if they remove a guard:
 - Weakening a fuzz harness (`tests/fuzz`) is a coverage loss to note, worth a
   LOW note, not a vulnerability report.
 
+## Cancelling another CI run is availability only
+
+A workflow run triggered by a pull request that names another run's GitHub
+Actions concurrency group can at most cancel that run. On master that affects
+CI availability only: the cancelled run can be re-run, no workflow references
+secrets or uses `pull_request_target` or `workflow_run`, and release integrity
+rests on the Guix builds and signed hashes (section 10 of
+`trust-boundaries.md`). Check with
+`grep -nE 'secrets[.]|pull_request_target|workflow_run|permissions:' .github/workflows/*.yml`,
+which returns nothing on master, and read the `concurrency:` key in
+`.github/workflows/build.yml`, `depends.yml` and `guix.yml`.
+
+Do not report concurrency-group cancellation as a security finding unless a
+workflow gains secrets, a privileged trigger, or a gate that treats a
+cancelled run as passing. Re-run the grep on the head you are reviewing.
+
 ## A wrong return value the API tells the caller not to trust
 
 A function that returns the wrong boolean is a bug. It is a SECURITY finding
