@@ -39,8 +39,8 @@
 set -euo pipefail
 
 PR=${1:?usage: review-local.sh <upstream-pr-number> [model]}
-# `auto` means "let the tier decide", which today is the same model on all
-# four -- they differ by effort. A model named on the command line pins it.
+# `auto` means "let the tier decide", which today is the same model on both.
+# A model named on the command line pins it.
 MODEL=${2:-auto}
 UPSTREAM=${UPSTREAM:-monero-project/monero}
 # DEEP=0 and DEEP=false mean off, not "a non-empty string, so on". Getting
@@ -180,7 +180,10 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # trusted, and the names this script itself writes and reads.
 # As in CI: case-insensitive, any file type, and symlinks.
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt" \
-  "$CACHE/PR_CALLERS.md" "$CACHE/PR_TESTS.md"
+  "$CACHE/PR_CALLERS.md" "$CACHE/PR_TESTS.md" "$CACHE/PR_COMMITS.md" "$CACHE/PR_SUBMODULES.md" "$CACHE/exec.json"
+# The checkout is reused across pull requests: a previous PR's submodule
+# patches read as this one's would be wrong context with nothing to reveal it.
+rm -rf "$CACHE/submodule-base" "$CACHE/submodule-diffs"
 tidy_checkout() {
   find "$CACHE" -path "$CACHE/.git" -prune -o -path "$CACHE/.claude" -prune -o \
     \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude -o -type l \) \
@@ -325,6 +328,171 @@ done
   echo "----- END AUTHOR-SUPPLIED TEXT -----"
 } > "$CACHE/PR_HISTORY.md"
 
+# The patches of each commit within the PR, as in the workflow's `Pre-compute
+# the PR's own commits`: the blobless clone fetched only the head, so an
+# intermediate commit cannot be shown. Best-effort, and `sed -n`, never `head`,
+# on a `gh api` pipe: an early close dies of SIGPIPE under pipefail and loses
+# the END marker.
+{
+  echo "The patches of each commit WITHIN this pull request, oldest first."
+  echo
+  echo "Why this file exists: the checkout is a blobless clone that fetched"
+  echo "only the PR head, so 'git show <intermediate-sha>' fails with"
+  echo "'upload-pack: not our ref'. These came from the GitHub API instead."
+  echo "Use them to answer 'was a guard added and then dropped during a"
+  echo "rebase' -- do not spend turns re-discovering that git cannot."
+  echo
+  echo "UNTRUSTED: commit messages and diffs are author-supplied."
+  if command -v gh >/dev/null 2>&1; then
+    list=$(mktemp)
+    gh api --paginate "repos/$UPSTREAM/pulls/$PR/commits?per_page=100" \
+      --jq '.[] | "\(.sha) \(.commit.message | split("\n")[0])"' \
+      > "$list" 2>/dev/null || true
+    total=$(wc -l < "$list" | tr -d ' ')
+    if [ "$total" -gt 40 ]; then
+      echo
+      echo "TRUNCATED: this pull request has $total commits and the 40 newest"
+      echo "are below. The $((total - 40)) older ones were not fetched."
+    fi
+    echo
+    echo "----- BEGIN AUTHOR-SUPPLIED TEXT -----"
+    tail -n 40 "$list" |
+      while read -r sha subject; do
+        echo
+        echo "## $sha  $subject"
+        gh api "repos/$UPSTREAM/commits/$sha" \
+          --jq '.files[]? | "--- \(.filename) (+\(.additions)/-\(.deletions))\n\(.patch // "(patch omitted: binary or too large)")"' \
+          2>/dev/null |
+          sed -n '1,400p; 401s/.*/(patch truncated at 400 lines)/p'
+      done |
+      sed 's/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g' || true
+    rm -f "$list"
+  else
+    echo
+    echo "----- BEGIN AUTHOR-SUPPLIED TEXT -----"
+    echo "(install gh for the per-commit patches)"
+  fi
+  echo "----- END AUTHOR-SUPPLIED TEXT -----"
+} > "$CACHE/PR_COMMITS.md"
+
+# Submodule bumps, as in the workflow's `Summarise submodule changes`: the
+# code between the old and new pins, the old tree, and the submodule's own
+# history, none of which an agent can reach. Kept in step with that step by
+# hand; it runs there before the harness is checked out, so the two cannot
+# share a script. The changed paths join PR_FILES.md below.
+SUBFILES=$(mktemp)
+if git -C "$CACHE" diff origin/base...HEAD --raw 2>/dev/null | grep -q '160000'; then
+  echo "==> summarising submodule changes"
+  ( cd "$CACHE"
+    set +e +o pipefail
+    tmp=$(mktemp -d)
+    strip='s/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g'
+    empty=$(git hash-object -t tree /dev/null)
+    : > "$tmp/submodule-diffs.md"
+    git diff --no-renames origin/base...HEAD --raw --no-abbrev -z 2>/dev/null |
+      while IFS= read -r -d '' meta && IFS= read -r -d '' sub; do
+        read -r omode nmode old new _ <<< "${meta#:}"
+        [ "$omode" = 160000 ] || [ "$nmode" = 160000 ] || continue
+        zero='^0+$'
+        {
+          echo
+          echo "### $sub: ${old:0:12} -> ${new:0:12}"
+        } >> "$tmp/submodule-diffs.md"
+        if ! [[ $sub =~ ^[A-Za-z0-9._/-]+$ && $sub != *..* && $old =~ ^[0-9a-f]{40}$ && $new =~ ^[0-9a-f]{40}$ ]]; then
+          echo "SKIPPED: the path or a pin is not in the expected form." >> "$tmp/submodule-diffs.md"
+          continue
+        fi
+        if ! [ -d "$sub" ] || ! { [ -d "$sub/.git" ] || [ -f "$sub/.git" ]; }; then
+          echo "NOT FETCHED: the submodule is not checked out." >> "$tmp/submodule-diffs.md"
+          continue
+        fi
+        from=$old; to=$new
+        [[ $old =~ $zero ]] && from=$empty
+        [[ $new =~ $zero ]] && to=$empty
+        for c in "$from" "$to"; do
+          [ "$c" = "$empty" ] && continue
+          git -C "$sub" cat-file -e "$c^{commit}" 2>/dev/null \
+            || git -C "$sub" fetch -q --filter=blob:none origin "$c" 2>/dev/null || true
+        done
+        name=$sub
+        mkdir -p "submodule-diffs/$(dirname "$sub")"
+        nd=(--no-color --text --no-ext-diff --no-textconv)
+        if ! git -C "$sub" diff "${nd[@]}" --src-prefix="a/$sub/" --dst-prefix="b/$sub/" \
+               "$from" "$to" > "submodule-diffs/$name.diff" 2>/dev/null; then
+          rm -f "submodule-diffs/$name.diff"
+          echo "DIFF FAILED: one of the two pins could not be fetched." >> "$tmp/submodule-diffs.md"
+          continue
+        fi
+        git -C "$sub" diff --name-only "$from" "$to" 2>/dev/null |
+          P="$sub" awk '{print ENVIRON["P"] "/" $0}' >> "$SUBFILES"
+        if [ "$from" != "$empty" ]; then
+          mkdir -p "submodule-base/$sub"
+          idx="$tmp/submodule-index"
+          rm -f "$idx"
+          { GIT_INDEX_FILE="$idx" git -C "$sub" read-tree "$from" \
+            && GIT_INDEX_FILE="$idx" git -C "$sub" checkout-index -a -f --prefix="$PWD/submodule-base/$sub/"; } 2>/dev/null \
+            || echo "Old tree NOT unpacked; read the diff only." >> "$tmp/submodule-diffs.md"
+          rm -f "$idx"
+        fi
+        {
+          echo "- full patch: submodule-diffs/$name.diff ($(wc -l < "submodule-diffs/$name.diff") lines)"
+          [ -d "submodule-base/$sub" ] && echo "- old tree: submodule-base/$sub/ (the head tree is $sub/)"
+          echo "- commits the new pin drops, if any, are the \`<\` lines above"
+          for c in "$from" "$to"; do
+            [ "$c" = "$empty" ] && continue
+            tags=$(git -C "$sub" tag --points-at "$c" 2>/dev/null | head -5 | paste -sd' ' -)
+            branches=$(git -C "$sub" branch -r --contains "$c" 2>/dev/null | grep -v -- '->' | head -8 | tr -d ' ' | paste -sd' ' -)
+            echo "- ${c:0:12}: tags ${tags:-(none)}; on remote branches ${branches:-(none)}"
+          done
+          echo '```'
+          git -C "$sub" diff "${nd[@]}" --stat=100 "$from" "$to" 2>/dev/null | tail -80 | sed "$strip"
+          echo '```'
+        } >> "$tmp/submodule-diffs.md"
+      done
+    {
+      echo "This pull request changes one or more git submodules."
+      echo
+      echo "A submodule bump is a supply-chain change: the pinned tree is"
+      echo "readable in external/, and the commits between the old and new"
+      echo "pins are listed below. Review them."
+      echo
+      echo "UNTRUSTED: commit subjects and URLs are author-supplied."
+      echo
+      echo "----- BEGIN AUTHOR-SUPPLIED TEXT -----"
+      git diff origin/base...HEAD --submodule=log 2>/dev/null |
+        awk '/^Submodule /{p=1} /^diff --git/{p=0} p' |
+        head -120 | sed "$strip"
+      echo
+      echo "## Configured URLs"
+      git config -f .gitmodules --get-regexp '^submodule\..*\.url$' 2>/dev/null |
+        head -20 | sed "$strip" || echo "(no .gitmodules)"
+      echo
+      echo "## Submodule history (harness-read; agents cannot reach these object stores)"
+      for sub in $(git config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null | awk '{print $2}'); do
+        [ -d "$sub/.git" ] || [ -f "$sub/.git" ] || continue
+        git diff origin/base...HEAD --raw -- "$sub" 2>/dev/null | grep -q '160000' || continue
+        echo
+        echo "### $sub"
+        echo '```'
+        git -C "$sub" log --oneline -40 2>/dev/null | sed "$strip" || echo "(history unavailable)"
+        echo
+        echo "refs:"
+        git -C "$sub" for-each-ref --format='  %(refname:short) %(objectname:short)' 2>/dev/null | head -20 | sed "$strip"
+        echo '```'
+      done
+      echo
+      echo "## Code changed inside each moved submodule"
+      echo
+      echo "Its paths are in PR_FILES.md like any other change. git diff"
+      echo "origin/base...HEAD shows only the gitlink, so read the patch below"
+      echo "for the change and the old tree for the before."
+      sed "$strip" "$tmp/submodule-diffs.md"
+      echo "----- END AUTHOR-SUPPLIED TEXT -----"
+    } > PR_SUBMODULES.md
+    rm -rf "$tmp"
+  ) || echo "!! submodule summary failed; reviewing without it" >&2
+fi
+
 # Rust dependencies pinned by git revision -- monero-oxide and anything like
 # it. Nothing else here reaches them: external/ is submodules, and a Cargo git
 # dependency is neither a submodule nor vendored in the tree. Non-fatal;
@@ -378,6 +546,12 @@ fi
     echo "  against what crates.io published. A mismatch is a finding."
     echo "  Untracked, so git ls-files and git grep cannot see them:"
     echo "  use rg or find under rust-deps/."
+    echo
+  fi
+  if [ -d "$CACHE/submodule-diffs" ]; then
+    echo "Moved submodules (see PR_SUBMODULES.md):"
+    echo "- submodule-diffs/  (the full patch between each old and new pin)"
+    echo "- submodule-base/   (each old pin's tree, at its own path)"
     echo
   fi
   if [ -d "$CACHE/deps-include" ]; then
@@ -441,10 +615,13 @@ FLEET_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero
 # divergence.
 {
   echo "# Files changed by this pull request, from"
-  echo "# git diff --name-only origin/base...HEAD"
+  echo "# git diff --name-only origin/base...HEAD, plus the paths changed"
+  echo "# inside each moved submodule"
   echo "# Lines starting with # are not paths."
   ( cd "$CACHE" && git diff --name-only origin/base...HEAD )
+  cat "$SUBFILES"
 } > "$CACHE/PR_FILES.md"
+rm -f "$SUBFILES"
 # Per-path changed lines and earlier published findings, as in the workflow.
 git -C "$CACHE" diff --numstat origin/base...HEAD \
   | awk -F'\t' '{a=($1=="-")?0:$1; d=($2=="-")?0:$2; printf "%d\t%s\n", a+d, $3}' > "$CACHE/PR_NUMSTAT.txt"
@@ -459,9 +636,13 @@ GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
 # the level the measurement is believed to have run at. Mirrors the workflow's
 # router -- change both together.
 TIER_MODEL=claude-opus-5-5
+# Turns as in the workflow's router. The deep tier also waits out a usage
+# limit rather than dying on it, as CI does; the wait counts against nothing
+# here, since a local run has no job timeout.
+RETRY_WATCHDOG=""
 case "$TIER" in
-  standard) PROMPT="/monero-standard-review"; EFFORT=high ;;
-  deep)     PROMPT="/monero-deep-review";     EFFORT=high ;;
+  standard) PROMPT="/monero-standard-review"; EFFORT=high; TURNS=300 ;;
+  deep)     PROMPT="/monero-deep-review";     EFFORT=high; TURNS=400; RETRY_WATCHDOG=1 ;;
 esac
 [ "$MODEL" = "auto" ] && MODEL="$TIER_MODEL"
 # Both tiers are the fleet, so the fleet grants are unconditional. They were
@@ -474,8 +655,7 @@ EFFORT_ARG=()
 [ -n "${EFFORT:-}" ] && EFFORT_ARG=(--effort "$EFFORT")
 # Expanded as ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} below, not the bare form:
 # under `set -u` an EMPTY array is an unbound variable in bash before 4.4, and
-# macOS still ships 3.2. That would abort the deep tier -- the one case where
-# the array is empty -- with "unbound variable" and nothing else.
+# macOS still ships 3.2, so a tier with no effort level would abort there.
 
 # Always the latest CLI, as in the workflow: a new model needs a new CLI, and
 # older ones refuse Opus 5.5 outright. Best-effort, because a package-managed
@@ -484,8 +664,16 @@ EFFORT_ARG=()
 claude update >/dev/null 2>&1 || echo "!! 'claude update' failed; reviewing with the installed CLI" >&2
 echo "==> Claude Code $(claude --version 2>/dev/null | awk '{print $1}')"
 
-rm -f "$CACHE/review.md" "$CACHE/exec.json"
+rm -f "$CACHE/review.md"
+# The execution log, outside the checkout and denied to the model, as CI keeps
+# it in RUNNER_TEMP: it is the independent record the fleet check below reads,
+# so a review must not be able to write it. stream-json --verbose, as in CI:
+# plain json is only the closing result record, with no tool calls in it, and
+# is written only at the end, so an interrupted run kept nothing.
+EXEC_DIR=$(mktemp -d)
+EXEC="$EXEC_DIR/exec.jsonl"
 DENY="Read(//proc/**),Edit(//proc/**),Edit(.git/**),Edit(**/.git/**),Write(.git/**),Write(**/.git/**)"
+DENY="$DENY,Read(/$EXEC_DIR/**),Edit(/$EXEC_DIR/**),Write(/$EXEC_DIR/**)"
 DENY="$DENY,Read(~/.ssh/**),Read(~/.gnupg/**),Read(~/.config/**),Read(~/.claude/**),Read(~/.aws/**),Read(~/.netrc),Read(~/.git-credentials),Read(~/.npmrc)"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
@@ -496,12 +684,50 @@ T0=$(date +%s)
 # The same settings as CI: sandboxed shell, file tools scoped to the
 # checkout, only the project's settings loaded, and personal config
 # directories out of scope.
+#
+# `|| RC=$?`: under -e a failed CLI would end the script before the diagnosis
+# below could say why.
+RC=0
 ( cd "$CACHE" && PATH="$RTOOL_BIN:$PATH" RTOOL_ROOT="$CACHE" CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
-    CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$PROMPT" \
+    CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 CLAUDE_CODE_RETRY_WATCHDOG="$RETRY_WATCHDOG" claude -p "$PROMPT" \
     --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
+    --max-turns "$TURNS" \
     --permission-mode default --setting-sources project \
-    --output-format json --allowedTools "$TOOLS" \
-    --disallowedTools "$DENY" > exec.json )
+    --output-format stream-json --verbose --allowedTools "$TOOLS" \
+    --disallowedTools "$DENY" < /dev/null > "$EXEC" ) || RC=$?
+echo "==> execution log: $EXEC"
+
+# The closing result record, as the workflow prints it, and this run's session
+# id, which scopes the journals the footer counts.
+RESULT_OK=0
+RESULT=$(python3 - "$EXEC" <<'PY'
+import json, sys
+last = None
+for line in open(sys.argv[1], errors="replace"):
+    try:
+        e = json.loads(line)
+    except ValueError:
+        continue
+    if isinstance(e, dict) and e.get("type") == "result":
+        last = e
+if last is None:
+    print("no result record in the execution log")
+    sys.exit(1)
+print(f"session={last.get('session_id') or ''}")
+print(f"result: turns={last.get('num_turns')} is_error={last.get('is_error')} "
+      f"terminal={last.get('terminal_reason')} cost=${last.get('total_cost_usd')}")
+if last.get("is_error"):
+    print(f"error: subtype={last.get('subtype')} "
+          f"api_error_status={last.get('api_error_status')}")
+    sys.exit(1)
+PY
+) && RESULT_OK=1
+SESSION_ID=$(printf '%s\n' "$RESULT" | sed -n 's/^session=//p')
+printf '%s\n' "$RESULT" | grep -v '^session=' | sed 's/^/==> /' || true
+if [ "$RC" -ne 0 ] || [ "$RESULT_OK" != 1 ]; then
+  echo "!! the review pass failed (exit $RC); the log above is kept" >&2
+  exit 1
+fi
 
 if [ ! -s "$CACHE/review.md" ]; then
   echo "!! no review.md produced" >&2
@@ -542,9 +768,36 @@ ANGLES=$(num angles); ANGLES=${ANGLES:-3}
 PROF=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\1/p')
 # The stamp is written by the model. The execution log is the independent
 # record that the fleet it describes was ever dispatched.
+# Only an assistant tool_use block counts, as in the workflow: the init record
+# lists every agent on disk, so a plain grep for the names matches every run.
 FLEET=no
-grep -qE '"(name|tool_name)"[[:space:]]*:[[:space:]]*"(Workflow|Agent)"' \
-  "$CACHE/exec.json" 2>/dev/null && FLEET=yes
+if python3 - "$EXEC" <<'PY'
+import json, sys
+FLEET = {"monero-mapper", "monero-researcher", "monero-verifier",
+         "monero-merger", "monero-refactor-check"}
+for line in open(sys.argv[1], errors="replace"):
+    try:
+        e = json.loads(line)
+    except ValueError:
+        continue
+    if not isinstance(e, dict) or e.get("type") != "assistant":
+        continue
+    content = (e.get("message") or {}).get("content") or []
+    for block in content if isinstance(content, list) else []:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        name = block.get("name")
+        args = block.get("input") or {}
+        if name == "Workflow":
+            sys.exit(0)
+        if name in ("Agent", "Task") and isinstance(args, dict) \
+                and args.get("subagent_type") in FLEET:
+            sys.exit(0)
+sys.exit(1)
+PY
+then
+  FLEET=yes
+fi
 # Both halves of the pipeline can die independently. Healthy research plus a
 # dead verifier fleet returns every candidate as unverified and an empty
 # findings list, which reads exactly like a clean review unless somebody
@@ -590,10 +843,11 @@ fi
 # whole-run tokens, cost, lead turns. JOURNAL is where the CLI writes one
 # `started` entry per dispatched fleet agent; a run that dispatched none leaves
 # no journal, and the agent field is then correctly absent rather than reported
-# as zero.
-EXEC_FILE="$CACHE/exec.json" REVIEW_MD="$CACHE/review.md" T0="$T0" MODEL="$MODEL" \
+# as zero. Scoped to this run's session: unlike a fresh runner, this machine
+# keeps every earlier session's journals under the same directory.
+EXEC_FILE="$EXEC" REVIEW_MD="$CACHE/review.md" T0="$T0" MODEL="$MODEL" \
   TIER="$TIER" \
-  JOURNAL="$HOME/.claude/projects/*/*/subagents/workflows/*/journal.jsonl" \
+  JOURNAL="$HOME/.claude/projects/*/${SESSION_ID:-no-session}/subagents/workflows/*/journal.jsonl" \
   python3 "$HERE/scripts/telemetry.py"
 printf '<sub>Verification: %s</sub>\n' "$VERIFIED" >> "$CACHE/review.md"
 
