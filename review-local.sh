@@ -69,6 +69,15 @@ export PYTHONSAFEPATH=1 PYTHONNOUSERSITE=1
 for t in bwrap socat; do
   command -v "$t" >/dev/null || { echo "!! $t is required: sudo apt install bubblewrap socat" >&2; exit 1; }
 done
+# Installed is not working: Ubuntu 24.04 and later stop unprivileged user
+# namespaces through AppArmor, and every shell the review runs then fails with
+# "setting up uid map: Permission denied" after the model has started.
+if ! bwrap --ro-bind / / --dev /dev true 2>/dev/null; then
+  echo "!! bwrap cannot start a sandbox on this machine. On Ubuntu, allow it with:" >&2
+  echo "!!   printf 'abi <abi/4.0>,\\ninclude <tunables/global>\\nprofile bwrap /usr/bin/bwrap flags=(unconfined) {\\n  userns,\\n}\\n' | sudo tee /etc/apparmor.d/bwrap" >&2
+  echo "!!   sudo apparmor_parser -r /etc/apparmor.d/bwrap" >&2
+  exit 1
+fi
 CACHE=${CACHE:-$HOME/.cache/monero-review/src}
 
 # Blobless partial clone, cached between runs so only the first is slow.
