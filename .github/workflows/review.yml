@@ -176,10 +176,12 @@ env:
   # Opus 5.5, and it is UNMEASURED on this queue. The cost curve below was
   # measured on Opus 5 and is kept because it is the only real sample this
   # repo has. Published token prices are $4/$20 per MTok against Opus 5's
-  # $5/$25, so the same token counts should land about a fifth cheaper -- an
-  # expectation from a price list, not a measurement. Watch the per-issue
-  # telemetry footer on the first few runs rather than trusting that
-  # arithmetic.
+  # $5/$25, a fifth cheaper, but cache reads fall further, from $0.50 to
+  # $0.20, and a review's input is mostly cache reads (3.82M of 4.15M on a
+  # typical footer). So the same token counts should land well over a fifth
+  # cheaper -- an expectation from a price list, not a measurement. Watch the
+  # per-issue telemetry footer on the first few runs rather than trusting
+  # that arithmetic.
   #
   # AND WATCH EFFORT, which is the part a price list does not cover. Opus 5.5
   # defaults to `medium`, one level below Opus 5's `high`. Both tiers now name
