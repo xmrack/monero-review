@@ -528,9 +528,20 @@ signed hashes.
   `--proxy` unless `--proxy-allow-dns-leaks` is set.
 - **TXT records** (`load_txt_records_from_dns`: DNSSEC-valid, at least two,
   majority agreement) feed update checks (`--check-updates`, default
-  `notify`), DNS checkpoints (only with `--enforce-dns-checkpointing`) and the
-  DNS blocklist (`--enable-dns-blocklist`, default off). Whoever controls the
-  moneropulse zones is trusted here, by design.
+  `notify`), DNS checkpoints and the DNS blocklist (`--enable-dns-blocklist`,
+  default off). Whoever controls the moneropulse zones is trusted here, by
+  design.
+- **DNS checkpoints are fetched by default on mainnet**, not only with
+  `--enforce-dns-checkpointing`. `core::update_checkpoints` returns early only
+  when `m_nettype != MAINNET` or `m_disable_dns_checkpoints`
+  (`--disable-dns-checkpoints`, also set by `--proxy` without
+  `--proxy-allow-dns-leaks`). Without enforcement,
+  `Blockchain::update_checkpoints` still calls `load_checkpoints_from_dns` in
+  its else-branch and applies conflict-free DNS checkpoints non-fatally;
+  `--enforce-dns-checkpointing` makes a conflict fatal, and it governs the DNS
+  fetch at init only. The protocol handler re-runs the update during sync with
+  `skip_dns` left at its default of false
+  (`grep -n 'update_checkpoints()' src/cryptonote_protocol/cryptonote_protocol_handler.inl`).
 - **Public nodes.** Peers advertise an RPC port in their handshake and
   peerlist entries. `get_public_nodes` (restricted surface) serves those
   entries to wallets, which offer them as remote nodes. A P2P peer can
