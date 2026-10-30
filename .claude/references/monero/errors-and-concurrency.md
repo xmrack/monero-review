@@ -333,9 +333,14 @@ reads on that thread see uncommitted data.
 ## The wallet side
 
 **`wallet2` is not internally thread-safe.** Its only per-instance mutex,
-`m_daemon_rpc_mutex` (recursive), serialises the HTTP client and
-`NodeRPCProxy` — it protects none of `m_transfers`, `m_blockchain` or the
-subaddress table. (`m_run` and `m_stopped` are atomics so `stop()` can be called
+`m_daemon_rpc_mutex` (recursive), serialises the HTTP client — it protects
+none of `m_transfers`, `m_blockchain` or the subaddress table. Nor does it
+serialise `NodeRPCProxy`'s cache: in each proxy method the `lock_guard` on
+`m_daemon_rpc_mutex` sits in an inner block that covers only the HTTP invoke
+and ends right after `RETURN_ON_RPC_RESPONSE_ERROR`, and the cached members
+(`m_rpc_version`, `m_daemon_hard_forks`, `m_height`, `m_target_height` and the
+rest) are written after that scope closes (`src/wallet/node_rpc_proxy.cpp`,
+`NodeRPCProxy::get_rpc_version`, `NodeRPCProxy::get_info`). (`m_run` and `m_stopped` are atomics so `stop()` can be called
 from another thread.) Serialization is the front end's job:
 
 - **simplewallet**: `m_idle_mutex` held by the idle refresh
