@@ -48,8 +48,6 @@ against master `3fd0f88c2`, fcmp++-stage `f25388d` and monero-oxide
 | **`past-vulnerabilities.md`** | the diff touches wallet scanning and `tx_extra`, deserialization, RPC or P2P handlers, hardware wallets, decoy selection or P2Pool-facing code: what broke before and the diff shape that would break it again |
 | **`privacy-and-network.md`** | the diff touches decoy selection, relay and Dandelion++, anonymity networks, peer selection, what the wallet asks a daemon, or subaddresses and address privacy; and for every privacy (OBSERVER-angle) verdict |
 
-> Nothing in this resource is intended to express any opinions for any audit firms. Please review their source documents for their own words. Summaries here may not fully cover the nuances of their opinions and observations.
-
 ## Suggested order for a change you have not seen before
 
 1. `architecture.md` — 5 minutes, and it prevents most category errors.
