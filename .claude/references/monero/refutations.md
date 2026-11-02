@@ -444,6 +444,27 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## A failed `.keys` file lock changes nothing
+
+`wallet2::lock_keys_file` (`src/wallet/wallet2.cpp`) can fail its `flock`
+without saying so in any way a caller acts on, which looks like two wallet
+programs being let loose on one `.keys` file. It is not a finding on its own:
+
+- **The failure does not persist.** Every in-tree call to `lock_keys_file`
+  follows `wallet2::unlock_keys_file`, which resets `m_keys_file_locker`, so
+  the next `lock_keys_file` builds a new `file_locker` (see
+  `wallet2::store_keys_file_data` and `wallet2::verify_password`).
+- **No caller reads the result.** Every in-tree caller discards
+  `lock_keys_file`'s return value; list them with
+  `git grep -n 'lock_keys_file()' src/wallet`.
+- **The lock does not guard the rewrite.** The `.keys` file is rewritten
+  while unlocked by design (the Windows comment in `wallet2::load`), so a
+  `locked()` check in `lock_keys_file` would not stop two wallet programs
+  writing it.
+
+Re-run the grep on the head you are reviewing: a caller that branches on the
+return value, or a lock held across the rewrite, reopens this.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
