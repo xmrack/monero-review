@@ -527,8 +527,15 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
    validation point in the flow. Unsolicited response, response past the
    expected height, empty id list, more than `BLOCKS_IDS_SYNCHRONIZING_MAX_COUNT`
    (25000) ids, inconsistent start/total heights, duplicates, a first hash we
-   do not know, a known main-chain hash at the wrong height: each drops the
-   peer. **The size cap is checked before `reserve()`.**
+   do not know, a known main-chain hash after the first at a height other
+   than `start_height + i`: each drops the peer. **The size cap is checked
+   before `reserve()`.** **The first id's main-chain height is never compared
+   with `start_height`**: the `if (i == 0)` branch only requires it to be
+   known in the main or alt chain, or queued at `start_height`
+   (`!have_block && m_block_queue.have_height(...) != arg.start_height`); the
+   `get_block_id_by_height` comparison sits inside the `if (0 < i)`
+   `HAVE_BLOCK_MAIN_CHAIN` case. Code that trusts `start_height` has to
+   recheck it.
 4. **`Blockchain::prevalidate_block_hashes`** — checks against the compiled-in
    hash-of-hashes (one per `HASH_OF_HASHES_STEP` = 512 blocks). **Beyond the
    compiled table it returns "all fine" unconditionally.** It is not a general
