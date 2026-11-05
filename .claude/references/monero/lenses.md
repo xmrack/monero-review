@@ -266,3 +266,14 @@ For each defect and each guard the diff adds, check the siblings:
   scanning.
 - **Serialization:** the binary serializer, epee's KV layer, and Boost for the
   wallet cache, often for the same struct.
+- **Console input:** wallet and daemon command lines come through linenoise's
+  tty editor (`linenoiseEditFeed`) or its non-tty reader
+  (`linenoiseNoTTYFeed`) in `external/linenoise/linenoise.c`, both driven by
+  `rdln::readline_buffer::get_line` (`contrib/epee/src/readline_buffer.cpp`).
+  Builds without `HAVE_READLINE` use `std::getline(std::cin, line)` in
+  `async_stdin_reader::reader_thread_func`
+  (`contrib/epee/include/console_handler.h`). Prompted answers bypass
+  linenoise: simplewallet's `input_line` uses `std::getline` after
+  `PAUSE_READLINE`, and secrets go through `tools::password_container`
+  (`input_secure_line`). A length cap or sanitizer added to one of these
+  readers does not cover the others.
