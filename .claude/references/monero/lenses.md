@@ -155,6 +155,17 @@ response, a core dump, or an unscrubbed copy (a `std::string` or a plain
 array). Ask whether secret-dependent work runs in variable time where an
 observer can measure it.
 
+Console output is a log line too. Every `tools::scoped_message_writer`
+(`msg_writer`, `success_msg_writer`, `fail_msg_writer` in simplewallet) also
+writes its message to the log file: `~scoped_message_writer` in
+`src/common/scoped_message_writer.h` calls
+`MCLOG_FILE(m_log_level, "msgwriter", message)`, and that write happens at
+the default log level 0 because `get_default_categories` in
+`contrib/epee/src/mlog.cpp` puts `msgwriter:INFO` in level 0's categories.
+Secret output must bypass the writer and go straight to `std::cout`, as
+`simple_wallet::print_seed` does on its `// don't log` path, and as the
+viewkey printing does.
+
 ## counterparty-protocol
 
 Look at `src/multisig/`, the multisig paths in `wallet2.cpp`, the
