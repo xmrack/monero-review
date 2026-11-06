@@ -866,7 +866,20 @@ cp "$CACHE/review.md" "$OUT"
 echo "==> $OUT"
 
 # Nothing leaves this machine from here, but a local review is easy to paste
-# somewhere public by hand. Say so when CI would have filed it privately.
-if python3 "$HERE/scripts/disclosure.py" "$OUT" | grep -qx 'route=private'; then
-  echo "!! this review is for the private disclosure repository ($(python3 "$HERE/scripts/disclosure.py" "$OUT" | sed -n 's/^reason=//p')). Do not post it in public." >&2
+# somewhere public by hand. Say so when CI would have filed it privately, by
+# asking the same disclosure gate CI asks.
+VERDICT="$EXEC_DIR/verdict.json"
+echo "==> asking the disclosure gate"
+GATE_PROMPT=$(cat "$HERE/scripts/disclosure_gate.md"; echo
+  python3 "$HERE/scripts/disclosure.py" --severe "$CACHE/review.md" | sed 's/^/- /'; echo "(end of list)")
+( cd "$CACHE" && CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$GATE_PROMPT" \
+    --model "$MODEL" --effort high --max-turns 60 \
+    --permission-mode default --setting-sources project \
+    --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
+    --disallowedTools "Write,Edit,$DENY" --output-format json < /dev/null 2>/dev/null ) \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result") or "")' > "$VERDICT" 2>/dev/null \
+  || echo "!! the disclosure gate gave no verdict; routing on the review's own markers" >&2
+if python3 "$HERE/scripts/disclosure.py" --verdict "$VERDICT" "$OUT" | grep -qx 'route=private'; then
+  echo "!! this review is for the private disclosure repository. Do not post it in public:" >&2
+  python3 "$HERE/scripts/disclosure.py" --summary --verdict "$VERDICT" "$OUT" >&2
 fi

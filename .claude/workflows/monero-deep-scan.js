@@ -2478,7 +2478,8 @@ return {
     confirmed: holds.length,
     published: findings.length,
     merged: mergedAway,
-    // Stamped as privacy= and funds=; see scripts/disclosure.py. A LOW
+    // Stamped as privacy= and funds=, for the record; they no longer route
+    // anything (see scripts/disclosure.py). A LOW
     // privacy candidate in code an unmerged change introduces is not counted,
     // unless the entry it is published in is above LOW or not introduced.
     privacyCandidates: results.filter((r) => {

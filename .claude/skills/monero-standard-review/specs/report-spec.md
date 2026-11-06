@@ -649,51 +649,51 @@ ship the fix. Those go to a private disclosure repository instead, and nothing
 about them is readable here. The harness does the routing. Your part is to
 write the report as usual and add one marker when the rule below says so.
 
-**The harness routes these on its own.** A surviving `CRITICAL` or `HIGH`
-finding whose locator ends ` · not introduced by this pull request` goes
-private. That code is live already, so a public report of it is a public
-zero-day. You write nothing extra for it.
+**The harness routes these on its own.** After you finish, a separate pass,
+the disclosure gate, reads this report, the diff and `origin/base`, and sends
+the review private for one of two reasons only:
 
-**Privacy breaks and soundness, inflation or burning bugs go private** at
-any severity. Copy `privacy=` and `funds=` exactly, and add the matching
-marker below whenever anything in the report describes one. One exception:
-a review whose findings are all LOW, or that has none, is public whatever
-it describes. Add the marker anyway; the harness reads the findings.
+- a `CRITICAL` or `HIGH` finding whose defect is in code that is already live:
+  `origin/base`, a release, or a merged pull request;
+- the pull request patches a `CRITICAL` vulnerability in live code.
 
-**You add the marker for four more cases.** It is an HTML comment on its own
-line, directly above the `<!-- workflow-updates -->` stamp, or above the
-coverage stamp when there is no workflow-updates stamp:
+Nothing else sends a review private. A privacy or funds bug goes private when
+it is rated `CRITICAL` or `HIGH` and is live, like any other finding, so rate
+it honestly and write its `Where it came from.` paragraph with care: the gate
+starts from it. A surviving `CRITICAL` or `HIGH` finding whose locator ends
+` · not introduced by this pull request` goes private whatever the gate says.
+So does a `CRITICAL` or `HIGH` entry under `## Fixed on master`: a fix on
+master is not a fix in a release.
+Copy `privacy=` and `funds=` into the stamp exactly as before; they no longer
+route anything.
+
+**You may add a marker for two cases.** It is a hint to the gate, which
+decides. It is an HTML comment on its own line, directly above the
+`<!-- workflow-updates -->` stamp, or above the coverage stamp when there is
+no workflow-updates stamp:
 
 ```markdown
 <!-- disclosure reason=security-fix -->
 ```
 
-- `reason=security-fix`: the pull request is plainly a patch for a critical or
-  high severity security bug, and Monero developers made it. Examples are a
-  cryptographic flaw, a consensus bug, a double spend, key or amount leakage,
-  a privacy break, or a remote crash of a node or wallet. "Made by Monero developers" means the `Monero developer:` line in
-  `PR_CONTEXT.md` reads `yes`. The harness sets it from the author's login:
-  members of the monero-project organisation, plus a list of developers who
-  are not members but write security fixes (j-berman, jeffro256 and vtnerd
-  among them). Do not decide this from memory or from the description. The
-  word "obvious" matters. The diff must fix the bug, not refactor near it,
-  and you must be able to say from the code alone what it fixes. A title
-  that says "security" is not enough, and neither is a title that hides it.
-  Patches like these are often titled blandly on purpose.
-- `reason=privacy` or `reason=funds`: as above. When in doubt, add it.
+- `reason=security-fix`: the pull request is plainly a patch for a
+  `CRITICAL` vulnerability in live code: theft, burning or inflation of
+  funds, a forged proof or double spend, a consensus split, a remote takeover
+  or crash of a node or wallet, or deanonymisation at scale. A patch for a
+  `HIGH` or lesser bug gets no marker. The word "obvious" matters. The diff
+  must fix the bug, not refactor near it, and you must be able to say from
+  the code alone what it fixes. A title that says "security" is not enough,
+  and neither is a title that hides it. Patches like these are often titled
+  blandly on purpose.
 - `reason=live-code`: a surviving `CRITICAL` or `HIGH` finding that is this
   pull request's own, but still affects code that is live. Examples: the
   change is already merged, the same defect sits in `origin/base` through
   another path, or a release already carries it.
 
-The harness also routes a `CRITICAL` or `HIGH` entry under `## Fixed on
-master` private on its own. A fix on master is not a fix in a release.
-
-Write the marker once, and at most one per file; when two reasons apply, use
-`security-fix`, then `funds`, then `privacy`. Write no marker in any other case. A finding
-that this pull request introduces, in code that is not live yet, is reported
-in public as usual, except as above. Catching that before it merges is what
-the review is for.
+Write the marker once, and at most one per file; when both apply, use
+`security-fix`. Write no marker in any other case. A finding that this pull
+request introduces, in code that is not live yet, is reported in public as
+usual. Catching that before it merges is what the review is for.
 
 **The marker is the only place that says why.** It is an HTML comment, the
 harness reads it, and the harness cuts it out before the issue is filed. No
@@ -718,7 +718,7 @@ carries `reason=security-fix`:
   deserialisation" is fine. "Checked that the fix closes the double-spend" is
   not.
 
-The other two reasons are different. A `pre-existing` or `live-code` finding
+The other reason is different. A finding in live code, marked or not,
 is the whole point of its report, and the maintainers who fix it need it in
 full, so write that finding as usual. Nothing is written about why the report
 is private, on any route.
@@ -790,8 +790,8 @@ So:
   `## Refuted` a bracketed severity in one would label the issue;
 - the `<!-- disclosure -->` marker, when there is one, sits directly above
   the workflow-updates stamp, or above the coverage stamp when there is
-  none. It is read by `scripts/disclosure.py`, and any reason it does not
-  know routes the review private;
+  none. It is read by `scripts/disclosure.py` and the disclosure gate, and
+  any reason it does not know routes the review private;
 - the `<!-- workflow-updates -->` stamp, when there is one, sits immediately
   above the coverage stamp and below every heading. It is not a section and
   gets no heading: the harness strips it before publishing, and a heading

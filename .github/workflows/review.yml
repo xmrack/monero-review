@@ -130,12 +130,12 @@ env:
   # WHERE A SECURITY-SENSITIVE REVIEW GOES INSTEAD OF HERE. This repository is
   # public, and so is every run log, step summary and artifact it produces. A
   # review goes to this private repository, and leaves nothing readable here,
-  # when scripts/disclosure.py routes it private: a CRITICAL or HIGH finding
-  # already in live code, an obvious security patch by Monero developers,
-  # which a public review would point attackers at before the release ships,
-  # any CRITICAL or HIGH finding in a merged pull request, a privacy,
-  # soundness, inflation or burning bug unless every finding is LOW, or any
-  # review of a pull request whose earlier review is open there.
+  # when scripts/disclosure.py routes it private, for one of two reasons: a
+  # CRITICAL or HIGH finding in code that is already live, or a pull request
+  # that patches a CRITICAL vulnerability in live code, which a public review
+  # would point attackers at before the release ships. A separate model pass,
+  # `Ask the disclosure gate`, decides both, and the private issue names the
+  # exact finding or change behind each reason.
   #
   # Needs the DISCLOSURE_TOKEN secret: a fine-grained token with Issues
   # read/write on this repository only. Without it nothing is reviewed at all
@@ -2094,6 +2094,50 @@ jobs:
             exit 1
           fi
 
+      # THE DISCLOSURE GATE: a second, small model pass whose only job is the
+      # route. It reads review.md, the diff and origin/base, and answers with
+      # a verdict that places every CRITICAL or HIGH finding public or
+      # private, and names any CRITICAL vulnerability the pull request
+      # patches. scripts/disclosure_gate.md is its prompt; disclosure.py
+      # checks the verdict against the report and cannot be overruled by it
+      # on a finding the report itself calls pre-existing.
+      #
+      # It replaced keyword tests for privacy and funds wording, which sent
+      # most reviews private for a phrase in a refuted note or a LOW.
+      #
+      # The verdict goes to private-state, never to the log, and the step
+      # prints nothing and succeeds whatever happens: a gate that fails
+      # leaves no verdict, and disclosure.py then falls back to the review's
+      # own markers and provenance, failing closed.
+      - name: Ask the disclosure gate
+        if: always()
+        timeout-minutes: 30
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          MODEL: ${{ steps.route.outputs.model }}
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/private-state"
+          chmod 700 "$RUNNER_TEMP/private-state"
+          rm -f "$RUNNER_TEMP/private-state/verdict.json"
+          gate="$RUNNER_TEMP/harness-scripts/disclosure_gate.md"
+          if [ -s review.md ] && [ -f "$gate" ] && [ -n "${CLAUDE_CLI:-}" ]; then
+            prompt=$(cat "$gate"; echo; python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --severe review.md \
+              | sed 's/^/- /'; echo "(end of list)")
+            "$CLAUDE_CLI" -p "$prompt" \
+              --permission-mode default \
+              --model "${MODEL:-claude-opus-5-5}" --effort high \
+              --max-turns 60 \
+              --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
+              --disallowedTools "Write,Edit,$DISALLOWED_TOOLS" \
+              --output-format json \
+              < /dev/null > "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null || true
+            python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result") or "")' \
+              "$RUNNER_TEMP/private-state/gate.json" > "$RUNNER_TEMP/private-state/verdict.json" 2>/dev/null || true
+          fi
+          exit 0
+
       # PUBLIC OR PRIVATE, decided once, here, before any later step can put
       # the review somewhere a stranger can read it. See DISCLOSURE_REPO at the
       # top of this file and scripts/disclosure.py for the rule.
@@ -2118,7 +2162,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/private-state"
           chmod 700 "$RUNNER_TEMP/private-state"
           if [ -f "$RUNNER_TEMP"/harness-scripts/disclosure.py ]; then
-            python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py review.md \
+            python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py \
+              --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md \
               > "$RUNNER_TEMP/private-state/route"
           else
             printf 'route=private\nreason=unrouted\n' > "$RUNNER_TEMP/private-state/route"
@@ -2948,34 +2993,24 @@ jobs:
             exit 0
           fi
 
-          # An open private review of this pull request keeps the next one
-          # private: the reason it went there may not show in this report. A
-          # lookup that fails counts as one.
-          also=()
-          if [ "$route" = public ] && { [ -z "${DISCLOSURE_TOKEN:-}" ] || ! titles=$(GH_TOKEN="$DISCLOSURE_TOKEN" \
-              gh issue list --repo "$DISCLOSURE_REPO" --state open --label "pr-${{ matrix.pr }}" \
-              --limit 100 --json title --jq '.[].title' 2>/dev/null) || \
-              printf '%s\n' "$titles" | grep -q "^Review: $UPSTREAM#${{ matrix.pr }} @ "; }; then
-            route=private
-            also=(previously-private)
-          fi
-
           if [ "$route" = private ]; then
             # THE PRIVATE ROUTE. Same title, so the dedup record in
             # select_prs.py reads both repositories alike, and the same
             # severity labels, which come from the report's own findings.
             #
             # The header says why it went private: every reason that applies,
-            # with the findings that met it, so a maintainer can tell what to
-            # withhold and what could be made public. No reason label, and the
-            # disclosure marker is still cut out of the body.
+            # each with the exact finding or change that met it, so a
+            # maintainer can tell what to withhold and what could be made
+            # public. No reason label, and the disclosure marker is still cut
+            # out of the body.
             [ -n "${DISCLOSURE_TOKEN:-}" ] || fail publish-failed
             export GH_TOKEN="$DISCLOSURE_TOKEN"
             repo="$DISCLOSURE_REPO"
             {
               echo "> Filed privately. Do not repost, summarise or link this outside the disclosure process."
               echo
-              python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --summary review.md "${also[@]}"
+              python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --summary \
+                --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md
               echo
               python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --strip review.md
             } > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
