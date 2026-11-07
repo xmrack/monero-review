@@ -301,6 +301,10 @@ that break the obvious mental model (all in `src/common/threadpool.cpp`):
   (`CHECK_AND_ASSERT_THROW_MES(!is_leaf, ...)`). So code that itself submits
   (e.g. `hash_children_chunks` and `CurveTrees::outputs_to_leaves` in
   `src/fcmp_pp/curve_trees.cpp`) throws if run as a leaf job.
+- **`waiter::~waiter` waits for outstanding jobs**, so anything a job
+  captures by reference must be declared before the waiter, or an early
+  exit destroys it while jobs still write to it (`std::deque<bool> results`
+  in `verRctSemanticsSimple`, `src/ringct/rctSigs.cpp`).
 - **`waiter::wait()` drains the queue on the calling thread** (`run(true)`)
   before blocking — including jobs other submitters queued.
 - **A queued job's exception never reaches the waiter.** `threadpool::run`

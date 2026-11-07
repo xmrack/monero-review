@@ -235,7 +235,9 @@ A new fuzz target is inert unless it is added in **three** places: a
 `monero_add_minimal_executable` in `tests/fuzz/CMakeLists.txt`, a seed corpus
 under `tests/data/fuzz/<name>/`, and the type list in
 `contrib/fuzz_testing/fuzz.sh`. (That script's `case` list omits `tx-extra`
-despite its seeds; compare it against `ls tests/fuzz/*.cpp`.)
+despite its seeds; compare it against `ls tests/data/fuzz/`. Target, corpus and
+script names hyphenate where some source files use underscores, e.g.
+`load-from-binary` from `load_from_binary.cpp`.)
 
 ## Traps in the test tree
 

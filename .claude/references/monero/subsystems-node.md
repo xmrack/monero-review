@@ -396,11 +396,18 @@ consumes).
 backend choice, so LMDB's behaviour is effectively consensus-relevant: an
 output index returned wrong is a chain split.
 
-**Schema.** `#define VERSION 5` in `db_lmdb.cpp`, with a `migrate_0_1` …
-`migrate_4_5` ladder run from `open()` via `migrate()`. `open()` opens the
+**Schema.** `#define VERSION` in `db_lmdb.cpp` takes a higher value under
+`ENABLE_FCMP_INTEGRATION` (CMake option, default `OFF`), which also adds
+`migrate_5_7` and the tree tables `locked_outputs`, `timelocked_outputs`,
+`leaves`, `layers`, `tree_edges` and `tree_meta`. The `migrate_0_1` …
+`migrate_4_5` ladder runs from `open()` via `migrate()`. `open()` opens the
 sub-databases (the `lmdb_db_open(txn, LMDB_` calls in `open()`; `migrate_0_1`
-repeats some; two in `open()` are conditional) under `mdb_env_set_maxdbs(m_env, 32)`. The DUPFIXED tables use a dummy 8-byte all-zero key
-(`zerokval`), so the logical key is the first field of the *data*.
+repeats some; some in `open()` are conditional) under `mdb_env_set_maxdbs(m_env, 32)`. Most DUPFIXED tables use a dummy 8-byte all-zero key
+(`zerokval`), so the logical key is the first field of the *data*. Not all:
+the schema comment above `LMDB_BLOCKS` names `output_amounts`,
+`locked_outputs`, `layers` and `timelocked_outputs` as keyed DUPSORT tables,
+and `txs_prunable_hash` / `txs_prunable_tip` key on the tx id
+(`BlockchainLMDB::add_transaction_data`).
 
 **Transactions.** `m_writer` records the thread that opened a write batch, and
 `batch_commit` / `batch_stop` / `batch_abort` all re-check it. `do_resize`
@@ -424,6 +431,14 @@ and an atomic counter.
   for `m_cursors->m_txc_blocks`; `CURSOR(x)` / `RCURSOR(x)` paste the name.
 - `TXN_POSTFIX_RDONLY()` is an **empty macro** — a missing call changes
   nothing.
+- **A new table breaks read-only opens.** `open()` passes `MDB_CREATE` even
+  under `DBF_RDONLY`, and opening a missing table in a read-only txn fails.
+  Existing tables handle it with a `!(mdb_flags & MDB_RDONLY)` gate
+  (`hf_starting_heights`) or a `DB_OPEN_FAILURE` catch that asks for a
+  conversion (`locked_outputs`).
+- **Values from `mdb_cursor_get` are invalid after any write in the same
+  txn** (`lmdb.h`: "valid only until a subsequent update operation"). Copy
+  them out before a put or delete.
 - **`block_rtxn_start()` silently returns the *write* transaction** when
   called on the writer thread with a write txn (e.g. a batch) open, so reads on that thread see
   uncommitted data.

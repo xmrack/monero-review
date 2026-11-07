@@ -343,6 +343,12 @@ definition -- the definition in `src/wallet/api/wallet.cpp`, the override in
 `src/wallet/api/wallet.h`, and the pure virtual with its doc comment in
 `src/wallet/api/wallet2_api.h`. No caller exists.
 
+Likewise `wallet2::write_watch_only_wallet` was proposed as writing multisig
+state into the watch-only file. Its only in-tree caller,
+`simple_wallet::save_watch_only`, refuses a wallet whose
+`get_multisig_status().multisig_is_active` is set; `wallet_rpc_server` and
+`src/wallet/api` do not call it (`git grep -n write_watch_only_wallet src/`).
+
 Two limits, and both matter:
 
 - **`wallet2_api.h` is a PUBLIC header.** External wallets do call these
