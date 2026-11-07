@@ -215,6 +215,16 @@ height, and the transactions behind proofs (`check_tx_proof`,
 the timing and the transactions the wallet submits. Ask of each value the
 wallet takes: what does it do if the node lies?
 
+Fetched transactions are not all authenticated by hash. `wallet2::get_pruned_tx`
+(`src/wallet/wallet2.cpp`) checks the computed hash against the requested one
+only for v2 or unpruned entries; for a pruned entry whose blob starts with
+version 1 (the branch commented "for v1, we trust the daemon", after the
+`bd[0] > 1` test) it takes `tx_hash` from the daemon's reply. Every wallet path
+that fetches a transaction through it then reads daemon-chosen prefix data.
+Find those paths with `git grep -n 'get_pruned_tx(' src/wallet/wallet2.cpp`,
+and see `refutations.md` for why one that hashes the result first is not
+exposed.
+
 The threat model that matters: a user runs a GUI wallet or `wallet-rpc` against
 a public remote node. Anything the node can say that corrupts wallet memory,
 crashes it, makes it spend wrongly, or makes it reveal which outputs are its

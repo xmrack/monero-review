@@ -450,6 +450,21 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## A pruned v1 transaction from the daemon cannot be hashed
+
+`wallet2::get_pruned_tx` (`src/wallet/wallet2.cpp`) takes a pruned v1
+transaction's hash from the daemon instead of computing it, so its prefix is
+daemon-chosen (`trust-boundaries.md`, section 4). But that branch does not call
+`set_hash`, so the transaction carries no cached hash, and any later
+`cryptonote::get_transaction_hash` on it throws rather than hashing the forged
+prefix, because `calculate_transaction_hash` in
+`src/cryptonote_basic/cryptonote_format_utils.cpp` refuses with
+`CHECK_AND_ASSERT_MES(!t.pruned, false, "Cannot calculate the hash of a pruned transaction")`.
+A path that hashes the transaction before using it, such as
+`wallet2::get_tx_proof(const cryptonote::transaction&, ...)`, cannot be fed a
+forged v1 prefix. A path that reads the prefix without hashing it first is not
+covered; check which one the finding is on.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
