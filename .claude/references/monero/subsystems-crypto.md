@@ -238,12 +238,15 @@ diff looks like.
 **The FFI surface on master is tree hashing only.** `fcmp_pp_rust/src/lib.rs`
 exports the hash-init points, `hash_grow_helios` / `hash_grow_selene`
 (wrapping `full_chain_membership_proofs::tree::hash_grow`), Selene/Helios
-point-to-cycle-scalar conversion, `selene_scalar_from_bytes`, zero scalars and
-to-bytes helpers. There is no prove, verify, key-image or spend-authorization (SA/L) entry point.
+point-to-cycle-scalar conversion, `selene_scalar_from_bytes`, zero scalars,
+to-bytes helpers and the point decoders `helios_point_from_bytes` /
+`selene_point_from_bytes` (`ec_elem_from_bytes!` with `read_G`; reached from
+`CurveTrees::tree_edge_to_last_hashes` via `Helios::from_bytes` /
+`Selene::from_bytes`). There is no prove, verify, key-image or spend-authorization (SA/L) entry point.
 The `int`-returning exports return `-1` for a null out-pointer and `-2` for a
 Rust-side failure; `tower_cycle.cpp` is the only C++ caller. Input pointers
 other than the out-pointer are not null-checked (`selene_scalar_from_bytes`
-reads 32 bytes unconditionally; `hash_grow_helios`/`hash_grow_selene` check
+and the two point decoders read 32 bytes unconditionally; `hash_grow_helios`/`hash_grow_selene` check
 `hash_out` but not `new_children.buf` when `len` is non-zero — a `Slice` may
 carry a null `buf` only when `len` is 0, see `slice_from_raw_parts_0able` and
 `impl<T> From<Slice<T>> for &[T]`). The four `*_to_bytes` exports

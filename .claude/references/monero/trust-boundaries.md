@@ -62,10 +62,12 @@ requests. Before them, `net_node.inl` handles `handle_handshake`,
 `handle_timed_sync`, `handle_ping` and `handle_get_support_flags`
 (`BEGIN_INVOKE_MAP2(node_server)` in `net_node.h`).
 
-**Two ways into the peer list.** Peerlists arrive only in the **responses**
-from peers we dial: `local_peerlist_new` is in `COMMAND_HANDSHAKE_T::response`
+**Two ways into the peer list.** Peerlists arrive only in **responses** to
+our requests: `local_peerlist_new` is in `COMMAND_HANDSHAKE_T::response`
 and `COMMAND_TIMED_SYNC_T::response`, and `handle_remote_peerlist` is called
-from `do_handshake_with_peer` and `do_peer_timed_sync`. The other way in is an
+from `do_handshake_with_peer` and `do_peer_timed_sync`. That includes peers
+that dialled us: `peer_sync_idle_maker` sends timed syncs to every
+handshaked connection, inbound too. The other way in is an
 inbound handshake. It carries a peer-chosen `node_data.my_port`;
 `handle_handshake` pings that port back and, on success, puts the peer in the
 white list. Both feed the eclipse surface. Inbound requests also carry
@@ -528,9 +530,15 @@ signed hashes.
   `--proxy` unless `--proxy-allow-dns-leaks` is set.
 - **TXT records** (`load_txt_records_from_dns`: DNSSEC-valid, at least two,
   majority agreement) feed update checks (`--check-updates`, default
-  `notify`), DNS checkpoints (only with `--enforce-dns-checkpointing`) and the
-  DNS blocklist (`--enable-dns-blocklist`, default off). Whoever controls the
-  moneropulse zones is trusted here, by design.
+  `notify`), DNS checkpoints and the DNS blocklist (`--enable-dns-blocklist`,
+  default off). Whoever controls the moneropulse zones is trusted here, by design.
+- **DNS checkpoints are fetched on mainnet without
+  `--enforce-dns-checkpointing`.** The flag only adds the fetch at init.
+  During sync `core::update_checkpoints` fetches hourly unless
+  `--disable-dns-checkpoints` (also implied by `--proxy` without
+  `--proxy-allow-dns-leaks`). Unenforced, `Blockchain::update_checkpoints`
+  only logs a mismatch with the local chain; enforced, a failed fetch stops
+  the daemon and a mismatch rolls back.
 - **Public nodes.** Peers advertise an RPC port in their handshake and
   peerlist entries. `get_public_nodes` (restricted surface) serves those
   entries to wallets, which offer them as remote nodes. A P2P peer can

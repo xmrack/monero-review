@@ -184,7 +184,9 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
    `/get_output_distribution.bin` and accumulates it locally. **The checks are
    in `wallet2::get_outs` and cover only length (`>=
    CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE`), monotonicity, and that the total
-   exceeds the wallet's own max RCT output index.** There is no cross-source
+   at the last unlocked block
+   (`rct_offsets[size - CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE]`) exceeds the
+   wallet's own max RCT output index.** There is no cross-source
    or cryptographic check. A hostile distribution biases decoy selection.
 5. **`wallet2::get_outs` → `tools::gamma_picker::pick`** — decoys drawn from a
    gamma distribution over that distribution, then fetched via `/get_outs.bin`
@@ -218,10 +220,11 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     `handle_notify_new_transactions` enters here too.
 11. **`core::add_new_tx` → `tx_memory_pool::add_tx`** —
     `src/cryptonote_core/tx_pool.cpp`. Cheap "no-drop" checks first
-    (`check_fee`, `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, non-zero
-    `unlock_time`, key-image conflicts), then `ver_non_input_consensus` and
+    (a tx in `m_timed_out_transactions`, `check_fee`,
+    `tx.extra.size() <= MAX_TX_EXTRA_SIZE`, non-zero `unlock_time`, key-image
+    conflicts), then `ver_non_input_consensus` and
     `Blockchain::check_tx_inputs`. With `relay_method::block`
-    (`kept_by_block`) the four cheap checks are skipped, and a tx whose
+    (`kept_by_block`) the cheap checks are skipped, and a tx whose
     inputs fail is still inserted with `m_verifivation_impossible`.
 12. **`levin::notify::send_txs`** — `src/cryptonote_protocol/levin_notify.cpp`,
     via `relay_transactions` → `node_server::send_txs`. A zone with noise
@@ -489,12 +492,16 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 - **RPC and ZMQ ports are bound during construction but only served in
   `run`.** The kernel queues connections in between.
   `check_core_ready()` gates *responses*, not connections.
-- **Commits are not fsynced by default during initial sync.** The default
-  `fast:async:1` opens LMDB with `MDB_NOSYNC` (`DBF_FAST`) and instead dispatches
-  `store_blockchain` to `m_async_service` after each block, so a crash can
-  lose recent commits. `MDB_NOSYNC` stays set until
-  `on_connection_synchronized` calls `safesyncmode(true)` — a no-op if the
-  user pinned `--db-sync-mode` (`m_db_default_sync` false).
+- **Commits are not fsynced by default during sync.** The default
+  `--db-sync-mode` (`arg_db_sync_mode`, `fast:async:` with a byte threshold)
+  opens LMDB with `MDB_NOSYNC` (`DBF_FAST`) and dispatches `store_blockchain`
+  to `m_async_service` once that many bytes are pending, so a crash can lose
+  recent commits. The mode toggles for the node's whole life:
+  `process_payload_sync_data` calls `safesyncmode(false)` for a public peer
+  at least 5 blocks ahead, and `on_connection_synchronized` and
+  `on_connection_close` (when no remaining public peer is 5 or more ahead)
+  call `safesyncmode(true)`. All are no-ops if the user pinned
+  `--db-sync-mode` (`m_db_default_sync` false).
 - `mlog_configure` sets `DisableApplicationAbortOnFatalLog`, so **`MFATAL` does
   not terminate**. Several init failures rely on an explicit `return false`
   right after the `MFATAL`; dropping that return turns a fatal into a warning.
@@ -516,8 +523,9 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 
 1. **Peer selection** — `node_server::connections_maker` on the 1-second idle
    handler. Chooses *who* to talk to; validates nothing about honesty.
-2. **`process_payload_sync_data`** — the peer's claimed height is **taken at
-   face value as the sync target** (`set_target_blockchain_height`); its
+2. **`process_payload_sync_data`** — a public-zone peer's claimed height is
+   **taken at face value as the sync target** (`set_target_blockchain_height`)
+   when it exceeds the current target and we lack its top block; its
    claimed cumulative difficulty is not read. Only the hard-fork version, the
    pruning seed shape and, on the public zone when the claimed top id is a
    block we hold, the claimed height against that block are checked; a
@@ -580,8 +588,11 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
   deciding whether a reorg happens. They enter as `relay_method::block`, so
   `add_tx` skips the fee, extra-size, unlock-time and key-image-conflict
   checks.
-- Sync is refused entirely on non-public zones: `process_payload_sync_data`
-  returns early for Tor and I2P peers.
+- A Tor or I2P peer never starts a sync, but its claimed height still
+  counts: `process_payload_sync_data` stores `m_remote_blockchain_height`
+  before the non-public early return, and `on_connection_close` recomputes
+  the target over every zone's connections, so a hidden-zone peer can keep
+  the target from falling.
 
 ---
 

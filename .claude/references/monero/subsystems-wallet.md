@@ -85,7 +85,11 @@ Five things follow, and a diff can break each of them:
   `get_keys_file_data` when writing the background keys file, and in
   `start_background_sync` on the main account). That call is the entire
   security property of the feature; anything that lets a background
-  instance keep or re-derive the spend key defeats it outright.
+  instance keep or re-derive the spend key defeats it outright. It clears
+  the spend key, multisig keys and polyseed only: the monero_c seed
+  passphrase (`m_monero_c_passphrase`) is wiped by
+  `forget_monero_c_passphrase`, which `get_keys_file_data` calls for the
+  watch-only export but not for the background keys file.
 - **The background cache is untrusted input on the main wallet's open path.**
   `process_background_cache_on_open` loads and merges it when a
   normal wallet is opened, so "the user opened their wallet" reaches a
@@ -257,10 +261,13 @@ consistency check for transactions the wallet did not just build itself:
 `sanity_check_pending_tx_set` (signed and multisig sets, via the `wallet2`
 wrappers of the same names in `parse_tx_from_str`, `parse_multisig_tx_from_str`, `load_multisig_tx`,
 `sign_multisig_tx`, `cold_sign_tx`, `make_multisig_tx_set`), and
-`check_consistent_ins_outs` across a set. It re-derives input amounts,
-commitments, key images, ring members and destinations against
-`m_transfers` and the account keys, and requires non-zero change to go to
-the sender. Its header states what it cannot check: URL destinations,
+`check_consistent_ins_outs` across a set. The pending-tx checks re-derive
+input amounts, commitments, key images, ring members and destinations
+against `m_transfers` and the account keys, and require non-zero change to
+go to the sender. `sanity_check_unsigned_tx_set` takes no `m_transfers`, and
+in `wallet2::sign_tx` the later `m_transfers` checks run after
+`import_outputs` has loaded the transfers from the same unsigned set. Its
+header states what it cannot check: URL destinations,
 `tx_construction_data::extra` versus the final `tx_extra`, and `mixRing`
 on deserialized txs. In `commit_tx` the check runs only to decide whether
 to record rings; a failure is logged at `MINFO` and **the transaction is
