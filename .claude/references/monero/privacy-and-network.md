@@ -373,10 +373,20 @@ for public and private zones.
 - **Filling.** `connections_maker` tries anchors, then white until
   `P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT` of slots (all while a pruning
   stripe is needed), then gray; seeds (`get_ip_seed_nodes`,
-  `get_dns_seed_nodes`) when white is empty or nothing connects.
+  `get_dns_seed_nodes`) when white is empty or nothing connects. That order
+  holds only while the outbound count is below the white quota; once it
+  reaches it, the else branch of `if(conn_count < expected_white_connections)`
+  ("start from grey list") calls `make_expected_connections_count` with gray
+  before white.
 - **Candidate filtering.** `make_new_connection_from_peerlist` keeps one entry
   per host, shuffles, keeps one per IPv4 /24 or IPv6 /32, and skips subnets
   already connected; if nothing remains it retries without the subnet filter.
+  For the white list it then re-sorts by `last_seen` ("Step 3: Put back into
+  order according to 'last_seen'") and keeps at most 20
+  (`const size_t limit = use_white_list ? 20 : ...`), moves peers on the
+  needed pruning stripe to the front (`filtered.insert(filtered.begin(), peer)`),
+  and picks with `get_random_index_with_fixed_probability`, a cubic bias toward
+  index 0. The gray pick is uniform (`crypto::rand_idx`).
 - **Churn.** `update_sync_search` runs every 101 s. When outbound slots are
   full and fewer than `P2P_DEFAULT_SYNC_SEARCH_CONNECTIONS_COUNT` peers are
   syncing, it drops one synced non-anchor outbound peer, in every zone.
