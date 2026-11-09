@@ -318,7 +318,14 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   in for Dandelion++'s Sybil protection.
 - **Visibility gates.** `matches_category(..., relay_category::legacy)` keeps
   stem transactions out of ZMQ (`core::add_new_tx`,
-  `core::on_transactions_relayed`). RPC pool queries use
+  `core::on_transactions_relayed`), but not forward-state ones:
+  `tx_memory_pool::add_tx` never copies `forward` into `tvc.m_relay`
+  (`if (meta.fee > 0 && tx_relay != relay_method::forward) tvc.m_relay = tx_relay;`),
+  so it stays `relay_method::none`, and `matches_category` in
+  `src/blockchain_db/blockchain_db.cpp` returns
+  `category == relay_category::legacy` for `none`. A transaction received
+  over Tor/I2P is therefore published on ZMQ `txpool_add` from
+  `core::add_new_tx` on arrival, before the forward delay. RPC pool queries use
   `allow_sensitive = !request_has_rpc_origin || !restricted`, and
   `on_getblocktemplate` passes `include_sensitive` only when unrestricted;
   `get_block_template_backlog` and `get_txpool_backlog` default to broadcast
