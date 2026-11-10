@@ -100,7 +100,8 @@ gtest() {
     -e HOME=/tmp --network none --cap-drop ALL --security-opt no-new-privileges \
     --memory 14g -v "$SRC:/src:ro" -v "$WORK/build:/build" \
     -e ASAN_OPTIONS=detect_leaks=0 \
-    -e UBSAN_OPTIONS=print_stacktrace=1:suppressions=/build/ubsan.supp \
+    -v "$WORK/ubsan.supp:/ubsan.supp:ro" \
+    -e UBSAN_OPTIONS=print_stacktrace=1:suppressions=/ubsan.supp \
     -w /build "$IMAGE" ./tests/unit_tests/unit_tests --data-dir /build/test-data \
     "--gtest_filter=$filter" > "$log" 2>&1
   rc=$?
@@ -118,8 +119,9 @@ run_unit() {
   # Wallet tests write next to their fixtures, and /src is read-only.
   rm -rf "$WORK/build/test-data" && cp -r "$SRC/tests/data" "$WORK/build/test-data"
   # ref10's field arithmetic shifts negative values left on purpose, hundreds
-  # of times per test; GCC defines it. Everything else is reported.
-  printf 'shift-base:src/crypto/crypto-ops.c\nshift-base:src/ringct/rctCryptoOps.c\n' > "$WORK/build/ubsan.supp"
+  # of times per test; GCC defines it. Everything else is reported. Outside
+  # /build, which the pull request's build can fill with symlinks.
+  printf 'shift-base:src/crypto/crypto-ops.c\nshift-base:src/ringct/rctCryptoOps.c\n' > "$WORK/ubsan.supp"
   : > "$WORK/$tag.failed"; : > "$WORK/$tag.crashed"; : > "$WORK/$tag.passed"
   if [ -n "$only" ]; then
     printf '%s\n' "$only" | tr ':' '\n' > "$WORK/$tag.units"

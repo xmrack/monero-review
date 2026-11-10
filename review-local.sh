@@ -684,6 +684,17 @@ EXEC="$EXEC_DIR/exec.jsonl"
 DENY="Read(//proc/**),Edit(//proc/**),Edit(.git/**),Edit(**/.git/**),Write(.git/**),Write(**/.git/**)"
 DENY="$DENY,Read(/$EXEC_DIR/**),Edit(/$EXEC_DIR/**),Write(/$EXEC_DIR/**)"
 DENY="$DENY,Read(~/.ssh/**),Read(~/.gnupg/**),Read(~/.config/**),Read(~/.claude/**),Read(~/.aws/**),Read(~/.netrc),Read(~/.git-credentials),Read(~/.npmrc)"
+# The rules above bind the file tools, not the shell: `awk '... > path'` and
+# `sed 'w path'` write wherever the sandbox allows, which is most of $HOME.
+# Read-only to it: this harness, the execution log, and the places a planted
+# file runs later. The CLI already denies ~/.ssh, ~/.gitconfig, ~/.bashrc,
+# ~/.profile, ~/.bash_profile and ~/.zshrc; these are the startup files it
+# does not.
+SANDBOX="$EXEC_DIR/sandbox.json"
+python3 -I -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
+  "$HERE" "$RTOOL_BIN" "$EXEC_DIR" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" \
+  "$HOME/.zshenv" "$HOME/.zprofile" "$HOME/.zlogin" "$HOME/.zlogout" "$HOME/.bash_login" "$HOME/.bash_logout" \
+  "$HOME/.xprofile" "$HOME/.xsessionrc" > "$SANDBOX"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
 # The Lead ends its turn after dispatching the fleet and is woken by the
@@ -699,6 +710,7 @@ T0=$(date +%s)
 RC=0
 ( cd "$CACHE" && PATH="$RTOOL_BIN:$PATH" RTOOL_ROOT="$CACHE" CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 \
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 CLAUDE_CODE_RETRY_WATCHDOG="$RETRY_WATCHDOG" claude -p "$PROMPT" \
+    --settings "$SANDBOX" \
     --model "$MODEL" ${EFFORT_ARG[@]+"${EFFORT_ARG[@]}"} \
     --max-turns "$TURNS" \
     --permission-mode default --setting-sources project \
@@ -873,6 +885,7 @@ echo "==> asking the disclosure gate"
 GATE_PROMPT=$(cat "$HERE/scripts/disclosure_gate.md"; echo
   python3 "$HERE/scripts/disclosure.py" --severe "$CACHE/review.md" | sed 's/^/- /'; echo "(end of list)")
 ( cd "$CACHE" && CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$GATE_PROMPT" \
+    --settings "$SANDBOX" \
     --model "$MODEL" --effort high --max-turns 60 \
     --permission-mode default --setting-sources project \
     --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
