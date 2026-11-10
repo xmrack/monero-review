@@ -1925,7 +1925,10 @@ const judged = await parallel(candidates.map((c) => () =>
   // it needs. Floored when at least half the confirming votes call it that.
   const protocolVotes = agreeing.filter((v) => v.protocolPrivacy === true).length
   const protocolPrivacy = agreeing.length > 0 && protocolVotes * 2 >= agreeing.length
-  const settled = ratedSeverities.length ? settleSeverity(c.severity, ratedSeverities) : c.severity
+  // A confirming vote with no rating counts as the proposal. Dropped, it let
+  // the one rating left settle the finding alone, CRITICAL to LOW on one vote.
+  const severityVotes = agreeing.map((v) => v.severity || c.severity)
+  const settled = severityVotes.length ? settleSeverity(c.severity, severityVotes) : c.severity
   const severity = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
   // Except at CRITICAL and HIGH, where any confirming verifier's
   // `pre-existing` settles it: that label is what files the review privately,
