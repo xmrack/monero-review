@@ -1839,6 +1839,18 @@ jobs:
           [ "$got" = "$CLAUDE_CODE_VERSION" ] || { echo "::error::installed Claude Code $got, pinned $CLAUDE_CODE_VERSION"; exit 1; }
           echo "::notice::Claude Code $got (pinned) at $cli"
 
+          # The sandbox lets the shell write anywhere under /home and /tmp
+          # that the CLI does not deny by name, and it denies _actions only
+          # inside a composite action. `awk '... > path'`, `sed 'w path'` and
+          # `git diff --output` all write through it. Later steps run the
+          # actions' code and read $RUNNER_TEMP outside the sandbox.
+          work=$(dirname "$RUNNER_TEMP")
+          settings="$RUNNER_TEMP/claude-sandbox.json"
+          python3 -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
+            "$work/_actions" "$work/_tool" "$RUNNER_TEMP" > "$settings"
+          chmod a-w "$settings"
+          echo "CLAUDE_SANDBOX_SETTINGS=$settings" >> "$GITHUB_ENV"
+
       - run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
       # No GitHub tools, no network: Claude reads the diff and writes review.md.
@@ -1973,6 +1985,7 @@ jobs:
           # failed CLI before the diagnosis below could print.
           rc=0; flagged=0
           "$CLAUDE_CLI" -p "$PROMPT" \
+            --settings "$CLAUDE_SANDBOX_SETTINGS" \
             --permission-mode default \
             --model "$MODEL" "${effort[@]}" \
             --max-turns "$TURNS" \
@@ -2126,6 +2139,7 @@ jobs:
             prompt=$(cat "$gate"; echo; python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --severe review.md \
               | sed 's/^/- /'; echo "(end of list)")
             "$CLAUDE_CLI" -p "$prompt" \
+              --settings "$CLAUDE_SANDBOX_SETTINGS" \
               --permission-mode default \
               --model "${MODEL:-claude-opus-5-5}" --effort high \
               --max-turns 60 \
