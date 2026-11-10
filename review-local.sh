@@ -687,10 +687,14 @@ DENY="$DENY,Read(~/.ssh/**),Read(~/.gnupg/**),Read(~/.config/**),Read(~/.claude/
 # The rules above bind the file tools, not the shell: `awk '... > path'` and
 # `sed 'w path'` write wherever the sandbox allows, which is most of $HOME.
 # Read-only to it: this harness, the execution log, and the places a planted
-# file runs later.
+# file runs later. The CLI already denies ~/.ssh, ~/.gitconfig, ~/.bashrc,
+# ~/.profile, ~/.bash_profile and ~/.zshrc; these are the startup files it
+# does not.
 SANDBOX="$EXEC_DIR/sandbox.json"
 python3 -I -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
-  "$HERE" "$RTOOL_BIN" "$EXEC_DIR" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" > "$SANDBOX"
+  "$HERE" "$RTOOL_BIN" "$EXEC_DIR" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" \
+  "$HOME/.zshenv" "$HOME/.zprofile" "$HOME/.zlogin" "$HOME/.zlogout" "$HOME/.bash_login" "$HOME/.bash_logout" \
+  "$HOME/.xprofile" "$HOME/.xsessionrc" > "$SANDBOX"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
 # The Lead ends its turn after dispatching the fleet and is woken by the

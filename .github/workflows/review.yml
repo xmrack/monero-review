@@ -1846,8 +1846,8 @@ jobs:
           # actions' code and read $RUNNER_TEMP outside the sandbox.
           work=$(dirname "$RUNNER_TEMP")
           settings="$RUNNER_TEMP/claude-sandbox.json"
-          python3 -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
-            "$work/_actions" "$work/_tool" "$RUNNER_TEMP" > "$settings"
+          python3 -I -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
+            "$work/_actions" "$work/_tool" "$RUNNER_TEMP" "$HOME/.config" "$HOME/.local" > "$settings"
           chmod a-w "$settings"
           echo "CLAUDE_SANDBOX_SETTINGS=$settings" >> "$GITHUB_ENV"
 
