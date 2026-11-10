@@ -60,6 +60,24 @@ Find the default — in the option's declaration, not in documentation — and
 state it, along with who runs the non-default value. Wallet and daemon both
 have options that sound enabled but are not.
 
+## A hostname the operator typed is not a DNS leak
+
+`--proxy-allow-dns-leaks` gates only monerod's own automatic lookups: DNS
+seed nodes, the DNS blocklist, DNS checkpoints and update checks (see section
+11 of `trust-boundaries.md`). In `src/daemon/core.h`, `allow_dns` is derived
+from `arg_proxy` and `arg_proxy_allow_dns_leaks` and passed to `m_core.init`;
+in `src/p2p/net_node.inl`, `node_server::init` ANDs `m_enable_dns_seed_nodes`
+and `m_enable_dns_blocklist` with `proxy_dns_leaks_allowed`.
+
+Hostnames the operator supplies to `--add-peer`, `--add-priority-node`,
+`--add-exclusive-node` and `--seed-node` are not gated: `append_net_address`
+in `src/p2p/net_node.inl` calls `ip::tcp::resolver::resolve` with the system
+resolver whether or not the flag is set. So a local lookup of an
+operator-supplied hostname under `--proxy` is existing, consistent behaviour,
+not a DNS leak. A finding of that shape has to show a lookup the operator did
+not ask for -- a new automatic lookup that skips the `allow_dns` gate is the
+case to report.
+
 ## The RPC handler is restricted
 
 The daemon RPC distinguishes restricted (public) from unrestricted
