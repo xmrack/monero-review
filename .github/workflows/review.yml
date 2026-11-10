@@ -243,7 +243,7 @@ env:
   # install step logs the version so the run shows which CLI did it.
   # Re-measured on 2.1.296: runs 38332248161 and 38332687548 dispatched the
   # fleet, woke on its notification and published, with no refused calls.
-  CLAUDE_CODE_VERSION: 2.1.296
+  CLAUDE_CODE_VERSION: 2.1.321
   # Only consider PRs touched this recently. Upstream is busier than it looks:
   # measured 2026-08-26, the starting queue is ~22 PRs at 1 day, ~33 at 2,
   # ~42 at 3. Start at 1 so the first drain is survivable, then widen.
@@ -1482,7 +1482,7 @@ jobs:
           # (scanner.cc), and the slim image has gcc but no g++ -- the build
           # would fail quietly and every run would report weggli missing.
           WEGGLI_VERSION: 0.2.4
-          WEGGLI_BUILDER: rust:1.94-bookworm@sha256:6ae102bdbf528294bc79ad6e1fae682f6f7c2a6e6621506ba959f9685b308a55
+          WEGGLI_BUILDER: rust:1.99-bookworm@sha256:e6f2cff35d0f309acf8433b4f05878ed77092602c5065cc81801177da0bb3a9c
         run: |
           set -u
           sudo apt-get update -qq || true
