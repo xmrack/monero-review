@@ -54,7 +54,14 @@ chacha20 key; the cache file is monero binary serialization under
 `derive_cache_key(keys_key, config::HASH_KEY_WALLET_CACHE)` — deliberately not
 the same key. Both are written to a temporary file and moved into place with
 `tools::replace_file` (`store_keys_file_data`; `store_to` when saving to the
-current file), so persistence is atomic. **Neither is authenticated**: chacha20
+current file), so persistence is atomic -- but only for a save to the current
+file. When `wallet2::store_to` saves to a different path
+(`new_file = same_file ? m_wallet_file + ".new" : path`), the cache is written
+straight to that path through a truncating `std::ofstream`
+(`ostr.open(new_file, ... std::ios_base::trunc)`), with no temp-and-rename,
+and the old keys, address, mms and cache files are deleted along the way
+(`boost::filesystem::remove(old_keys_file)`, `remove(old_file)`); a failure or
+a name overlap partway through can lose files. **Neither is authenticated**: chacha20
 with a random IV and no MAC; on parse failure the load paths fall back
 through legacy schemes (chacha8, and for the cache a key derived directly from
 the secret keys). Tampering is detected only by the deserializer
