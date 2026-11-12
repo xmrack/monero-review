@@ -45,8 +45,51 @@ def neutralise(text, upstream):
 
 
 LINK_HOSTS = ("github.com", "www.github.com")
-CODE = re.compile(r"(^```.*?^```[^\n]*$|^~~~.*?^~~~[^\n]*$|(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\2(?!`))",
-                  re.MULTILINE | re.DOTALL)
+# Fences as GitHub reads them (CommonMark): up to three spaces of indent; a
+# backtick fence's info string has no backtick; the closer is the same
+# character, at least as long, with nothing after it. An unclosed fence is
+# treated as prose, so a misread errs toward defanging.
+FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+INLINE = re.compile(r"(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\1(?!`)")
+
+
+def fences(text):
+    """(start, end) of every closed fenced code block."""
+    lines = text.splitlines(keepends=True)
+    offs, pos = [], 0
+    for line in lines:
+        offs.append(pos)
+        pos += len(line)
+    found, i = [], 0
+    while i < len(lines):
+        m = FENCE_OPEN.match(lines[i].rstrip("\r\n"))
+        if not m or (m.group(1)[0] == "`" and "`" in m.group(2)):
+            i += 1
+            continue
+        fence = m.group(1)
+        for j in range(i + 1, len(lines)):
+            c = FENCE_CLOSE.match(lines[j].rstrip("\r\n"))
+            if c and c.group(1)[0] == fence[0] and len(c.group(1)) >= len(fence):
+                found.append((offs[i], offs[j] + len(lines[j].rstrip("\r\n"))))
+                i = j + 1
+                break
+        else:
+            i += 1
+    return found
+
+
+def code_spans(text):
+    """(start, end) of fenced blocks and inline code, in order."""
+    spans, pos = [], 0
+    for start, end in fences(text) + [(len(text), len(text))]:
+        spans += [(pos + m.start(), pos + m.end()) for m in INLINE.finditer(text[pos:start])]
+        if start < end:
+            spans.append((start, end))
+        pos = end
+    return spans
+
+
 MENTION = re.compile(r"(?<![A-Za-z0-9/.@-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9-])")
 IMAGE = re.compile(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
 MDLINK = re.compile(r"(?<!!)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
@@ -93,10 +136,10 @@ def defang(text):
                             else f"`@{m.group(1)}`"), seg)
         return seg
 
-    for m in CODE.finditer(text):
-        out.append(prose(text[pos:m.start()]))
-        out.append(m.group(0))
-        pos = m.end()
+    for start, end in code_spans(text):
+        out.append(prose(text[pos:start]))
+        out.append(text[start:end])
+        pos = end
     out.append(prose(text[pos:]))
     return "".join(out), count
 
