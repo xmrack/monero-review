@@ -370,7 +370,12 @@ Three body encodings on one server, plus an unrelated ZMQ surface.
    request size is bounded: `handle_buff_in` counts all bytes of the request,
    headers included, against `m_max_content_length` =
    `MAX_RPC_CONTENT_LENGTH` (1048576, `src/cryptonote_config.h`; wallet-rpc
-   uses 100×). Request line ≤ `HTTP_MAX_URI_LEN` (9000), header block ≤
+   uses 100×). Request line ≈ `HTTP_MAX_URI_LEN` (9000) — only bytes
+   buffered without a line end are capped: `handle_buff_in` runs
+   `handle_invoke_query_line` whenever `m_cache` contains `\n`, whatever its
+   length, and reaches the `HTTP_MAX_URI_LEN` check only otherwise, so a line
+   completing in the following 8 KiB read (0x2000 buffer,
+   `abstract_tcp_server2.h`) passes at up to about 17 KB. Header block ≤
    `HTTP_MAX_HEADER_LEN` (100000). `parse_cached_header` rejects any
    `Transfer-Encoding`, non-digit or conflicting `Content-Length` values, and
    a header block that does not end exactly at the matched blank line.
