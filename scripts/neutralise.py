@@ -29,6 +29,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from urllib.parse import urlparse
 
 
@@ -58,12 +59,25 @@ LINK_HOSTS = ("github.com", "www.github.com")
 # Fences as GitHub reads them (CommonMark): up to three spaces of indent; a
 # backtick fence's info string has no backtick; the closer is the same
 # character, at least as long, with nothing after it. An unclosed fence is
-# treated as prose, so a misread errs toward defanging. An HTML block runs
-# from a line opening with `<` to a blank line, or past its closer for
-# comments and pre/script/style/textarea; GitHub reads no fence or backtick
-# inside one as code.
-HTML_OPEN = re.compile(r"^ {0,3}<(?:(!--)|(\?)|(!\[CDATA\[)|(!)[A-Za-z]|(pre|script|style|textarea)\b)?",
+# treated as prose, so a misread errs toward defanging. An HTML block opens
+# as CommonMark's types 1-7 do and runs to a blank line, or past its closer
+# for comments and pre/script/style/textarea; GitHub reads no fence or
+# backtick inside one as code.
+HTML_OPEN = re.compile(r"^ {0,3}<(?:(!--)|(\?)|(!\[CDATA\[)|(!)[A-Za-z]|(pre|script|style|textarea)(?=[\s>]|$))",
                        re.IGNORECASE)
+BLOCK_TAGS = (
+    "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|"
+    "details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|"
+    "h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|"
+    "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|"
+    "thead|title|tr|track|ul")
+HTML_BLOCK6 = re.compile(r"^ {0,3}</?(?:" + BLOCK_TAGS + r")(?=[\s>]|/>|$)", re.IGNORECASE)
+# Type 7: one complete open or closing tag alone on its line. It cannot
+# interrupt a paragraph.
+HTML_BLOCK7 = re.compile(
+    r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*"
+    r"(?:\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*\s*/?>"
+    r"|</[A-Za-z][A-Za-z0-9-]*\s*>)\s*$")
 RAW_CLOSE = ("</pre>", "</script>", "</style>", "</textarea>")
 FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
@@ -80,11 +94,13 @@ def blocks(text):
         pos += len(line)
     offs.append(pos)
     fenced, html, i = [], [], 0
+    para = False  # inside a paragraph, which a type 7 block cannot interrupt
     while i < len(lines):
         line = lines[i].rstrip("\r\n")
         m = FENCE_OPEN.match(line)
         if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
             fence = m.group(1)
+            para = False
             for j in range(i + 1, len(lines)):
                 c = FENCE_CLOSE.match(lines[j].rstrip("\r\n"))
                 if c and c.group(1)[0] == fence[0] and len(c.group(1)) >= len(fence):
@@ -95,10 +111,12 @@ def blocks(text):
                 i += 1
             continue
         h = HTML_OPEN.match(line)
-        if not h:
+        if not h and not HTML_BLOCK6.match(line) and (para or not HTML_BLOCK7.match(line)):
+            para = bool(line.strip())
             i += 1
             continue
-        comment, pi, cdata, decl, tag = h.groups()
+        para = False
+        comment, pi, cdata, decl, tag = h.groups() if h else (None,) * 5
         closers = (("-->",) if comment else ("?>",) if pi else ("]]>",) if cdata
                    else (">",) if decl else RAW_CLOSE if tag else ())
         start = i
@@ -186,6 +204,12 @@ def defang(text):
 
 ZWSP = "\u200b"
 URL_TEXT = re.compile(r"(?i)\b(https?)://([^/\s?#<>()\[\]`'\"]+)|\bwww\.([^/\s?#<>()\[\]`'\"]+)")
+# Any tag carrying a URL, an autolink, and a link reference
+# definition: each still makes a link once its URL is broken.
+URL_TAG = re.compile(r"<[A-Za-z][^>]*\b(?:href|src|srcset|poster|action|formaction|background)\s*=[^>]*>",
+                     re.IGNORECASE)
+ANY_AUTOLINK = re.compile(r"<((?:https?|ftp|mailto):[^<>\s]*)>", re.IGNORECASE)
+REF_DEF = re.compile(r"^( {0,3})(\[[^\]\n]+\]:[ \t]*<?([^\s>]+))", re.MULTILINE)
 
 
 def strict(text):
@@ -212,6 +236,12 @@ def strict(text):
 
     text, n = HTML_TAG.subn("", text)
     count += n
+    text, n = URL_TAG.subn("", text)
+    count += n
+    text = ANY_AUTOLINK.sub(lambda m: m.group(0) if not _offsite(m.group(1)) else text_of(
+        lambda m: m.group(1))(m), text)
+    text = REF_DEF.sub(lambda m: m.group(0) if not _offsite(m.group(3)) else text_of(
+        lambda m: m.group(1) + "\\" + m.group(2))(m), text)
     text = IMAGE.sub(lambda m: m.group(0) if not _offsite(m.group(2)) else text_of(
         lambda m: f"[image: {m.group(1)}]" if m.group(1) else "")(m), text)
     text = MDLINK.sub(lambda m: m.group(0) if not _offsite(m.group(2)) else text_of(
@@ -246,12 +276,14 @@ def live(html, repo):
 
 
 def render(text, repo):
-    p = subprocess.run(["gh", "api", "-X", "POST", "markdown", "--input", "-"],
-                       input=json.dumps({"text": text, "mode": "gfm", "context": repo}),
-                       capture_output=True, text=True, timeout=120)
-    if p.returncode:
-        raise RuntimeError("render failed: " + p.stderr.strip()[:200])
-    return p.stdout
+    for wait in (0, 10, 60):
+        time.sleep(wait)
+        p = subprocess.run(["gh", "api", "-X", "POST", "markdown", "--input", "-"],
+                           input=json.dumps({"text": text, "mode": "gfm", "context": repo}),
+                           capture_output=True, text=True, timeout=120)
+        if not p.returncode:
+            return p.stdout
+    raise RuntimeError("render failed: " + p.stderr.strip()[:200])
 
 
 def main():

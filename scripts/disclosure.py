@@ -102,10 +102,12 @@ BLOCK_END = re.compile(r"^##", re.MULTILINE)
 # Anywhere in the finding's block, not only on an exact locator line: a
 # trailing full stop or a bolded path must not send a finding public. So does
 # "pre-existing" in the first sentence of `Where it came from.`, however that
-# label is punctuated or bolded.
+# label is punctuated or bolded, unless that sentence says it was introduced
+# or newly reachable, or says "not pre-existing".
 PRE_EXISTING = re.compile(
     r"not\s+introduced\s+by\s+this\s+pull\s+request"
-    r"|Where it came from\W{0,8}[^.\n]{0,60}?\bpre-?existing",
+    r"|Where it came from\W{0,8}(?:(?!introduced\b|newly\s+reachable)[^.\n]){0,60}?"
+    r"(?<!not )(?<!not a )\bpre-?existing",
     re.IGNORECASE,
 )
 # The two provenances that make a finding this change's own. With no verdict,

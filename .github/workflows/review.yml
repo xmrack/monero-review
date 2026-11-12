@@ -1650,8 +1650,10 @@ jobs:
       - name: Hand over the test results
         run: |
           # Only results for the head under review: the author may have pushed
-          # while the tests ran.
+          # while the tests ran. Only a fenced report: a killed run leaves the
+          # tests' output bare.
           if [ -s "$RUNNER_TEMP/pr-tests/PR_TESTS.md" ] &&
+             [ "$(tail -n 1 "$RUNNER_TEMP/pr-tests/PR_TESTS.md")" = "----- END TEST OUTPUT TEXT -----" ] &&
              grep -m1 '^Head: ' "$RUNNER_TEMP/pr-tests/PR_TESTS.md" | grep -q "^Head: ${HEAD_SHA_FULL:0:12}\."; then
             cp "$RUNNER_TEMP/pr-tests/PR_TESTS.md" PR_TESTS.md
             echo "PR_TESTS.md: $(wc -l < PR_TESTS.md) lines"
@@ -2147,9 +2149,14 @@ jobs:
           if [ -s review.md ] && [ -f "$gate" ] && [ -n "${CLAUDE_CLI:-}" ]; then
             prompt=$(cat "$gate"; echo; python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --severe review.md \
               | sed 's/^/- /'; echo "(end of list)")
+            # Each attempt gets what is left of 45 minutes, so the step never
+            # reaches its own timeout: a timed-out step is visible in public.
+            deadline=$((SECONDS + 45 * 60))
             for wait in 0 60 240; do
+              left=$((deadline - SECONDS - wait))
+              [ "$left" -gt 300 ] || break
               sleep "$wait"
-              "$CLAUDE_CLI" -p "$prompt" \
+              timeout -k 30 "$left" "$CLAUDE_CLI" -p "$prompt" \
                 --settings "$CLAUDE_SANDBOX_SETTINGS" \
                 --permission-mode default --setting-sources project \
                 --model "${MODEL:-claude-opus-5-5}" --effort high \
@@ -2160,6 +2167,10 @@ jobs:
                 < /dev/null > "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null || true
               python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result") or "")' \
                 "$RUNNER_TEMP/private-state/gate.json" > "$RUNNER_TEMP/private-state/verdict.json" 2>/dev/null || true
+              # An answer, usable or not, is final: ask again only when the
+              # run itself failed.
+              python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(d.get("is_error") or d.get("subtype") != "success")' \
+                "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null && break
               python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --check \
                 --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md && break
             done
@@ -2974,6 +2985,12 @@ jobs:
               open(p, "w", encoding="utf-8").write(t)
           PY
           }
+          # The exact body about to be filed, checked again after the summary
+          # and the cut above, rendered in the repository it is filed in.
+          settle() {
+            python3 "$RUNNER_TEMP"/harness-scripts/neutralise.py "$1" "$UPSTREAM" \
+              --verify "$2" >/dev/null 2>&1
+          }
 
           # The review pass's own credential, pasted into the report. That is
           # a prompt injection that worked, so it is charged to the PR as a
@@ -3016,6 +3033,7 @@ jobs:
                 echo '```'
               } > "$RUNNER_TEMP/private-state/body.md" 2>/dev/null || true
               fit "$RUNNER_TEMP/private-state/body.md" || true
+              GH_TOKEN="$DISCLOSURE_TOKEN" settle "$RUNNER_TEMP/private-state/body.md" "$DISCLOSURE_REPO" &&
               GH_TOKEN="$DISCLOSURE_TOKEN" create --repo "$DISCLOSURE_REPO" \
                 --title "Unverified review: $UPSTREAM PR ${{ matrix.pr }} @ $SHA" \
                 --body-file "$RUNNER_TEMP/private-state/body.md" || true
@@ -3060,6 +3078,7 @@ jobs:
               > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
           fi
           fit "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
+          settle "$RUNNER_TEMP/private-state/body.md" "$repo" || fail publish-failed
 
           # `--repo` on every `gh` call in this job: the working directory is
           # the Monero checkout, whose `origin` is upstream, so a bare `gh

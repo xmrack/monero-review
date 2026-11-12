@@ -815,22 +815,32 @@ for (const e of excludedRaw) {
   if (keep.length) excluded.push({ ...e, paths: keep })
 }
 
-// Each unit keeps only real changed files, each file in its first unit only.
-// A path the mapper invented is dropped, and a unit left empty is not read.
+// Each unit keeps only real changed files, each file in its first unit only,
+// which takes the later units' lenses for it. A path the mapper invented is
+// dropped, and a unit left empty is not read.
 const known = new Set(CHANGED)
-const seenPath = new Set()
+const owner = new Map()
 const unknownPaths = []
 for (const u of units) {
-  u.paths = (u.paths || []).filter((p) => {
+  u.paths = (u.paths || []).map((p) => String(p).trim().replace(/^\.\//, '')).filter((p) => {
     if (!known.has(p)) { unknownPaths.push(p); return false }
-    if (seenPath.has(p)) return false
-    seenPath.add(p)
+    const first = owner.get(p)
+    if (first) {
+      first.lenses = [...new Set([...(first.lenses || []), ...(u.lenses || [])])]
+      return false
+    }
+    owner.set(p, u)
     return true
   })
 }
 if (unknownPaths.length) log('dropped ' + unknownPaths.length + ' unit path(s) not among the changed files: ' + unknownPaths.slice(0, 10).join(', '))
 for (let i = units.length - 1; i >= 0 && units.length > 1; i--) {
   if (!units[i].paths.length) { log('unit ' + units[i].name + ' has no changed files; not read'); units.splice(i, 1) }
+}
+if (!units[0].paths.length) {
+  const out = new Set(excluded.flatMap((e) => e.paths || []))
+  units[0].paths = CHANGED.filter((f) => !out.has(f))
+  log('no unit held a changed file; ' + units[0].name + ' reads the whole change')
 }
 
 // The placement check, done here so it is arithmetic rather than an assurance.
