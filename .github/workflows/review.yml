@@ -2855,9 +2855,11 @@ jobs:
           # GitHub does, and the URL form with or without the scheme and
           # `www.`, for pull and issue URLs alike.
           #
-          # A rewrite that fails stops the publish: an unrewritten body is
-          # what this exists to prevent.
-          if ! n=$(python3 "$RUNNER_TEMP"/harness-scripts/neutralise.py review.md "$UPSTREAM" 2>/dev/null); then
+          # --verify renders the result with GitHub and rewrites it again,
+          # strictly, if a mention or off-site link survived. A rewrite that
+          # fails, or still leaves one, stops the publish.
+          if ! n=$(python3 "$RUNNER_TEMP"/harness-scripts/neutralise.py review.md "$UPSTREAM" \
+              --verify "$GITHUB_REPOSITORY" 2>/dev/null); then
             mkdir -p "$RUNNER_TEMP/private-state"
             printf 'publish-failed\n' > "$RUNNER_TEMP/private-state/outcome"
             echo "::error::publish failed"
@@ -4228,7 +4230,7 @@ jobs:
           # SUMMARY.md and SKIPPED.md are model prose, and a pull request body
           # makes the same cross-reference events on upstream as an issue
           # body. Same rewrite the review job applies before publishing.
-          python3 "$RUNNER_TEMP"/propose-scripts/neutralise.py "$body" "$UPSTREAM" >/dev/null
+          python3 "$RUNNER_TEMP"/propose-scripts/neutralise.py "$body" "$UPSTREAM" --verify "$GITHUB_REPOSITORY" >/dev/null
 
           rm -f SUMMARY.md SKIPPED.md proposals.json
 

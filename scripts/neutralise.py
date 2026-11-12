@@ -2,7 +2,7 @@
 """Rewrite references to pull requests and issues so GitHub does not turn them
 into cross-reference events on upstream or any other repository.
 
-    python3 scripts/neutralise.py FILE [UPSTREAM]
+    python3 scripts/neutralise.py FILE [UPSTREAM] [--verify REPO]
 
 Rewrites FILE in place and prints how many references it rewrote. UPSTREAM
 defaults to $UPSTREAM, then monero-project/monero.
@@ -16,10 +16,20 @@ with or without the scheme and `www.`, so this does too. Everything becomes
 
 Outside code, it also formats @mentions as code, shows links outside
 github.com as plain text, and leaves out images hosted elsewhere.
+
+What counts as code is a guess at GitHub's Markdown parser, so --verify
+renders the result with GitHub's own (`gh api markdown`, in REPO's context;
+rendering notifies nobody). If anything is still live -- a mention, an
+off-site link or image, a reference to another repository -- the original is
+rewritten again with nothing exempt as code, and checked again. Still live,
+or no render, exits 2 and leaves FILE as it was.
 """
+import json
 import os
 import re
+import subprocess
 import sys
+from urllib.parse import urlparse
 
 
 def neutralise(text, upstream):
@@ -54,6 +64,7 @@ LINK_HOSTS = ("github.com", "www.github.com")
 # inside one as code.
 HTML_OPEN = re.compile(r"^ {0,3}<(?:(!--)|(\?)|(!\[CDATA\[)|(!)[A-Za-z]|(pre|script|style|textarea)\b)?",
                        re.IGNORECASE)
+RAW_CLOSE = ("</pre>", "</script>", "</style>", "</textarea>")
 FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
 INLINE = re.compile(r"(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\1(?!`)")
@@ -88,15 +99,18 @@ def blocks(text):
             i += 1
             continue
         comment, pi, cdata, decl, tag = h.groups()
-        closer = ("-->" if comment else "?>" if pi else "]]>" if cdata else ">" if decl
-                  else f"</{tag.lower()}>" if tag else None)
-        start, closed = i, closer is None
-        while i < len(lines):
-            if not closed and closer in lines[i].lower():
-                closed = True
-            i += 1
-            if closed and (i >= len(lines) or not lines[i].strip()):
-                break
+        closers = (("-->",) if comment else ("?>",) if pi else ("]]>",) if cdata
+                   else (">",) if decl else RAW_CLOSE if tag else ())
+        start = i
+        if closers:
+            # Types 1-5 end on the line holding the closer.
+            while i < len(lines) and not any(c in lines[i].lower() for c in closers):
+                i += 1
+            i = min(i + 1, len(lines))
+        else:
+            # Types 6 and 7 end before a blank line.
+            while i < len(lines) and lines[i].strip():
+                i += 1
         html.append((offs[start], offs[i]))
     return fenced, html
 
@@ -170,15 +184,106 @@ def defang(text):
     return "".join(out), count
 
 
+ZWSP = "\u200b"
+URL_TEXT = re.compile(r"(?i)\b(https?)://([^/\s?#<>()\[\]`'\"]+)|\bwww\.([^/\s?#<>()\[\]`'\"]+)")
+
+
+def strict(text):
+    """Defang with nothing exempt as code, in a form no context undoes: a
+    zero-width space after `@` and inside off-site URLs, no <a> or <img>.
+    (text, count)"""
+    count = 0
+
+    def url(m):
+        nonlocal count
+        host = (m.group(2) or "www." + (m.group(3) or "")).lower()
+        if host in LINK_HOSTS:
+            return m.group(0)
+        count += 1
+        return (f"{m.group(1)}:{ZWSP}//{m.group(2)}" if m.group(1)
+                else f"www{ZWSP}.{m.group(3)}")
+
+    def text_of(f):
+        def g(m):
+            nonlocal count
+            count += 1
+            return f(m)
+        return g
+
+    text, n = HTML_TAG.subn("", text)
+    count += n
+    text = IMAGE.sub(lambda m: m.group(0) if not _offsite(m.group(2)) else text_of(
+        lambda m: f"[image: {m.group(1)}]" if m.group(1) else "")(m), text)
+    text = MDLINK.sub(lambda m: m.group(0) if not _offsite(m.group(2)) else text_of(
+        lambda m: f"{m.group(1)} ({m.group(2)})")(m), text)
+    text = URL_TEXT.sub(url, text)
+    text, n = re.subn(r"@(?=[A-Za-z0-9])", "@" + ZWSP, text)
+    return text, count + n
+
+
+SAFE_HOST = re.compile(r"(^|\.)(github\.com|githubusercontent\.com)$")
+ATTR = re.compile(r"\b(href|src|data-canonical-src|srcset|data-url)=\"([^\"]*)\"", re.IGNORECASE)
+
+
+def live(html, repo):
+    """What in GitHub's rendering of the body would notify or leave GitHub."""
+    found = []
+    for m in re.finditer(r'class="[^"]*\b(user-mention|team-mention)\b[^"]*"[^>]*>([^<]*)', html):
+        found.append(f"{m.group(1)} {m.group(2)}")
+    for m in ATTR.finditer(html):
+        for url in m.group(2).split(","):
+            url = url.strip().split(" ")[0]
+            u = urlparse(url)
+            if u.scheme in ("", "mailto") and not u.netloc:
+                continue
+            if not SAFE_HOST.search((u.hostname or "").lower()):
+                found.append(f"off-site {m.group(1)} {url}")
+            elif re.match(r"(?i)/([^/]+/[^/]+)/(issues|pull)/\d+", u.path or "") and \
+                    u.hostname.lower() in LINK_HOSTS and \
+                    not u.path.lower().startswith(f"/{repo.lower()}/"):
+                found.append(f"reference {url}")
+    return found
+
+
+def render(text, repo):
+    p = subprocess.run(["gh", "api", "-X", "POST", "markdown", "--input", "-"],
+                       input=json.dumps({"text": text, "mode": "gfm", "context": repo}),
+                       capture_output=True, text=True, timeout=120)
+    if p.returncode:
+        raise RuntimeError("render failed: " + p.stderr.strip()[:200])
+    return p.stdout
+
+
 def main():
-    path = sys.argv[1]
-    upstream = (sys.argv[2] if len(sys.argv) > 2
+    args = sys.argv[1:]
+    repo = None
+    if "--verify" in args:
+        i = args.index("--verify")
+        repo = args[i + 1]
+        del args[i:i + 2]
+    path = args[0]
+    upstream = (args[1] if len(args) > 1
                 else os.environ.get("UPSTREAM", "monero-project/monero"))
     with open(path, encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
-    text, count = neutralise(text, upstream)
+        original = fh.read()
+    text, count = neutralise(original, upstream)
     text, defanged = defang(text)
     count += defanged
+    if repo:
+        try:
+            left = live(render(text, repo), repo)
+            if left:
+                text, count = neutralise(original, upstream)
+                text, n = strict(text)
+                count += n
+                left = live(render(text, repo), repo)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            print(f"neutralise: {e}", file=sys.stderr)
+            sys.exit(2)
+        if left:
+            print("neutralise: still live after the strict rewrite: " + "; ".join(left[:5]),
+                  file=sys.stderr)
+            sys.exit(2)
     if count:
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)
