@@ -20,8 +20,10 @@ per line, for the disclosure gate's prompt.
 pattern that decided the route, so a marker that routed a review private can
 never survive into the issue it files.
 
---check prints nothing and exits 0 when the verdict holds up against the
-report, 1 when it does not, so the workflow can ask the gate again.
+--check prints nothing and exits 0 when the gate answered with a JSON
+object, 1 when it did not (a 429, the turn cap), so the workflow asks again
+only then. An answer that does not hold up is final, and routes private: a
+second answer must not get to overrule it.
 
 --summary prints a markdown list of every reason the review is private, each
 naming the exact finding or change that met it, for the top of the private
@@ -405,7 +407,8 @@ def main():
         path = args[1] if len(args) > 1 else "review.md"
         try:
             with open(path, errors="replace") as fh:
-                ok = verdict_reasons(fh.read(), read_verdict(verdict_path)) is not None
+                fh.read()
+            ok = isinstance(read_verdict(verdict_path), dict)
         except Exception:  # noqa: BLE001 -- unreadable is not usable
             ok = False
         sys.exit(0 if ok else 1)

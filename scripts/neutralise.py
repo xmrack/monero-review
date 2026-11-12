@@ -48,42 +48,68 @@ LINK_HOSTS = ("github.com", "www.github.com")
 # Fences as GitHub reads them (CommonMark): up to three spaces of indent; a
 # backtick fence's info string has no backtick; the closer is the same
 # character, at least as long, with nothing after it. An unclosed fence is
-# treated as prose, so a misread errs toward defanging.
+# treated as prose, so a misread errs toward defanging. An HTML block runs
+# from a line opening with `<` to a blank line, or past its closer for
+# comments and pre/script/style/textarea; GitHub reads no fence or backtick
+# inside one as code.
+HTML_OPEN = re.compile(r"^ {0,3}<(?:(!--)|(\?)|(!\[CDATA\[)|(!)[A-Za-z]|(pre|script|style|textarea)\b)?",
+                       re.IGNORECASE)
 FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
 INLINE = re.compile(r"(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\1(?!`)")
 
 
-def fences(text):
-    """(start, end) of every closed fenced code block."""
+def blocks(text):
+    """([(start, end)] of closed fenced code blocks, [(start, end)] of HTML
+    blocks), in one pass in document order."""
     lines = text.splitlines(keepends=True)
     offs, pos = [], 0
     for line in lines:
         offs.append(pos)
         pos += len(line)
-    found, i = [], 0
+    offs.append(pos)
+    fenced, html, i = [], [], 0
     while i < len(lines):
-        m = FENCE_OPEN.match(lines[i].rstrip("\r\n"))
-        if not m or (m.group(1)[0] == "`" and "`" in m.group(2)):
+        line = lines[i].rstrip("\r\n")
+        m = FENCE_OPEN.match(line)
+        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            fence = m.group(1)
+            for j in range(i + 1, len(lines)):
+                c = FENCE_CLOSE.match(lines[j].rstrip("\r\n"))
+                if c and c.group(1)[0] == fence[0] and len(c.group(1)) >= len(fence):
+                    fenced.append((offs[i], offs[j] + len(lines[j].rstrip("\r\n"))))
+                    i = j + 1
+                    break
+            else:
+                i += 1
+            continue
+        h = HTML_OPEN.match(line)
+        if not h:
             i += 1
             continue
-        fence = m.group(1)
-        for j in range(i + 1, len(lines)):
-            c = FENCE_CLOSE.match(lines[j].rstrip("\r\n"))
-            if c and c.group(1)[0] == fence[0] and len(c.group(1)) >= len(fence):
-                found.append((offs[i], offs[j] + len(lines[j].rstrip("\r\n"))))
-                i = j + 1
-                break
-        else:
+        comment, pi, cdata, decl, tag = h.groups()
+        closer = ("-->" if comment else "?>" if pi else "]]>" if cdata else ">" if decl
+                  else f"</{tag.lower()}>" if tag else None)
+        start, closed = i, closer is None
+        while i < len(lines):
+            if not closed and closer in lines[i].lower():
+                closed = True
             i += 1
-    return found
+            if closed and (i >= len(lines) or not lines[i].strip()):
+                break
+        html.append((offs[start], offs[i]))
+    return fenced, html
 
 
 def code_spans(text):
-    """(start, end) of fenced blocks and inline code, in order."""
+    """(start, end) of fenced blocks and inline code, in order. Inside an HTML
+    block GitHub reads backticks literally, so no inline code there."""
+    fenced, html = blocks(text)
     spans, pos = [], 0
-    for start, end in fences(text) + [(len(text), len(text))]:
-        spans += [(pos + m.start(), pos + m.end()) for m in INLINE.finditer(text[pos:start])]
+    for start, end in fenced + [(len(text), len(text))]:
+        for m in INLINE.finditer(text, pos, start):
+            if not any(s < m.end() and m.start() < e for s, e in html):
+                spans.append((m.start(), m.end()))
         if start < end:
             spans.append((start, end))
         pos = end

@@ -2125,10 +2125,10 @@ jobs:
       # most reviews private for a phrase in a refuted note or a LOW.
       #
       # The verdict goes to private-state, never to the log, and the step
-      # prints nothing and succeeds whatever happens. A verdict that does not
-      # hold up against the report (a 429, the turn cap, bad JSON) is asked
-      # for again, three times in all. A gate that still fails leaves no
-      # verdict, and disclosure.py routes the review private (`no-verdict`):
+      # prints nothing and succeeds whatever happens. A gate that gave no
+      # answer (a 429, the turn cap) is asked again, three times in all; an
+      # answer is final, so a second one cannot overrule it. With no usable
+      # verdict, disclosure.py routes the review private (`no-verdict`):
       # nothing else checks whether the pull request is a critical fix. No
       # annotation says so, because that would name the route.
       - name: Ask the disclosure gate
