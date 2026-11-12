@@ -780,8 +780,13 @@ const units = gotPartition
                 'wire-deserialization', 'crypto-correctness', 'privacy',
                 'concurrency', 'resource-exhaustion'] }]
 // Units over the cap are folded into the smallest kept units, paths and
-// classes both. Slicing them off left their files unread.
-const smallest = () => units.reduce((m, u) => ((u.paths || []).length < (m.paths || []).length ? u : m), units[0])
+// classes both. Slicing them off left their files unread. Smallest by changed
+// lines, then by files.
+const size = (u) => [unitLines(u), (u.paths || []).length]
+const smallest = () => units.reduce((m, u) => {
+  const [a, b] = [size(u), size(m)]
+  return a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]) ? u : m
+}, units[0])
 const folded = []
 if (gotPartition && mapped.units.length > MAX_UNITS) {
   for (const extra of mapped.units.slice(MAX_UNITS)) {
@@ -808,6 +813,34 @@ for (const e of excludedRaw) {
     log('exclusion refused for ' + back.length + ' file(s) ("' + e.reason + '"); read in ' + into.name)
   }
   if (keep.length) excluded.push({ ...e, paths: keep })
+}
+
+// Each unit keeps only real changed files, each file in its first unit only,
+// which takes the later units' lenses for it. A path the mapper invented is
+// dropped, and a unit left empty is not read.
+const known = new Set(CHANGED)
+const owner = new Map()
+const unknownPaths = []
+for (const u of units) {
+  u.paths = (u.paths || []).map((p) => String(p).trim().replace(/^\.\//, '')).filter((p) => {
+    if (!known.has(p)) { unknownPaths.push(p); return false }
+    const first = owner.get(p)
+    if (first) {
+      first.lenses = [...new Set([...(first.lenses || []), ...(u.lenses || [])])]
+      return false
+    }
+    owner.set(p, u)
+    return true
+  })
+}
+if (unknownPaths.length) log('dropped ' + unknownPaths.length + ' unit path(s) not among the changed files: ' + unknownPaths.slice(0, 10).join(', '))
+for (let i = units.length - 1; i >= 0 && units.length > 1; i--) {
+  if (!units[i].paths.length) { log('unit ' + units[i].name + ' has no changed files; not read'); units.splice(i, 1) }
+}
+if (!units[0].paths.length) {
+  const out = new Set(excluded.flatMap((e) => e.paths || []))
+  units[0].paths = CHANGED.filter((f) => !out.has(f))
+  log('no unit held a changed file; ' + units[0].name + ' reads the whole change')
 }
 
 // The placement check, done here so it is arithmetic rather than an assurance.

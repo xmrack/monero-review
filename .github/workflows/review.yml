@@ -853,7 +853,9 @@ jobs:
           # the skills check whether the source is there rather than assuming.
           # `if cmd | tail` tests the PIPELINE, so the warning branch only
           # fires because this step sets pipefail. Do not drop it.
-          if git submodule update --init --filter=blob:none 2>&1 | tail -5; then
+          # Submodule URLs come from the pull request: https only.
+          if git -c protocol.allow=never -c protocol.https.allow=always \
+              submodule update --init --filter=blob:none 2>&1 | tail -5; then
             echo "submodules: $(git submodule status | wc -l) initialised"
           else
             echo "::warning::submodule fetch failed; external/ deps unreadable"
@@ -1648,8 +1650,10 @@ jobs:
       - name: Hand over the test results
         run: |
           # Only results for the head under review: the author may have pushed
-          # while the tests ran.
+          # while the tests ran. Only a fenced report: a killed run leaves the
+          # tests' output bare.
           if [ -s "$RUNNER_TEMP/pr-tests/PR_TESTS.md" ] &&
+             [ "$(tail -n 1 "$RUNNER_TEMP/pr-tests/PR_TESTS.md")" = "----- END TEST OUTPUT TEXT -----" ] &&
              grep -m1 '^Head: ' "$RUNNER_TEMP/pr-tests/PR_TESTS.md" | grep -q "^Head: ${HEAD_SHA_FULL:0:12}\."; then
             cp "$RUNNER_TEMP/pr-tests/PR_TESTS.md" PR_TESTS.md
             echo "PR_TESTS.md: $(wc -l < PR_TESTS.md) lines"
@@ -1785,8 +1789,8 @@ jobs:
           } > PR_FILES.md
           # Changed lines per path, for sizing the review: the Lead passes them
           # to the workflow as changedLines and lineCounts. Binary files count 0.
-          git diff --numstat origin/base...HEAD \
-            | awk -F'\t' '{a=($1=="-")?0:$1; d=($2=="-")?0:$2; printf "%d\t%s\n", a+d, $3}' > PR_NUMSTAT.txt
+          git diff -z --numstat origin/base...HEAD \
+            | python3 "$RUNNER_TEMP/harness-scripts/numstat.py" > PR_NUMSTAT.txt
           echo "$(awk -F'\t' '{n+=$1} END {print n+0}' PR_NUMSTAT.txt) changed line(s)"
           # `|| true`: grep -c exits 1 on a zero count, which `set -e` would
           # take as a step failure on an empty diff.
@@ -1843,11 +1847,15 @@ jobs:
           # that the CLI does not deny by name, and it denies _actions only
           # inside a composite action. `awk '... > path'`, `sed 'w path'` and
           # `git diff --output` all write through it. Later steps run the
-          # actions' code and read $RUNNER_TEMP outside the sandbox.
+          # actions' code and read $RUNNER_TEMP outside the sandbox. A file
+          # under ~/.claude is loaded by every later CLI run in the job,
+          # the disclosure gate among them.
           work=$(dirname "$RUNNER_TEMP")
           settings="$RUNNER_TEMP/claude-sandbox.json"
           python3 -I -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
-            "$work/_actions" "$work/_tool" "$RUNNER_TEMP" "$HOME/.config" "$HOME/.local" > "$settings"
+            "$work/_actions" "$work/_tool" "$RUNNER_TEMP" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" \
+            "$HOME/.zshenv" "$HOME/.zprofile" "$HOME/.zlogin" "$HOME/.zlogout" "$HOME/.bash_login" "$HOME/.bash_logout" \
+            > "$settings"
           chmod a-w "$settings"
           echo "CLAUDE_SANDBOX_SETTINGS=$settings" >> "$GITHUB_ENV"
 
@@ -1986,7 +1994,7 @@ jobs:
           rc=0; flagged=0
           "$CLAUDE_CLI" -p "$PROMPT" \
             --settings "$CLAUDE_SANDBOX_SETTINGS" \
-            --permission-mode default \
+            --permission-mode default --setting-sources project \
             --model "$MODEL" "${effort[@]}" \
             --max-turns "$TURNS" \
             --allowedTools "$ALLOWED_TOOLS,$FLEET_EXTRA_TOOLS" \
@@ -2119,12 +2127,15 @@ jobs:
       # most reviews private for a phrase in a refuted note or a LOW.
       #
       # The verdict goes to private-state, never to the log, and the step
-      # prints nothing and succeeds whatever happens: a gate that fails
-      # leaves no verdict, and disclosure.py then falls back to the review's
-      # own markers and provenance, failing closed.
+      # prints nothing and succeeds whatever happens. A gate that gave no
+      # answer (a 429, the turn cap) is asked again, three times in all; an
+      # answer is final, so a second one cannot overrule it. With no usable
+      # verdict, disclosure.py routes the review private (`no-verdict`):
+      # nothing else checks whether the pull request is a critical fix. No
+      # annotation says so, because that would name the route.
       - name: Ask the disclosure gate
         if: always()
-        timeout-minutes: 30
+        timeout-minutes: 50
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           MODEL: ${{ steps.route.outputs.model }}
@@ -2138,17 +2149,31 @@ jobs:
           if [ -s review.md ] && [ -f "$gate" ] && [ -n "${CLAUDE_CLI:-}" ]; then
             prompt=$(cat "$gate"; echo; python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --severe review.md \
               | sed 's/^/- /'; echo "(end of list)")
-            "$CLAUDE_CLI" -p "$prompt" \
-              --settings "$CLAUDE_SANDBOX_SETTINGS" \
-              --permission-mode default \
-              --model "${MODEL:-claude-opus-5-5}" --effort high \
-              --max-turns 60 \
-              --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
-              --disallowedTools "Write,Edit,$DISALLOWED_TOOLS" \
-              --output-format json \
-              < /dev/null > "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null || true
-            python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result") or "")' \
-              "$RUNNER_TEMP/private-state/gate.json" > "$RUNNER_TEMP/private-state/verdict.json" 2>/dev/null || true
+            # Each attempt gets what is left of 45 minutes, so the step never
+            # reaches its own timeout: a timed-out step is visible in public.
+            deadline=$((SECONDS + 45 * 60))
+            for wait in 0 60 240; do
+              left=$((deadline - SECONDS - wait))
+              [ "$left" -gt 300 ] || break
+              sleep "$wait"
+              timeout -k 30 "$left" "$CLAUDE_CLI" -p "$prompt" \
+                --settings "$CLAUDE_SANDBOX_SETTINGS" \
+                --permission-mode default --setting-sources project \
+                --model "${MODEL:-claude-opus-5-5}" --effort high \
+                --max-turns 60 \
+                --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
+                --disallowedTools "Write,Edit,$DISALLOWED_TOOLS" \
+                --output-format json \
+                < /dev/null > "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null || true
+              python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result") or "")' \
+                "$RUNNER_TEMP/private-state/gate.json" > "$RUNNER_TEMP/private-state/verdict.json" 2>/dev/null || true
+              # An answer, usable or not, is final: ask again only when the
+              # run itself failed.
+              python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); sys.exit(d.get("is_error") or d.get("subtype") != "success")' \
+                "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null && break
+              python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --check \
+                --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md && break
+            done
           fi
           exit 0
 
@@ -2840,7 +2865,17 @@ jobs:
           # scripts/neutralise.py matches both shapes case-insensitively, as
           # GitHub does, and the URL form with or without the scheme and
           # `www.`, for pull and issue URLs alike.
-          n=$(python3 "$RUNNER_TEMP"/harness-scripts/neutralise.py review.md "$UPSTREAM" 2>/dev/null || echo 0)
+          #
+          # --verify renders the result with GitHub and rewrites it again,
+          # strictly, if a mention or off-site link survived. A rewrite that
+          # fails, or still leaves one, stops the publish.
+          if ! n=$(python3 "$RUNNER_TEMP"/harness-scripts/neutralise.py review.md "$UPSTREAM" \
+              --verify "$GITHUB_REPOSITORY" 2>/dev/null); then
+            mkdir -p "$RUNNER_TEMP/private-state"
+            printf 'publish-failed\n' > "$RUNNER_TEMP/private-state/outcome"
+            echo "::error::publish failed"
+            exit 1
+          fi
           if [ "${n:-0}" != "0" ]; then
             echo "neutralised $n upstream cross-reference(s) in the issue body"
           fi
@@ -2950,6 +2985,12 @@ jobs:
               open(p, "w", encoding="utf-8").write(t)
           PY
           }
+          # The exact body about to be filed, checked again after the summary
+          # and the cut above, rendered in the repository it is filed in.
+          settle() {
+            python3 "$RUNNER_TEMP"/harness-scripts/neutralise.py "$1" "$UPSTREAM" \
+              --verify "$2" >/dev/null 2>&1
+          }
 
           # The review pass's own credential, pasted into the report. That is
           # a prompt injection that worked, so it is charged to the PR as a
@@ -2992,6 +3033,7 @@ jobs:
                 echo '```'
               } > "$RUNNER_TEMP/private-state/body.md" 2>/dev/null || true
               fit "$RUNNER_TEMP/private-state/body.md" || true
+              GH_TOKEN="$DISCLOSURE_TOKEN" settle "$RUNNER_TEMP/private-state/body.md" "$DISCLOSURE_REPO" &&
               GH_TOKEN="$DISCLOSURE_TOKEN" create --repo "$DISCLOSURE_REPO" \
                 --title "Unverified review: $UPSTREAM PR ${{ matrix.pr }} @ $SHA" \
                 --body-file "$RUNNER_TEMP/private-state/body.md" || true
@@ -3030,9 +3072,13 @@ jobs:
             } > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
           else
             repo="$GITHUB_REPOSITORY"
-            cp review.md "$RUNNER_TEMP/private-state/body.md"
+            # A marker is the reviewer's own claim of live code or a
+            # security fix: never published.
+            python3 "$RUNNER_TEMP"/harness-scripts/disclosure.py --strip review.md \
+              > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
           fi
           fit "$RUNNER_TEMP/private-state/body.md" || fail publish-failed
+          settle "$RUNNER_TEMP/private-state/body.md" "$repo" || fail publish-failed
 
           # `--repo` on every `gh` call in this job: the working directory is
           # the Monero checkout, whose `origin` is upstream, so a bare `gh
@@ -3352,7 +3398,8 @@ jobs:
     needs: review
     # `always()`, so a review that failed AFTER writing its proposals still
     # lands them. Every step below is gated on there actually being some.
-    if: always()
+    # Not when no review ran: a paused or idle tick has nothing to propose.
+    if: always() && needs.review.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -3919,7 +3966,7 @@ jobs:
           rm -f "$raw" "$out"
           echo "execution_file=$out" >> "$GITHUB_OUTPUT"
           "$CLAUDE_CLI" -p "$PROMPT" \
-            --permission-mode default \
+            --permission-mode default --setting-sources project \
             --model claude-opus-5-5 \
             --max-turns 40 \
             --allowedTools "Read,Grep,Glob,Edit(./refs-work/**),Write(./refs-work/**),Edit(./SUMMARY.md),Write(./SUMMARY.md),Edit(./SKIPPED.md),Write(./SKIPPED.md)" \
@@ -4202,7 +4249,7 @@ jobs:
           # SUMMARY.md and SKIPPED.md are model prose, and a pull request body
           # makes the same cross-reference events on upstream as an issue
           # body. Same rewrite the review job applies before publishing.
-          python3 "$RUNNER_TEMP"/propose-scripts/neutralise.py "$body" "$UPSTREAM" >/dev/null
+          python3 "$RUNNER_TEMP"/propose-scripts/neutralise.py "$body" "$UPSTREAM" --verify "$GITHUB_REPOSITORY" >/dev/null
 
           rm -f SUMMARY.md SKIPPED.md proposals.json
 

@@ -168,6 +168,15 @@ def cmd_git(args, base):
             after_dd = True
         elif a.startswith("-") and not GIT_OPT.match(a):
             die(f"option {a} is not allowed")
+    # `git diff` given a path outside the repository silently becomes
+    # `git diff --no-index` and reads that file from disk.
+    if cmd == "diff":
+        after_dd = False
+        for a in rest:
+            if a == "--" and not after_dd:
+                after_dd = True
+            elif (after_dd or not a.startswith("-")) and not inside(os.path.join(real, a), real):
+                die(f"path {a} is outside {repo}")
     extra = ["--no-ext-diff", "--no-textconv"] if cmd in ("log", "show", "diff") else []
     return run(SAFE_GIT + [cmd] + extra + rest, real)
 

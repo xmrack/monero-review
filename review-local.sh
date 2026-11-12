@@ -163,7 +163,9 @@ git -C "$CACHE" config gc.auto 0
 # Best-effort, like the workflow: this is context, not the deliverable, and the
 # skills check whether the source is actually there. Measured at ~7s / +37MB on
 # a warm cache; a cold one pays a little more.
-if ! git -C "$CACHE" submodule update --init --filter=blob:none --quiet; then
+# Submodule URLs come from the pull request: https only.
+if ! git -C "$CACHE" -c protocol.allow=never -c protocol.https.allow=always \
+    submodule update --init --filter=blob:none --quiet; then
   echo "!! submodule fetch failed -- external/ deps will be unreadable" >&2
 fi
 
@@ -632,8 +634,8 @@ FLEET_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero
 } > "$CACHE/PR_FILES.md"
 rm -f "$SUBFILES"
 # Per-path changed lines and earlier published findings, as in the workflow.
-git -C "$CACHE" diff --numstat origin/base...HEAD \
-  | awk -F'\t' '{a=($1=="-")?0:$1; d=($2=="-")?0:$2; printf "%d\t%s\n", a+d, $3}' > "$CACHE/PR_NUMSTAT.txt"
+git -C "$CACHE" diff -z --numstat origin/base...HEAD \
+  | python3 "$HERE/scripts/numstat.py" > "$CACHE/PR_NUMSTAT.txt"
 GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
   python3 "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
   > "$CACHE/PR_PRIOR.json" 2>/dev/null || echo '[]' > "$CACHE/PR_PRIOR.json"
@@ -891,7 +893,7 @@ GATE_PROMPT=$(cat "$HERE/scripts/disclosure_gate.md"; echo
     --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
     --disallowedTools "Write,Edit,$DENY" --output-format json < /dev/null 2>/dev/null ) \
   | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result") or "")' > "$VERDICT" 2>/dev/null \
-  || echo "!! the disclosure gate gave no verdict; routing on the review's own markers" >&2
+  || echo "!! the disclosure gate gave no verdict, so the review counts as private" >&2
 if python3 "$HERE/scripts/disclosure.py" --verdict "$VERDICT" "$OUT" | grep -qx 'route=private'; then
   echo "!! this review is for the private disclosure repository. Do not post it in public:" >&2
   python3 "$HERE/scripts/disclosure.py" --summary --verdict "$VERDICT" "$OUT" >&2

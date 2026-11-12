@@ -2,7 +2,7 @@
 """Rewrite references to pull requests and issues so GitHub does not turn them
 into cross-reference events on upstream or any other repository.
 
-    python3 scripts/neutralise.py FILE [UPSTREAM]
+    python3 scripts/neutralise.py FILE [UPSTREAM] [--verify REPO]
 
 Rewrites FILE in place and prints how many references it rewrote. UPSTREAM
 defaults to $UPSTREAM, then monero-project/monero.
@@ -16,10 +16,21 @@ with or without the scheme and `www.`, so this does too. Everything becomes
 
 Outside code, it also formats @mentions as code, shows links outside
 github.com as plain text, and leaves out images hosted elsewhere.
+
+What counts as code is a guess at GitHub's Markdown parser, so --verify
+renders the result with GitHub's own (`gh api markdown`, in REPO's context;
+rendering notifies nobody). If anything is still live -- a mention, an
+off-site link or image, a reference to another repository -- the original is
+rewritten again with nothing exempt as code, and checked again. Still live,
+or no render, exits 2 and leaves FILE as it was.
 """
+import json
 import os
 import re
+import subprocess
 import sys
+import time
+from urllib.parse import urlparse
 
 
 def neutralise(text, upstream):
@@ -45,8 +56,98 @@ def neutralise(text, upstream):
 
 
 LINK_HOSTS = ("github.com", "www.github.com")
-CODE = re.compile(r"(^```.*?^```[^\n]*$|^~~~.*?^~~~[^\n]*$|(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\2(?!`))",
-                  re.MULTILINE | re.DOTALL)
+# Fences as GitHub reads them (CommonMark): up to three spaces of indent; a
+# backtick fence's info string has no backtick; the closer is the same
+# character, at least as long, with nothing after it. An unclosed fence is
+# treated as prose, so a misread errs toward defanging. An HTML block opens
+# as CommonMark's types 1-7 do and runs to a blank line, or past its closer
+# for comments and pre/script/style/textarea; GitHub reads no fence or
+# backtick inside one as code.
+HTML_OPEN = re.compile(r"^ {0,3}<(?:(!--)|(\?)|(!\[CDATA\[)|(!)[A-Za-z]|(pre|script|style|textarea)(?=[\s>]|$))",
+                       re.IGNORECASE)
+BLOCK_TAGS = (
+    "address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|"
+    "details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|"
+    "h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav|"
+    "noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th|"
+    "thead|title|tr|track|ul")
+HTML_BLOCK6 = re.compile(r"^ {0,3}</?(?:" + BLOCK_TAGS + r")(?=[\s>]|/>|$)", re.IGNORECASE)
+# Type 7: one complete open or closing tag alone on its line. It cannot
+# interrupt a paragraph.
+HTML_BLOCK7 = re.compile(
+    r"^ {0,3}(?:<[A-Za-z][A-Za-z0-9-]*"
+    r"(?:\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^\s\"'=<>`]+|'[^']*'|\"[^\"]*\"))?)*\s*/?>"
+    r"|</[A-Za-z][A-Za-z0-9-]*\s*>)\s*$")
+RAW_CLOSE = ("</pre>", "</script>", "</style>", "</textarea>")
+FENCE_OPEN = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+FENCE_CLOSE = re.compile(r"^ {0,3}(`{3,}|~{3,})[ \t]*$")
+INLINE = re.compile(r"(?<![\\`])(`+)(?!`)[^\n]*?(?<!`)\1(?!`)")
+
+
+def blocks(text):
+    """([(start, end)] of closed fenced code blocks, [(start, end)] of HTML
+    blocks), in one pass in document order."""
+    lines = text.splitlines(keepends=True)
+    offs, pos = [], 0
+    for line in lines:
+        offs.append(pos)
+        pos += len(line)
+    offs.append(pos)
+    fenced, html, i = [], [], 0
+    para = False  # inside a paragraph, which a type 7 block cannot interrupt
+    while i < len(lines):
+        line = lines[i].rstrip("\r\n")
+        m = FENCE_OPEN.match(line)
+        if m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            fence = m.group(1)
+            para = False
+            for j in range(i + 1, len(lines)):
+                c = FENCE_CLOSE.match(lines[j].rstrip("\r\n"))
+                if c and c.group(1)[0] == fence[0] and len(c.group(1)) >= len(fence):
+                    fenced.append((offs[i], offs[j] + len(lines[j].rstrip("\r\n"))))
+                    i = j + 1
+                    break
+            else:
+                i += 1
+            continue
+        h = HTML_OPEN.match(line)
+        if not h and not HTML_BLOCK6.match(line) and (para or not HTML_BLOCK7.match(line)):
+            para = bool(line.strip())
+            i += 1
+            continue
+        para = False
+        comment, pi, cdata, decl, tag = h.groups() if h else (None,) * 5
+        closers = (("-->",) if comment else ("?>",) if pi else ("]]>",) if cdata
+                   else (">",) if decl else RAW_CLOSE if tag else ())
+        start = i
+        if closers:
+            # Types 1-5 end on the line holding the closer.
+            while i < len(lines) and not any(c in lines[i].lower() for c in closers):
+                i += 1
+            i = min(i + 1, len(lines))
+        else:
+            # Types 6 and 7 end before a blank line.
+            while i < len(lines) and lines[i].strip():
+                i += 1
+        html.append((offs[start], offs[i]))
+    return fenced, html
+
+
+def code_spans(text):
+    """(start, end) of fenced blocks and inline code, in order. Inside an HTML
+    block GitHub reads backticks literally, so no inline code there."""
+    fenced, html = blocks(text)
+    spans, pos = [], 0
+    for start, end in fenced + [(len(text), len(text))]:
+        for m in INLINE.finditer(text, pos, start):
+            if not any(s < m.end() and m.start() < e for s, e in html):
+                spans.append((m.start(), m.end()))
+        if start < end:
+            spans.append((start, end))
+        pos = end
+    return spans
+
+
 MENTION = re.compile(r"(?<![A-Za-z0-9/.@-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:/[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9-])")
 IMAGE = re.compile(r"!\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
 MDLINK = re.compile(r"(?<!!)\[([^\]]*)\]\(\s*<?([^)\s>]+)>?[^)]*\)")
@@ -93,23 +194,128 @@ def defang(text):
                             else f"`@{m.group(1)}`"), seg)
         return seg
 
-    for m in CODE.finditer(text):
-        out.append(prose(text[pos:m.start()]))
-        out.append(m.group(0))
-        pos = m.end()
+    for start, end in code_spans(text):
+        out.append(prose(text[pos:start]))
+        out.append(text[start:end])
+        pos = end
     out.append(prose(text[pos:]))
     return "".join(out), count
 
 
+ZWSP = "\u200b"
+URL_TEXT = re.compile(r"(?i)\b(https?)://([^/\s?#<>()\[\]`'\"]+)|\bwww\.([^/\s?#<>()\[\]`'\"]+)")
+# Any tag carrying a URL, an autolink, and a link reference
+# definition: each still makes a link once its URL is broken.
+URL_TAG = re.compile(r"<[A-Za-z][^>]*\b(?:href|src|srcset|poster|action|formaction|background)\s*=[^>]*>",
+                     re.IGNORECASE)
+ANY_AUTOLINK = re.compile(r"<((?:https?|ftp|mailto):[^<>\s]*)>", re.IGNORECASE)
+REF_DEF = re.compile(r"^( {0,3})(\[[^\]\n]+\]:[ \t]*<?([^\s>]+))", re.MULTILINE)
+
+
+def strict(text):
+    """Defang with nothing exempt as code, in a form no context undoes: a
+    zero-width space after `@` and inside off-site URLs, no <a> or <img>.
+    (text, count)"""
+    count = 0
+
+    def url(m):
+        nonlocal count
+        host = (m.group(2) or "www." + (m.group(3) or "")).lower()
+        if host in LINK_HOSTS:
+            return m.group(0)
+        count += 1
+        return (f"{m.group(1)}:{ZWSP}//{m.group(2)}" if m.group(1)
+                else f"www{ZWSP}.{m.group(3)}")
+
+    def text_of(f):
+        def g(m):
+            nonlocal count
+            count += 1
+            return f(m)
+        return g
+
+    text, n = HTML_TAG.subn("", text)
+    count += n
+    text, n = URL_TAG.subn("", text)
+    count += n
+    text = ANY_AUTOLINK.sub(lambda m: m.group(0) if not _offsite(m.group(1)) else text_of(
+        lambda m: m.group(1))(m), text)
+    text = REF_DEF.sub(lambda m: m.group(0) if not _offsite(m.group(3)) else text_of(
+        lambda m: m.group(1) + "\\" + m.group(2))(m), text)
+    text = IMAGE.sub(lambda m: m.group(0) if not _offsite(m.group(2)) else text_of(
+        lambda m: f"[image: {m.group(1)}]" if m.group(1) else "")(m), text)
+    text = MDLINK.sub(lambda m: m.group(0) if not _offsite(m.group(2)) else text_of(
+        lambda m: f"{m.group(1)} ({m.group(2)})")(m), text)
+    text = URL_TEXT.sub(url, text)
+    text, n = re.subn(r"@(?=[A-Za-z0-9])", "@" + ZWSP, text)
+    return text, count + n
+
+
+SAFE_HOST = re.compile(r"(^|\.)(github\.com|githubusercontent\.com)$")
+ATTR = re.compile(r"\b(href|src|data-canonical-src|srcset|data-url)=\"([^\"]*)\"", re.IGNORECASE)
+
+
+def live(html, repo):
+    """What in GitHub's rendering of the body would notify or leave GitHub."""
+    found = []
+    for m in re.finditer(r'class="[^"]*\b(user-mention|team-mention)\b[^"]*"[^>]*>([^<]*)', html):
+        found.append(f"{m.group(1)} {m.group(2)}")
+    for m in ATTR.finditer(html):
+        for url in m.group(2).split(","):
+            url = url.strip().split(" ")[0]
+            u = urlparse(url)
+            if u.scheme in ("", "mailto") and not u.netloc:
+                continue
+            if not SAFE_HOST.search((u.hostname or "").lower()):
+                found.append(f"off-site {m.group(1)} {url}")
+            elif re.match(r"(?i)/([^/]+/[^/]+)/(issues|pull)/\d+", u.path or "") and \
+                    u.hostname.lower() in LINK_HOSTS and \
+                    not u.path.lower().startswith(f"/{repo.lower()}/"):
+                found.append(f"reference {url}")
+    return found
+
+
+def render(text, repo):
+    for wait in (0, 10, 60):
+        time.sleep(wait)
+        p = subprocess.run(["gh", "api", "-X", "POST", "markdown", "--input", "-"],
+                           input=json.dumps({"text": text, "mode": "gfm", "context": repo}),
+                           capture_output=True, text=True, timeout=120)
+        if not p.returncode:
+            return p.stdout
+    raise RuntimeError("render failed: " + p.stderr.strip()[:200])
+
+
 def main():
-    path = sys.argv[1]
-    upstream = (sys.argv[2] if len(sys.argv) > 2
+    args = sys.argv[1:]
+    repo = None
+    if "--verify" in args:
+        i = args.index("--verify")
+        repo = args[i + 1]
+        del args[i:i + 2]
+    path = args[0]
+    upstream = (args[1] if len(args) > 1
                 else os.environ.get("UPSTREAM", "monero-project/monero"))
     with open(path, encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
-    text, count = neutralise(text, upstream)
+        original = fh.read()
+    text, count = neutralise(original, upstream)
     text, defanged = defang(text)
     count += defanged
+    if repo:
+        try:
+            left = live(render(text, repo), repo)
+            if left:
+                text, count = neutralise(original, upstream)
+                text, n = strict(text)
+                count += n
+                left = live(render(text, repo), repo)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            print(f"neutralise: {e}", file=sys.stderr)
+            sys.exit(2)
+        if left:
+            print("neutralise: still live after the strict rewrite: " + "; ".join(left[:5]),
+                  file=sys.stderr)
+            sys.exit(2)
     if count:
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text)

@@ -6,6 +6,7 @@ disclosure repository.
     python3 scripts/disclosure.py --severe review.md     # findings the gate must judge
     python3 scripts/disclosure.py --strip review.md      # body for the issue
     python3 scripts/disclosure.py --summary [--verdict verdict.json] review.md
+    python3 scripts/disclosure.py --check --verdict verdict.json review.md
 
 Deciding prints two lines and nothing else:
 
@@ -18,6 +19,11 @@ per line, for the disclosure gate's prompt.
 --strip prints the report with every disclosure marker removed, using the same
 pattern that decided the route, so a marker that routed a review private can
 never survive into the issue it files.
+
+--check prints nothing and exits 0 when the gate answered with a JSON
+object, 1 when it did not (a 429, the turn cap), so the workflow asks again
+only then. An answer that does not hold up is final, and routes private: a
+second answer must not get to overrule it.
 
 --summary prints a markdown list of every reason the review is private, each
 naming the exact finding or change that met it, for the top of the private
@@ -63,7 +69,10 @@ THE GATE CANNOT OVERRULE THE REPORT. These are private whatever it says:
 WITH NO VERDICT, the review's own markers and provenance decide, and every
 doubt is private: a `security-fix` or `live-code` marker, or a surviving
 CRITICAL or HIGH finding that does not say it was introduced by this change
-or is newly reachable through it.
+or is newly reachable through it. When --verdict names a file and it holds
+no usable verdict, the gate was asked and failed, so nobody has checked
+whether the pull request is a critical fix: that routes private too
+(`no-verdict`).
 
 Privacy, soundness and funds wording does not route a review on its own any
 more. Those are severities: a privacy break or an inflation bug in live code
@@ -91,11 +100,14 @@ SECTION = re.compile(r"^##(?!#)[ \t]*(.*)", re.MULTILINE)
 # Where a finding's block ends: the next finding, or the next section.
 BLOCK_END = re.compile(r"^##", re.MULTILINE)
 # Anywhere in the finding's block, not only on an exact locator line: a
-# trailing full stop or a bolded path must not send a finding public. The
-# `Where it came from.` block opening on "pre-existing" counts too.
+# trailing full stop or a bolded path must not send a finding public. So does
+# "pre-existing" early in `Where it came from.`, however that label is
+# punctuated or bolded. Deliberately broad: "introduced ... the pre-existing
+# check" also routes private, which costs only visibility, where a missed one
+# publishes a live finding. Not cut at a full stop, which "v0.17" contains.
 PRE_EXISTING = re.compile(
     r"not\s+introduced\s+by\s+this\s+pull\s+request"
-    r"|\*\*Where it came from\.?\*\*\s*\**\s*pre-?existing",
+    r"|Where it came from\W{0,8}[^\n]{0,160}?\bpre-?existing",
     re.IGNORECASE,
 )
 # The two provenances that make a finding this change's own. With no verdict,
@@ -297,8 +309,9 @@ def read_verdict(path):
         return None
 
 
-def reasons_for(text, verdict):
-    """Every private reason, floor first, each finding once."""
+def reasons_for(text, verdict, expected=False):
+    """Every private reason, floor first, each finding once. `expected`:
+    the gate was asked, so a missing or unusable verdict is a failure."""
     found = floor_reasons(text)
     if any(m == "unknown" for m in markers(text)):
         found.append(reason("unknown", "a disclosure marker", "",
@@ -306,6 +319,10 @@ def reasons_for(text, verdict):
     gate = verdict_reasons(text, verdict)
     if gate is None:
         found += fallback_reasons(text)
+        if expected:
+            found.append(reason("no-verdict", "the pull request", "",
+                                "The disclosure gate gave no usable verdict, so nothing "
+                                "checked whether it patches a critical vulnerability."))
         # A critical fix the gate named, in a verdict that did not hold up,
         # still counts.
         claimed = verdict.get("private") if isinstance(verdict, dict) else None
@@ -325,8 +342,8 @@ def reasons_for(text, verdict):
     return unique, gate is not None
 
 
-def route(text, verdict=None):
-    found, _ = reasons_for(text, verdict)
+def route(text, verdict=None, expected=False):
+    found, _ = reasons_for(text, verdict, expected)
     if found:
         return "private", found[0]["rule"]
     return "public", ""
@@ -335,16 +352,17 @@ def route(text, verdict=None):
 WHY = {
     "live-code": "A CRITICAL or HIGH finding is in code that is already live.",
     "critical-fix": "The pull request patches a CRITICAL vulnerability in live code.",
+    "no-verdict": "The disclosure gate failed. Routed private by default.",
     "unknown": "A disclosure marker with a reason this script does not know. Routed private by default.",
 }
 
 
-def summary(text, verdict=None):
+def summary(text, verdict=None, expected=False):
     """Every reason the report is private, with the exact finding or change
     that met it."""
     if not text.strip():
         return "**Why this is private**: the report is empty.\n"
-    found, gated = reasons_for(text, verdict)
+    found, gated = reasons_for(text, verdict, expected)
     lines = ["**Why this is private**", ""]
     for rule in WHY:
         items = [i for i in found if i["rule"] == rule]
@@ -356,7 +374,7 @@ def summary(text, verdict=None):
             lines.append(f"  - {item['finding']}{where}: {item['why']}")
     if not found:
         lines.append("- No reason could be read, so it routes private by default.")
-    if not gated:
+    if not gated and not expected:
         lines += ["", "The disclosure gate gave no usable verdict, so the review's own "
                       "markers and provenance decided."]
     return "\n".join(lines) + "\n"
@@ -387,11 +405,21 @@ def main():
             for head, _ in severe_findings(fh.read()):
                 print(head)
         return
+    if args[:1] == ["--check"]:
+        path = args[1] if len(args) > 1 else "review.md"
+        try:
+            with open(path, errors="replace") as fh:
+                fh.read()
+            ok = isinstance(read_verdict(verdict_path), dict)
+        except Exception:  # noqa: BLE001 -- unreadable is not usable
+            ok = False
+        sys.exit(0 if ok else 1)
     if args[:1] == ["--summary"]:
         path = args[1] if len(args) > 1 else "review.md"
         try:
             with open(path, errors="replace") as fh:
-                sys.stdout.write(summary(fh.read(), read_verdict(verdict_path)))
+                sys.stdout.write(summary(fh.read(), read_verdict(verdict_path),
+                                         verdict_path is not None))
         except Exception:  # noqa: BLE001 -- the summary must not block filing
             sys.stdout.write("**Why this is private**: the report could not be read.\n")
         return
@@ -407,7 +435,8 @@ def main():
             where, why = "private", "none"
         else:
             try:
-                where, why = route(text, read_verdict(verdict_path))
+                where, why = route(text, read_verdict(verdict_path),
+                                   verdict_path is not None)
             except Exception:  # noqa: BLE001 -- any parsing failure fails closed
                 where, why = "private", "unreadable"
     print(f"route={where}")

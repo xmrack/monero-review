@@ -26,6 +26,22 @@ mkdir -p "$WORK/build" "$WORK/cargo" "$WORK/ccache" "$WORK/logs"
 HEAD=$(git -C "$SRC" rev-parse HEAD)
 
 note() { printf '%s\n' "$*" >> "$OUT"; }
+# On every exit: the whole report between markers, with any marker the
+# tests printed stripped, as for the other PR_*.md files.
+fence() {
+  [ -f "$OUT" ] || return 0
+  local raw="$OUT.raw"
+  mv "$OUT" "$raw"
+  {
+    echo "UNTRUSTED: everything between the markers below includes output of"
+    echo "the pull request's own code, which can print anything."
+    echo "----- BEGIN TEST OUTPUT TEXT -----"
+    sed 's/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g' "$raw"
+    echo "----- END TEST OUTPUT TEXT -----"
+  } > "$OUT"
+  rm -f "$raw"
+}
+trap fence EXIT
 tailf() { note '```'; tail -n "${2:-40}" "$1" | cut -c1-300 >> "$OUT"; note '```'; }
 
 : > "$OUT"
