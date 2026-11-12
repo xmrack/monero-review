@@ -95,8 +95,13 @@ against it; the comment says so.
 machine. It is where total request size is bounded — `m_bytes_read` against
 `m_max_content_length` in `handle_buff_in`, set to `MAX_RPC_CONTENT_LENGTH`
 (1048576) for the daemon (`core_rpc_server::init`) and 100× that for
-wallet-rpc — plus `HTTP_MAX_URI_LEN` (9000) and `HTTP_MAX_HEADER_LEN`
-(100000). Request bodies are framed only by `Content-Length`:
+wallet-rpc — plus `HTTP_MAX_HEADER_LEN` (100000). `HTTP_MAX_URI_LEN`
+(9000) does not bound the request line: `handle_buff_in` checks it only in
+the branch where `m_cache.find('\n', 0)` returns npos, i.e. while no `\n`
+has been buffered, and reads are at most 0x2000 bytes (`buffer` is
+`std::array<uint8_t, 0x2000>` in
+`contrib/epee/include/net/abstract_tcp_server2.h`), so request lines up to
+roughly 17 KB are accepted. Request bodies are framed only by `Content-Length`:
 `parse_cached_header` rejects any `Transfer-Encoding` header and repeated
 `Content-Length` headers that disagree, and `get_len_from_content_lenght`
 rejects a comma-listed value whose entries disagree.
