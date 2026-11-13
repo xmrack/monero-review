@@ -316,9 +316,19 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   outbound links; real transactions are fragmented into those slots. Stem is
   downgraded to `local` there; a `fluff_flush` comment says I2P and Tor stand
   in for Dandelion++'s Sybil protection.
-- **Visibility gates.** `matches_category(..., relay_category::legacy)` keeps
-  stem transactions out of ZMQ (`core::add_new_tx`,
-  `core::on_transactions_relayed`). RPC pool queries use
+- **Visibility gates.** `matches_category(..., relay_category::legacy)` gates
+  ZMQ txpool events (`core::add_new_tx`, `core::on_transactions_relayed`), but
+  it does not hide every unbroadcast transaction. `core::add_new_tx` tests
+  `tvc.m_relay`, not the stored entry, and `tx_memory_pool::add_tx` copies
+  the method only under `if (meta.fee > 0 && tx_relay != relay_method::forward) tvc.m_relay = tx_relay;`,
+  so a `forward` arrival leaves it `none`, which `matches_category`
+  (`src/blockchain_db/blockchain_db.cpp`) counts as `legacy`. Tor and I2P
+  arrivals stored as `forward` are therefore published to ZMQ on arrival
+  while still hidden, as is a hidden stem duplicate that arrives again as
+  `forward`. Noise-mode senders produce such arrivals: the noise branch of
+  `send_txs` in `levin_notify.cpp` calls
+  `make_tx_message(std::move(txs), false, false)`, i.e.
+  `dandelionpp_fluff=false`. RPC pool queries use
   `allow_sensitive = !request_has_rpc_origin || !restricted`, and
   `on_getblocktemplate` passes `include_sensitive` only when unrestricted;
   `get_block_template_backlog` and `get_txpool_backlog` default to broadcast
@@ -346,7 +356,9 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   default-level log, or miner-data field without the sensitive gate. (P2Pool
   relies on `get_miner_data` and the ZMQ `json-full-miner_data`,
   `json-full-chain_main` and `json-minimal-txpool_add` topics, with miner data
-  for N+1 before chain data for N.)
+  for N+1 before chain data for N.) Master already has one such leak: the
+  `core::add_new_tx` ZMQ `txpool_add` gate passes `forward` (Tor/I2P)
+  arrivals, because `tvc.m_relay` stays `none` (see Visibility gates).
 - New commands on anonymity zones, block sync over Tor or I2P, or anything
   that makes a hidden service and a client behave differently on the wire.
 - Trusting unverified heights from hidden-network peers more.
