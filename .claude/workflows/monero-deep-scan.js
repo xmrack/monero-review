@@ -534,7 +534,7 @@ const BOUNDED = PROFILE === 'standard'
 // Scale to the change. A two-file diff does not need eight units and three
 // lenses each; the cap the recipe passes is a ceiling, not a target. Medium
 // carries a lower ceiling because its whole premise is a bounded fan-out.
-const UNIT_CEILING = a.maxUnits || (BOUNDED ? 4 : 8)
+const UNIT_CEILING = a.maxUnits || (BOUNDED ? 5 : 8)
 // At deep the size is lines as well as files: counting files alone gave PR
 // 10724 (+1568 lines in 7 files) two units and four researchers, where 11407
 // (+1486 in 35 files) got thirteen. One unit per LINES_PER_UNIT changed lines,
