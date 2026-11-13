@@ -22,7 +22,7 @@ something that reads the same.
 This is the deep pipeline with the expensive parts removed. It runs the same
 `monero-deep-scan` workflow under `profile: "standard"`, which:
 
-- maps the change into at most **4** units and checks the partition against
+- maps the change into at most **5** units and checks the partition against
   the real changed-file list, exactly as the deep pass does;
 - dispatches **one researcher per unit** (two or more for a large unit, sharing its classes), carrying all of that unit's weakness
   classes, instead of one per unit per class;

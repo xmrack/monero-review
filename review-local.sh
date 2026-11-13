@@ -14,7 +14,7 @@
 # TWO TIERS, both the agent fleet, differing in how wide it is thrown:
 #
 #   standard  /monero-standard-review, high effort, 300 turns. The diff is
-#             mapped into at most 4 units, one researcher takes each with all
+#             mapped into at most 5 units, one researcher takes each with all
 #             of its weakness classes, and every candidate faces two verifier
 #             angles whose votes are counted in code. Its own adversary, so
 #             there is no separate refutation pass. This is what every review
