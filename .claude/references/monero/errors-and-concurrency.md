@@ -334,6 +334,19 @@ window.
 the writer thread with a write transaction open (batch or `block_wtxn`), so
 reads on that thread see uncommitted data.
 
+**Waiting for `m_blockchain_lock` while holding an LMDB read transaction can
+deadlock.** The writer holds the lock while the resize spins on that read
+transaction: `Blockchain::prepare_handle_incoming_blocks` takes
+`CRITICAL_REGION_LOCAL1(m_blockchain_lock)` and then calls `m_db->batch_start`,
+which reaches `BlockchainLMDB::check_and_resize_for_batch` → `do_resize` →
+`mdb_txn_safe::wait_no_active_txns`. The shape to look for is a
+`for_blocks_range` or `for_all_*` callback that calls a `Blockchain` method
+taking the lock: `BlockchainLMDB::for_blocks_range` holds `TXN_PREFIX_RDONLY`
+across the callback `f`, and e.g. `Blockchain::get_transactions` takes
+`CRITICAL_REGION_LOCAL(m_blockchain_lock)`. Nested reads on the same thread
+are safe: `mdb_txn_safe`'s constructor skips `creation_gate` when
+`num_active_txns_per_thread != 0`.
+
 ## The wallet side
 
 **`wallet2` is not internally thread-safe.** Its only per-instance mutex,
