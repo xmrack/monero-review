@@ -588,11 +588,19 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
   deciding whether a reorg happens. They enter as `relay_method::block`, so
   `add_tx` skips the fee, extra-size, unlock-time and key-image-conflict
   checks.
-- A Tor or I2P peer never starts a sync, but its claimed height still
-  counts: `process_payload_sync_data` stores `m_remote_blockchain_height`
-  before the non-public early return, and `on_connection_close` recomputes
-  the target over every zone's connections, so a hidden-zone peer can keep
-  the target from falling.
+- A Tor or I2P peer does not start a sync through `CORE_SYNC_DATA`, but
+  its claimed height still counts: `process_payload_sync_data` stores
+  `m_remote_blockchain_height` before the non-public early return, and
+  `on_connection_close` recomputes the target over every zone's
+  connections, so a hidden-zone peer can keep the target from falling.
+  It can also be moved into `state_synchronizing` by another route: when
+  a fluffy block it sends is marked orphaned (`handle_notify_new_fluffy_block`,
+  the `bvc.m_marked_as_orphaned` branch, set by the orphan `else` branch of
+  `Blockchain::handle_alternative_block`), the node sends it
+  `NOTIFY_REQUEST_CHAIN`, and its `handle_response_chain_entry` and
+  `handle_response_get_objects` replies then raise the target through
+  `set_target_blockchain_height` with no zone check. List those calls with
+  `git grep -n 'set_target_blockchain_height' src/cryptonote_protocol`.
 
 ---
 
