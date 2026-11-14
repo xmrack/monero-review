@@ -340,6 +340,20 @@ because its whole purpose is to convince a stranger. `monero-blockchain-import`
 parses `.raw` bootstrap files; its `--dangerous-unverified-import` skips
 verification.
 
+The wallet log runs the other way: it is a sink for secrets at rest. Every
+`tools::scoped_message_writer` line (`success_msg_writer`, `message_writer`,
+`fail_msg_writer`) also goes to the log file through
+`MCLOG_FILE(..., "msgwriter", ...)` in `~scoped_message_writer`
+(`src/common/scoped_message_writer.h`), and the default level enables
+`msgwriter:INFO` (level 0 string in `mlog_get_default_categories`,
+`contrib/epee/src/mlog.cpp`). `async_console_handler::run` also logs every
+command line at DEBUG (`grep -n 'Read command' contrib/epee/include/console_handler.h`).
+Only output written straight to `std::cout` or `printf` stays out of the log,
+as `viewkey`, `spendkey` and `print_seed` do
+(`grep -n "// don't log" src/simplewallet/simplewallet.cpp`). A change that
+prints key material, a seed or a password through a message writer writes it
+to disk.
+
 ## 9. Consensus validation
 
 `src/cryptonote_core/blockchain.cpp`, `tx_pool.cpp`,
