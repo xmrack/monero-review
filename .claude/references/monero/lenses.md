@@ -243,6 +243,13 @@ Ask whether a download is pinned by hash, whether a pin moved and to what,
 whether a build step fetches or runs something new, and whether a CI change
 widens what untrusted pull requests can do with the project's secrets.
 
+`utils/gpg_keys/*.asc` holds contributor public keys, but no build script,
+CMake file, Guix step or CI workflow reads that directory
+(`git grep -n -I gpg_keys -- . ':!utils/gpg_keys'` finds nothing, and
+`contrib/guix/` and `.github/workflows/` never name it). A key change there
+moves no automated trust anchor; review it by checking that the fingerprint
+and key material are unchanged.
+
 
 ## Parallel implementations
 
