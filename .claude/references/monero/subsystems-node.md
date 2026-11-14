@@ -690,8 +690,15 @@ downloader, a libunbound DNSSEC wrapper, the MoneroPulse update check, base58,
 varints, `expect<T>`, a password prompt, and `boost::program_options` wrappers.
 
 **`tools::threadpool`** has two process-wide singletons —
-`getInstanceForCompute()` (hardware concurrency) and `getInstanceForIO()` (8
-threads). Two things to internalise: `submit` **runs a non-leaf task inline on
+`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). The compute
+pool's size is `tools::get_max_concurrency()` read once, when the singleton is
+first used (`threadpool::create` in `src/common/threadpool.cpp`:
+`max = max_threads ? max_threads : tools::get_max_concurrency()`). That is
+hardware concurrency only by default: the daemon's and wallet's
+`--max-concurrency` lower it through `tools::set_max_concurrency`
+(`src/common/util.cpp`), which clamps to `hardware_concurrency()`; callers are
+in `src/daemon/main.cpp` and `src/wallet/wallet_args.cpp`. Changing the value
+after the singleton exists has no effect unless `recycle()` runs. Two things to internalise: `submit` **runs a non-leaf task inline on
 the caller** when depth > 0 or every thread is busy with work still queued
 (`threadpool::submit`, `src/common/threadpool.cpp`); a leaf task is always
 queued, at the front (`queue.push_front`). And `waiter::wait()` **drains
