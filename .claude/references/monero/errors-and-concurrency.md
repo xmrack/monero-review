@@ -326,9 +326,21 @@ and `block_wtxn_abort`. The resize barrier is **lock-free spins** on
 `while (num_active_txns > 0);` — sequenced `prevent_new_txns()` →
 `wait_no_active_txns()` → `mdb_env_set_mapsize` → `allow_new_txns()`. An early
 return or throw between prevent and allow leaves the gate set, and every later
-non-nested transaction spins forever. Both existing resize paths
+transaction spins forever, nested reads included. Both existing resize paths
 (`BlockchainLMDB::do_resize` and `lmdb_resized`) contain `throw0` calls in that
 window.
+
+**Nested reads pass the gate too.** `db_lmdb.h` declares the constructor as
+`mdb_txn_safe(const bool check=true)`, and with `check` set it runs
+`while (creation_gate.test_and_set());`. The `TXN_PREFIX_RDONLY` macro and the
+no-argument `BlockchainLMDB::block_rtxn_start()` both declare
+`mdb_txn_safe auto_txn;` (so `check=true`) *before* calling
+`block_rtxn_start(&m_txn, &m_cursors)` and finding that the thread already
+holds a read txn (`db_lmdb.cpp`). So a thread inside a `db_rtxn_guard` that
+reads again while a resize is pending spins at the gate, and because its own
+open txn keeps `num_active_txns` above zero, `wait_no_active_txns()` never
+returns either: the two deadlock. Only `mdb_txn_safe(false)` sites skip the
+gate.
 
 **`block_rtxn_start()` silently returns the write transaction** when called on
 the writer thread with a write transaction open (batch or `block_wtxn`), so
