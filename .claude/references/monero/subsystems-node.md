@@ -576,15 +576,26 @@ public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 (`is_filtered_command`).
 
 **Peer lists.** White (verified), gray (heard about), anchor (eclipse
-resistance). An address enters the white list only after a successful outbound
-handshake or a successful **back-ping** proving the advertised port accepts
-connections and returns the same peer id. `last_seen` from a remote peer is
-never trusted — `sanitize_peerlist` zeroes it.
+resistance). A peer-learned address enters the white list only after a
+successful outbound handshake or a successful **back-ping** proving the
+advertised port accepts connections and returns the same peer id. The
+exceptions are operator-supplied and persisted addresses: `--add-peer` entries
+go straight into the white list at startup with no handshake or back-ping
+(`node_server::init`: `for(const auto& p: m_command_line_peers) ...
+m_peerlist.append_with_peer_white(p);` — check with
+`git grep -n m_command_line_peers -- src/p2p/net_node.inl`), and white entries
+are reloaded from `p2pstate.bin`. `last_seen` from a remote peer is never
+trusted — `sanitize_peerlist` zeroes it.
 
 **Lock order inside the node:** `m_host_fails_score_lock` →
-`m_blocked_hosts_lock` → `m_peerlist_lock`. No comment states it; it is the
-order the code takes them (`add_host_fail` → `block_host`;
-`handle_remote_peerlist` → `merge_peerlist`).
+`m_blocked_hosts_lock` → `m_peerlist_lock` → `m_conn_fails_cache_lock`. No
+comment states it; it is the order the code takes them (`add_host_fail` →
+`block_host`; `handle_remote_peerlist` holds `m_blocked_hosts_lock` and calls
+`peerlist_manager::merge_peerlist`, which holds `m_peerlist_lock` around the
+filter call `f(be)` in `src/p2p/net_peerlist.h`; the filter lambda in
+`handle_remote_peerlist` calls `node_server::is_addr_recently_failed`, which
+takes `CRITICAL_REGION_LOCAL(m_conn_fails_cache_lock)`). Any new path that
+takes `m_conn_fails_cache_lock` before a peerlist call inverts that order.
 
 **Traps.**
 
