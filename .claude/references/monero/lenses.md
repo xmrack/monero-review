@@ -260,7 +260,21 @@ For each defect and each guard the diff adds, check the siblings:
   `on_get_outs_bin`, `get_blocks.bin`) and the ZMQ `DaemonHandler::handle`
   overloads, each with its own restricted check.
 - **Wallet front ends:** `simplewallet`, `wallet_rpc_server` and the wallet API
-  in `src/wallet/api/` all validate user input before calling `wallet2`.
+  in `src/wallet/api/` each validate user input before calling `wallet2`, but
+  not with the same guards. For multisig setup, `simplewallet`
+  (`prepare_multisig_main`, `make_multisig_main`) refuses hardware
+  (`key_on_device`) and watch-only wallets; `wallet_rpc_server`
+  (`on_prepare_multisig`, `on_make_multisig`) refuses watch-only but not
+  hardware wallets; `WalletImpl::makeMultisig` and
+  `WalletImpl::getMultisigInfo` in `src/wallet/api/wallet.cpp` refuse
+  neither. The backstop for watch-only and Trezor wallets is in `wallet2`'s
+  path: `multisig::get_multisig_blinded_secret_key` in
+  `src/multisig/multisig.cpp` throws on a null secret key
+  (`CHECK_AND_ASSERT_THROW_MES(key != crypto::null_skey, ...)`). Ledger is
+  stopped there too, but only because the view key it hands the wallet is a
+  null placeholder (`device_ledger::get_secret_keys` in
+  `src/device/device_ledger.cpp`; compare `device_trezor::get_secret_keys` in
+  `src/device_trezor/device_trezor.cpp`).
 - **Wallet scanning:** refresh (`process_new_transaction`), `scan_tx`, the
   cold-signing import paths, and, on the FCMP++ branch, legacy and Carrot
   scanning.
