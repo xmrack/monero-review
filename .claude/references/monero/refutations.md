@@ -450,6 +450,21 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## Any peer can already test pool membership
+
+A finding that some P2P message lets a peer learn whether a node's tx pool
+holds transaction T, or that T originated there, adds nothing unless it beats
+a probe every peer already has. Send a copy of T with one signature byte
+changed: a new txid, the same key images. `tx_memory_pool::add_tx` in
+`src/cryptonote_core/tx_pool.cpp` runs the `have_tx_keyimges_as_spent` check
+before `check_tx_inputs`, so a node holding T sets `tvc.m_double_spend` and
+`tvc.m_no_drop_offense` and keeps the connection; a node without T fails the
+signature check, and `handle_notify_new_transactions` in
+`src/cryptonote_protocol/cryptonote_protocol_handler.inl` drops the
+connection because `handle_incoming_tx` failed without `m_no_drop_offense`.
+The answer is the same for local and relayed transactions. A proposed oracle
+has to be cheaper, quieter or more precise than this to be a finding.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you

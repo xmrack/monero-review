@@ -95,10 +95,14 @@ Connection limits: `--in-peers` defaults to -1, which means unlimited inbound
 connections; `--max-connections-per-ip` defaults to 1, with IPv6 grouped by
 /64; there is no rate limit on accepting connections. Transaction relay
 (Dandelion++, anonymity-network queues) is in
-`src/cryptonote_protocol/levin_notify.cpp`. Peers arriving over Tor or I2P
-(`--anonymous-inbound`) may send only handshake, timed sync and
-`NOTIFY_NEW_TRANSACTIONS` (`is_filtered_command` in `net_node.cpp`), and
-`has_too_many_connections` does not apply to them.
+`src/cryptonote_protocol/levin_notify.cpp`. Tor or I2P peers, in
+either direction (`--anonymous-inbound`, or outbound through `--tx-proxy`),
+may send only handshake, timed sync and `NOTIFY_NEW_TRANSACTIONS`
+(`is_filtered_command` in `net_node.cpp`, which tests only
+`address.get_zone() == epee::net_utils::zone::public_` on
+`context.m_remote_address`, with no `m_is_income` test at its callers;
+`git grep -n is_filtered_command -- src`), and
+`has_too_many_connections` does not apply to those arriving inbound.
 
 Historically this is where remote DoS lives: type confusion in Levin
 payloads, allocations driven by peer-supplied sizes, memory exhaustion
