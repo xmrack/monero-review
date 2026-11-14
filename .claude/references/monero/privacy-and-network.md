@@ -321,8 +321,15 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   `core::on_transactions_relayed`). RPC pool queries use
   `allow_sensitive = !request_has_rpc_origin || !restricted`, and
   `on_getblocktemplate` passes `include_sensitive` only when unrestricted;
-  `get_block_template_backlog` and `get_txpool_backlog` default to broadcast
-  transactions.
+  `get_txpool_backlog` defaults to broadcast transactions.
+  `tx_memory_pool::get_block_template_backlog` has no default for
+  `include_sensitive` (its declaration in `src/cryptonote_core/tx_pool.h`);
+  every caller passes it. `Blockchain::create_block_template`
+  (`src/cryptonote_core/blockchain.h`) and the `prev_block` overload of
+  `core::get_block_template` default it to `true`, so the internal miner's
+  templates include sensitive transactions; only `get_miner_data` and
+  `send_miner_notifications` pass `false` explicitly
+  (`git grep -n 'include_sensitive' -- src/cryptonote_core/blockchain.cpp`).
 - **No disconnect on relayed offences.** `tx_memory_pool::add_tx` sets
   `m_no_drop_offense` for double spends, low fees, oversize extra and nonzero
   unlock time, so `handle_notify_new_transactions` keeps the connection,
