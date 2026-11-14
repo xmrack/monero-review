@@ -381,7 +381,10 @@ for public and private zones.
   full and fewer than `P2P_DEFAULT_SYNC_SEARCH_CONNECTIONS_COUNT` peers are
   syncing, it drops one synced non-anchor outbound peer, in every zone.
 - **Promotion.** `gray_peerlist_housekeeping` tests one random gray entry a
-  minute. An inbound peer that advertises `my_port` and answers a ping-back
+  minute, skipping any zone that still `needs_new_sync_connections`. One
+  failed connect or handshake (`check_connection_and_handshake_with_peer`
+  returns false) removes the entry via `remove_from_peer_gray`; only success
+  promotes it to white (`src/p2p/net_node.inl`). An inbound peer that advertises `my_port` and answers a ping-back
   (`try_ping` in `handle_handshake`) enters the white list.
 - **Sharing.** `get_peerlist_head` with `anonymize` shuffles the whole white
   list, keeps `P2P_DEFAULT_PEERS_IN_HANDSHAKE`, and zeroes `last_seen`;
