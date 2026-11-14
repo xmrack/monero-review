@@ -450,6 +450,22 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## `monero-wallet-cli` writes no log at the default level
+
+A finding that the wallet CLI leaks something to its log file -- `msgwriter`
+output, a typed command line -- has to show the log is written at all. At the
+default level it is not. In `wallet_args::main` (`src/wallet/wallet_args.cpp`),
+when `--log-level` is left at its default and `log_to_console` is false, the
+branch `else if (!log_to_console) { mlog_set_categories(""); }` clears every
+category `mlog_configure` set, `msgwriter:INFO` included. `log_to_console`
+is a default argument of `wallet_args::main` in `src/wallet/wallet_args.h`,
+and the wallet CLI leaves it false.
+
+So such a leak needs the user to have raised the level, with `--log-level` or
+the `set_log` command, and the finding must say so. Re-read that branch of
+`wallet_args::main` on the head you are reviewing; a change that drops or
+narrows the `mlog_set_categories("")` call reopens this.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
