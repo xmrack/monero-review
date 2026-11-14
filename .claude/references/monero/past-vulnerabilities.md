@@ -156,9 +156,15 @@ stack with `cnt` from a block's `tx_hashes`; a large count overflowed it.
 
 **Fix today.** `tree_hash` in `src/crypto/tree-hash.c` uses `calloc`.
 `tree_hash_cnt` asserts `count <= 0x10000000`, but asserts vanish in
-release. The real bound is the `block` serializer in
-`src/cryptonote_basic/cryptonote_basic.h`, which fails when
-`tx_hashes.size() > CRYPTONOTE_MAX_TX_PER_BLOCK` (`0x10000000`).
+release. The `block` serializer (`BEGIN_SERIALIZE_OBJECT` in
+`src/cryptonote_basic/cryptonote_basic.h`) fails only when
+`tx_hashes.size() > CRYPTONOTE_MAX_TX_PER_BLOCK` (`0x10000000`), so it
+admits 2^28 hashes; `get_tx_tree_hash(const block&)`
+(`cryptonote_format_utils.cpp`) pushes the miner tx hash first, so
+`tree_hash` can be handed 2^28 + 1 leaves, one past `tree_hash_cnt`'s
+bound. What actually keeps such counts out is the transport limits:
+Levin's `LEVIN_DEFAULT_MAX_PACKET_SIZE` and RPC's `MAX_RPC_CONTENT_LENGTH`.
+Check the constant with `git grep -n 'define CRYPTONOTE_MAX_TX_PER_BLOCK' -- src`.
 
 **A PR reintroduces this if it** adds a VLA or `alloca` sized by a decoded
 count; raises `CRYPTONOTE_MAX_TX_PER_BLOCK` past what `tree_hash_cnt`
