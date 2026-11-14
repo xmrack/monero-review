@@ -231,8 +231,16 @@ fingerprint or a CA-verified mode authenticates the node.
 `--trusted-daemon` (assumed by `make_basic` when the address is `localhost`,
 `*.localhost` or a loopback literal, via `tools::is_local_address`) enables
 mining, `rescan_spent`, spent checks on key-image import and
-histogram-based output selection. It does not make a remote daemon's data safe
-to parse.
+histogram-based output selection. `wallet2::scan_tx` re-processes recent
+transactions the user did not ask for only with a trusted daemon; otherwise it
+throws `error::wont_reprocess_recent_txs_via_untrusted_daemon`
+(`THROW_WALLET_EXCEPTION_IF(!is_trusted_daemon() && has_nonrequested_tx_at_height_or_above_requested(...), ...)`).
+Most daemon error strings reach the user verbatim only from a trusted daemon,
+via `get_rpc_status(m_trusted_daemon, ...)` (e.g. in
+`get_daemon_blockchain_height`); the exceptions are listed in
+`subsystems-wallet.md`. Find every gate with
+`git grep -n 'm_trusted_daemon' src/wallet/wallet2.cpp`. It does not make a
+remote daemon's data safe to parse.
 
 ## 5. On-chain data → the recipient's wallet
 
