@@ -231,8 +231,16 @@ fingerprint or a CA-verified mode authenticates the node.
 `--trusted-daemon` (assumed by `make_basic` when the address is `localhost`,
 `*.localhost` or a loopback literal, via `tools::is_local_address`) enables
 mining, `rescan_spent`, spent checks on key-image import and
-histogram-based output selection. It does not make a remote daemon's data safe
-to parse.
+histogram-based output selection. It also gates requests that reveal txids:
+`wallet2::scan_tx` will not re-request transactions the user did not name
+unless the daemon is trusted (it throws
+`error::wont_reprocess_recent_txs_via_untrusted_daemon`), and
+`wallet2::refresh` uses a chain-history granularity of 1 instead of
+`FIRST_REFRESH_GRANULARITY` only on a trusted daemon
+(`(m_first_refresh_done || trusted_daemon) ? 1 : FIRST_REFRESH_GRANULARITY`).
+These are the precedent for any wallet2 daemon request that is trusted-only;
+`git grep -n 'is_trusted_daemon()' -- src/wallet/wallet2.cpp` lists the
+rest. It does not make a remote daemon's data safe to parse.
 
 ## 5. On-chain data → the recipient's wallet
 
