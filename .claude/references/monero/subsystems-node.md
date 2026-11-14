@@ -690,8 +690,13 @@ downloader, a libunbound DNSSEC wrapper, the MoneroPulse update check, base58,
 varints, `expect<T>`, a password prompt, and `boost::program_options` wrappers.
 
 **`tools::threadpool`** has two process-wide singletons —
-`getInstanceForCompute()` (hardware concurrency) and `getInstanceForIO()` (8
-threads). Two things to internalise: `submit` **runs a non-leaf task inline on
+`getInstanceForCompute()` and `getInstanceForIO()` (8 threads). The compute
+pool is a default-constructed `static threadpool instance;`, so its first use
+sizes it from `tools::get_max_concurrency()` (`threadpool::create`:
+`max = max_threads ? max_threads : tools::get_max_concurrency();`). That value
+starts at `hardware_concurrency()`; `--max-concurrency` on monerod and the
+wallets can lower it, and `tools::set_max_concurrency` (`src/common/util.cpp`)
+caps it at `hardware_concurrency()`. Two things to internalise: `submit` **runs a non-leaf task inline on
 the caller** when depth > 0 or every thread is busy with work still queued
 (`threadpool::submit`, `src/common/threadpool.cpp`); a leaf task is always
 queued, at the front (`queue.push_front`). And `waiter::wait()` **drains
