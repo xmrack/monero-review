@@ -450,6 +450,25 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## A watch-only or hardware wallet never starts multisig
+
+A watch-only, Trezor or Ledger wallet holds a placeholder in place of a real
+secret key, which looks like a multisig share derived from a null key. None is
+derived: `get_multisig_blinded_secret_key` in `src/multisig/multisig.cpp`
+throws on a null key
+(`CHECK_AND_ASSERT_THROW_MES(key != crypto::null_skey, ...)`), and `wallet2::get_uninitialized_multisig_account` in
+`src/wallet/wallet2.cpp` calls it on both the spend key and the view key. So
+`make_multisig` and `get_multisig_first_kex_msg` throw for every one of those
+wallet types before any KEX message exists. For the devices, the placeholder
+comes from `get_secret_keys` in `src/device_trezor/device_trezor.cpp` and
+`src/device/device_ledger.cpp`.
+
+A finding that needs a watch-only or hardware wallet to produce or accept a
+KEX message is refuted here. Re-check on the head you are reviewing that
+multisig setup still goes through `get_uninitialized_multisig_account`
+(`grep -rn get_multisig_blinded_secret_key src`); a new path to an
+uninitialized multisig account that skips it reopens this.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
