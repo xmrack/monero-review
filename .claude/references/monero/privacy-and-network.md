@@ -369,7 +369,12 @@ for public and private zones.
   (`has_too_many_connections`, `is_same_p2p_connection_limit_host`).
 - **Lists** (`peerlist_manager`, `net_peerlist.h`): white, one entry per host
   (`evict_host_from_peerlist`); gray, keyed by address and port; anchor,
-  outbound peers by `first_seen`.
+  outbound peers by `first_seen`. Each anchor pass of
+  `make_expected_connections_count` (`net_node.inl`) first calls
+  `get_and_empty_anchor_peerlist` (`net_peerlist.h`, which clears
+  `m_peers_anchor`) and only then dials through
+  `make_new_connection_from_anchor_peerlist`, which returns on the first
+  successful handshake; saved anchors not dialed in that pass are gone.
 - **Filling.** `connections_maker` tries anchors, then white until
   `P2P_DEFAULT_WHITELIST_CONNECTIONS_PERCENT` of slots (all while a pruning
   stripe is needed), then gray; seeds (`get_ip_seed_nodes`,
