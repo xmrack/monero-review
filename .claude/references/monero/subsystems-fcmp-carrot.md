@@ -136,8 +136,10 @@ header or reads `get_tree_root_at_blk_idx` outside `db_lmdb.cpp`.
   outputs whose last locked block is `n + 9`.
 - Coinbase outputs follow their `unlock_time` (height + 60) and never count as
   custom-timelocked (`is_custom_timelocked`).
-- `get_last_locked_block_index` turns old time-based `unlock_time` values into
-  heights with fixed mainnet v15 constants (`hf_v15_time`, `hf_v15_height`).
+- `get_last_locked_block_index_for_tree` turns old time-based `unlock_time`
+  values into heights anchored on fixed mainnet v16 constants (`HF_V16_HEIGHT`,
+  `HF_V16_TIMESTAMP`); no `hf_v15_*` constants exist (`cryptonote_format_utils.cpp`;
+  `git grep -n 'HF_V16_HEIGHT =\|hf_v15' -- src/cryptonote_basic`).
   These are consensus constants now.
 - An output that cannot become a leaf is **skipped, not rejected**.
   `CurveTrees::outputs_to_leaves` catches any throw from `output_to_tuple` (bad
