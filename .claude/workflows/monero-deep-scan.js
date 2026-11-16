@@ -1989,7 +1989,14 @@ const judged = await parallel(candidates.map((c) => () =>
   const severityVotes = agreeing.map((v) => v.severity || c.severity)
   const settled = severityVotes.length
     ? settleSeverity(severityVotes, agreeing.map((v) => v.consequenceClass)) : c.severity
-  const severity = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
+  const calibrated = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
+  // Live code files privately at HIGH and above, so a finding any confirming
+  // verifier calls pre-existing keeps its worst rating and the half-vote
+  // privacy floor: routing fails private, not public.
+  const worst = severityVotes.reduce((a, b) => worseSeverity(a, b), calibrated)
+  const severity = provVotes.includes('pre-existing')
+    ? worseSeverity(worst, protocolVotes > 0 && protocolVotes * 2 >= agreeing.length ? 'HIGH' : worst)
+    : calibrated
   // Except at CRITICAL and HIGH, where any confirming verifier's
   // `pre-existing` settles it: that label is what files the review privately,
   // and a severe finding wrongly called this change's own is published.
