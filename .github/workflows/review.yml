@@ -2154,6 +2154,13 @@ jobs:
           find . -path ./.git -prune -o \
             \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude \) \
             -exec rm -rf {} + 2>/dev/null || true
+          d=$PWD
+          while [ "$d" != / ]; do
+            d=$(dirname "$d")
+            find "$d" -maxdepth 1 \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json \) \
+              -exec rm -rf {} + 2>/dev/null || true
+            [ "$d" = "$HOME" ] || rm -rf "$d/.claude" 2>/dev/null || true
+          done
           cp -r "$RUNNER_TEMP/harness-claude" .claude 2>/dev/null && chmod -R u+w .claude || true
           if [ -s review.md ] && [ -f "$gate" ] && [ -n "${CLAUDE_CLI:-}" ] && [ -d .claude ]; then
             prompt=$(cat "$gate"; echo; python3 -I "$RUNNER_TEMP"/harness-scripts/disclosure.py --severe review.md \

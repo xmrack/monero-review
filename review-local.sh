@@ -893,6 +893,13 @@ echo "==> asking the disclosure gate"
 find "$CACHE" -path "$CACHE/.git" -prune -o \
   \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude \) \
   -exec rm -rf {} + 2>/dev/null || true
+d=$CACHE
+while [ "$d" != / ]; do
+  d=$(dirname "$d")
+  find "$d" -maxdepth 1 \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json \) \
+    -newer "$EXEC_DIR" -exec rm -rf {} + 2>/dev/null || true
+  [ "$d" = "$HOME" ] || [ ! "$d/.claude" -nt "$EXEC_DIR" ] || rm -rf "$d/.claude"
+done
 cp -r "$HERE/.claude" "$CACHE/.claude"
 GATE_PROMPT=$(cat "$HERE/scripts/disclosure_gate.md"; echo
   python3 -I "$HERE/scripts/disclosure.py" --severe "$CACHE/review.md" | sed 's/^/- /'; echo "(end of list)")
