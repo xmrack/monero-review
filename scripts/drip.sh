@@ -42,7 +42,7 @@ picked=$(
   REVIEWS_DIR="$HERE/reviews" \
   MAX_AGE_DAYS=${MAX_AGE_DAYS:-1} \
   BATCH=1 \
-  python3 "$HERE/scripts/select_prs.py" | sed -n 's/^prs=//p'
+  python3 -I "$HERE/scripts/select_prs.py" | sed -n 's/^prs=//p'
 )
 
 pr=$(printf '%s' "$picked" | tr -cd '0-9')

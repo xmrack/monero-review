@@ -514,7 +514,7 @@ fi
 # also clears any rust-deps/ a previous run left: this checkout is reused
 # across pull requests, and a stale pin read as this PR's would be a wrong
 # citation with nothing to reveal it.
-python3 "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
+python3 -I "$HERE/scripts/fetch_rust_deps.py" "$CACHE" || true
 # Again for what the dependency fetch unpacked, then confirm the checkout is
 # still at the commit under review.
 tidy_checkout
@@ -583,7 +583,7 @@ fi
 # src/ and contrib/ only, so rust-deps/ below is not indexed and does not
 # slow it down.
 bash "$HERE/scripts/build_index.sh" "$CACHE"
-python3 "$HERE/scripts/callers.py" "$CACHE" origin/base > "$CACHE/PR_CALLERS.md"
+python3 -I "$HERE/scripts/callers.py" "$CACHE" origin/base > "$CACHE/PR_CALLERS.md"
 
 # rtool on PATH for the review, alone in a directory outside the checkout so
 # the model can run it and not rewrite it.
@@ -635,9 +635,9 @@ FLEET_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero
 rm -f "$SUBFILES"
 # Per-path changed lines and earlier published findings, as in the workflow.
 git -C "$CACHE" diff -z --numstat origin/base...HEAD \
-  | python3 "$HERE/scripts/numstat.py" > "$CACHE/PR_NUMSTAT.txt"
+  | python3 -I "$HERE/scripts/numstat.py" > "$CACHE/PR_NUMSTAT.txt"
 GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
-  python3 "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
+  python3 -I "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
   > "$CACHE/PR_PRIOR.json" 2>/dev/null || echo '[]' > "$CACHE/PR_PRIOR.json"
 
 # One model on both tiers -- deep buys more agents, not a better reader. EFFORT
@@ -684,8 +684,10 @@ rm -f "$CACHE/review.md"
 EXEC_DIR=$(mktemp -d)
 EXEC="$EXEC_DIR/exec.jsonl"
 DENY="Read(//proc/**),Edit(//proc/**),Edit(.git/**),Edit(**/.git/**),Write(.git/**),Write(**/.git/**)"
+DENY="$DENY,Edit(.claude/**),Write(.claude/**),Edit(**/CLAUDE*.md),Write(**/CLAUDE*.md),Edit(**/AGENTS*.md),Write(**/AGENTS*.md),Edit(**/.mcp.json),Write(**/.mcp.json)"
 DENY="$DENY,Read(/$EXEC_DIR/**),Edit(/$EXEC_DIR/**),Write(/$EXEC_DIR/**)"
 DENY="$DENY,Read(~/.ssh/**),Read(~/.gnupg/**),Read(~/.config/**),Read(~/.claude/**),Read(~/.aws/**),Read(~/.netrc),Read(~/.git-credentials),Read(~/.npmrc)"
+DENY="$DENY,Read(~/Desktop/**),Read(~/Documents/**),Read(~/Downloads/**),Read(~/.mozilla/**),Read(~/.bitmonero/**),Read(~/Monero/**),Read(~/.local/share/**)"
 # The rules above bind the file tools, not the shell: `awk '... > path'` and
 # `sed 'w path'` write wherever the sandbox allows, which is most of $HOME.
 # Read-only to it: this harness, the execution log, and the places a planted
@@ -693,10 +695,13 @@ DENY="$DENY,Read(~/.ssh/**),Read(~/.gnupg/**),Read(~/.config/**),Read(~/.claude/
 # ~/.profile, ~/.bash_profile and ~/.zshrc; these are the startup files it
 # does not.
 SANDBOX="$EXEC_DIR/sandbox.json"
-python3 -I -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
-  "$HERE" "$RTOOL_BIN" "$EXEC_DIR" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" \
+# Reads: nothing under $HOME but the checkout, this harness and tool binaries.
+python3 -I -c 'import json, sys; a = sys.argv[1:]; i = a.index("--"); print(json.dumps({"sandbox": {"filesystem": {
+    "denyRead": [a[i + 1]], "allowRead": a[i + 2:], "denyWrite": a[:i]}}}))' \
+  "$HERE" "$RTOOL_BIN" "$EXEC_DIR" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" "$CACHE/.claude" \
   "$HOME/.zshenv" "$HOME/.zprofile" "$HOME/.zlogin" "$HOME/.zlogout" "$HOME/.bash_login" "$HOME/.bash_logout" \
-  "$HOME/.xprofile" "$HOME/.xsessionrc" > "$SANDBOX"
+  "$HOME/.xprofile" "$HOME/.xsessionrc" \
+  -- "$HOME" "$CACHE" "$HERE" "$HOME/.local/bin" "$HOME/.cargo/bin" > "$SANDBOX"
 echo "==> reviewing with $MODEL ($TIER${EFFORT:+, effort $EFFORT})"
 T0=$(date +%s)
 # The Lead ends its turn after dispatching the fleet and is woken by the
@@ -723,7 +728,7 @@ echo "==> execution log: $EXEC"
 # The closing result record, as the workflow prints it, and this run's session
 # id, which scopes the journals the footer counts.
 RESULT_OK=0
-RESULT=$(python3 - "$EXEC" <<'PY'
+RESULT=$(python3 -I - "$EXEC" <<'PY'
 import json, sys
 last = None
 for line in open(sys.argv[1], errors="replace"):
@@ -794,7 +799,7 @@ PROF=$(printf '%s' "$STAMP" | sed -n 's/.*[[:space:]]profile=\([a-z]\{1,\}\).*/\
 # Only an assistant tool_use block counts, as in the workflow: the init record
 # lists every agent on disk, so a plain grep for the names matches every run.
 FLEET=no
-if python3 - "$EXEC" <<'PY'
+if python3 -I - "$EXEC" <<'PY'
 import json, sys
 FLEET = {"monero-mapper", "monero-researcher", "monero-verifier",
          "monero-merger", "monero-refactor-check"}
@@ -871,7 +876,7 @@ fi
 EXEC_FILE="$EXEC" REVIEW_MD="$CACHE/review.md" T0="$T0" MODEL="$MODEL" \
   TIER="$TIER" \
   JOURNAL="$HOME/.claude/projects/*/${SESSION_ID:-no-session}/subagents/workflows/*/journal.jsonl" \
-  python3 "$HERE/scripts/telemetry.py"
+  python3 -I "$HERE/scripts/telemetry.py"
 printf '<sub>Verification: %s</sub>\n' "$VERIFIED" >> "$CACHE/review.md"
 
 mkdir -p "$HERE/reviews"
@@ -884,17 +889,29 @@ echo "==> $OUT"
 # asking the same disclosure gate CI asks.
 VERDICT="$EXEC_DIR/verdict.json"
 echo "==> asking the disclosure gate"
+# The gate loads project config from the checkout, which the review could write.
+find "$CACHE" -path "$CACHE/.git" -prune -o \
+  \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude \) \
+  -exec rm -rf {} + 2>/dev/null || true
+d=$(cd "$CACHE" && pwd -P)
+while [ "$d" != / ]; do
+  d=$(dirname "$d")
+  find "$d" -maxdepth 1 \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json \) \
+    -newer "$EXEC_DIR" -exec rm -rf {} + 2>/dev/null || true
+  [ "$d" = "$HOME" ] || [ ! "$d/.claude" -nt "$EXEC_DIR" ] || rm -rf "$d/.claude"
+done
+cp -r "$HERE/.claude" "$CACHE/.claude"
 GATE_PROMPT=$(cat "$HERE/scripts/disclosure_gate.md"; echo
-  python3 "$HERE/scripts/disclosure.py" --severe "$CACHE/review.md" | sed 's/^/- /'; echo "(end of list)")
+  python3 -I "$HERE/scripts/disclosure.py" --severe "$CACHE/review.md" | sed 's/^/- /'; echo "(end of list)")
 ( cd "$CACHE" && CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 claude -p "$GATE_PROMPT" \
     --settings "$SANDBOX" \
     --model "$MODEL" --effort high --max-turns 60 \
     --permission-mode default --setting-sources project \
     --allowedTools "Read,Grep,Glob,Bash(git diff:*),Bash(git show:*),Bash(git log:*),Bash(git grep:*),Bash(git merge-base:*),Bash(git rev-parse:*),Bash(git cat-file:*),Bash(git ls-tree:*),Bash(git describe:*)" \
     --disallowedTools "Write,Edit,$DENY" --output-format json < /dev/null 2>/dev/null ) \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("result") or "")' > "$VERDICT" 2>/dev/null \
+  | python3 -I -c 'import json,sys; print(json.load(sys.stdin).get("result") or "")' > "$VERDICT" 2>/dev/null \
   || echo "!! the disclosure gate gave no verdict, so the review counts as private" >&2
-if python3 "$HERE/scripts/disclosure.py" --verdict "$VERDICT" "$OUT" | grep -qx 'route=private'; then
+if python3 -I "$HERE/scripts/disclosure.py" --verdict "$VERDICT" "$OUT" | grep -qx 'route=private'; then
   echo "!! this review is for the private disclosure repository. Do not post it in public:" >&2
-  python3 "$HERE/scripts/disclosure.py" --summary --verdict "$VERDICT" "$OUT" >&2
+  python3 -I "$HERE/scripts/disclosure.py" --summary --verdict "$VERDICT" "$OUT" >&2
 fi
