@@ -5,8 +5,8 @@
 
 **Read `.claude/references/writing.md` before you write a line of this file.**
 This spec gives the structure; that file gives the prose. A report that
-follows this spec in 1,800 words of hedged passive voice has failed; a deep
-review buys more agents, not more words.
+follows this spec in 1,800 words (standard) or 3,000 words (deep) of hedged
+passive voice has failed. A deep review buys more agents, not more words.
 
 Everything below follows the reader's three questions (is something wrong,
 where is it, what do I change). Evidence comes after the answer, never before
@@ -33,8 +33,8 @@ standard and `profile=deep ... angles=3` at deep.
 ```markdown
 # Security review of <PR title>
 
-**Result:** <2 findings: 1 MEDIUM, 1 LOW> · <what it reaches, ≤10 words>, or
-`**Result:** No findings · nothing in the diff reaches a trust boundary`
+**Result:** <2 findings: 1 MEDIUM, 1 LOW> · <what it reaches, ≤10 words>
+<With no findings: `**Result:** No findings · nothing in the diff reaches a trust boundary`.>
 <For staged code, neither this line nor the Summary explains a clean result by the missing caller. Name what was checked instead.>
 <When any finding is not this change's, say so on this line: `**Result:** 2 findings: 1 MEDIUM, 1 LOW · 1 introduced here, 1 pre-existing · a peer can stall block sync`. A maintainer deciding whether to merge needs that split before anything else.>
 <When the run returned `fixedOnMaster` entries, add the count: `**Result:** 1 finding: 1 LOW · 2 fixed on master since · <what it reaches>`.>
@@ -76,7 +76,8 @@ standard and `profile=deep ... angles=3` at deep.
 
 <Only when the run returned `priorFindings`. Omit the heading entirely when it is empty. One bullet per entry, none dropped, grouped by status in this order: Still holds, Fixed, Does not hold, Refuted now, Not settled. Within a group keep the `priorFindings` order.>
 
-- **<status>** · `#<issue>` · <title> (was <SEVERITY>) · <what settles it>. `<status>` comes first, so a reader sees at a glance whether the finding was fixed. It is exactly one of `Fixed` (the line that now stops it), `Still holds` (published as F<n>), `Does not hold` (the line that shows it), `Refuted now` (the deciding line), or `Not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). One line.
+- **<status>** · `#<issue>` · <title> (was <SEVERITY>) · <what settles it>
+<`<status>` comes first, so a reader sees at a glance whether the finding was fixed. It is exactly one of `Fixed` (the line that now stops it), `Still holds` (published as F<n>), `Does not hold` (the line that shows it), `Refuted now` (the deciding line), or `Not settled` (unverified, cannot tell, not read, or holds but not re-proposed; also named under Not covered). One line.>
 
 ## Refuted
 
@@ -121,7 +122,7 @@ standard and `profile=deep ... angles=3` at deep.
 | <plain name> | <paths, or a count> | <weakness classes> |
 
 **Accounted for.** <<N> of <N> changed files: <N> read, <N> excluded (<reason per exclusion, one clause each>); omit the line when the table read every changed file and excluded none>
-**Not accounted for.** <each path nobody placed, named; omit the line when there are none>
+**Not accounted for.** <each path neither read nor excluded, named, on this line of its own and never as a clause in another; omit the line when there are none>
 **Not read.** <each area a reader failed on, named; omit the line when none failed>
 **Across areas.** <deep only: what the pass looking only at what crosses between areas found, or that it did not run and why; omit the line when it ran and found nothing>
 **Second look.** <deep only: what the second pass over each area found that the first missed, or that it did not run and why; omit the line when it ran and found nothing>
@@ -190,8 +191,9 @@ stops the bleeding.
 **Where it came from.** Opens with the `provenance` word, published as
 returned. The distinction is where the vulnerable code is, not how old it is:
 
-- *introduced by this change*: give the `+` line that created it, or the `-`
-  line that removed the guard, and what `origin/base` reads. A hole in a check
+- *introduced by this change*: the vulnerable code is inside the change. Give
+  the `+` line that created it, or the `-` line that removed the guard, and
+  what `origin/base` reads. A hole in a check
   this change ADDS is this, not pre-existing;
 - *newly reachable*: the code sits outside the change and is untouched; say
   what now reaches it;
@@ -199,17 +201,17 @@ returned. The distinction is where the vulnerable code is, not how old it is:
   lives and what `origin/base` reads there. Still a finding, but never write
   it as though the author caused it.
 
-**Nothing else gets a block.** No **Panel.**, no **Notes.**, no
-**Discussion.** An exception the reader must know about (a severity the panel
+**Nothing else gets a block.** No **Panel.** (a rescued finding's
+**Panel split.** line is the exception), no **Notes.**, no **Discussion.** An exception the reader must know about (a severity the panel
 moved, an anchor you re-checked, a duplicate that could not be merged) goes in
 Coverage's **Corrections.** line, once.
 
-Order findings by severity, then by how many angles agreed. A finding is about
+Keep the order and the F ids the workflow returned. A finding is about
 eighteen lines; one that needs more is usually two findings. Every cap is a
 ceiling, not a target.
 
 **Severity comes back already decided**: what the agreeing verifiers actually
-rated. Never invent one. Note each entry of `coverage.severityChanged` in
+rated. Publish what it returned; never invent or move one. Note each entry of `coverage.severityChanged` in
 **Corrections.** with both values. The heading is `### [SEVERITY] Title` and
 nothing else: never publish the workflow's confidence.
 
@@ -344,7 +346,8 @@ present and every value a plain integer taken verbatim from the returned
 | `driftPublished` | `coverage.driftPublished` |
 | `comments` | `coverage.commentDiscrepancies` |
 
-`cells` is `coverage.cells` and **not** `coverage.researchAccount.length`.
+`cells` is `coverage.cells`, the number of readers dispatched, and **not**
+`coverage.researchAccount.length`.
 `researchAccount` is an exception log, not a roster: a pass is recorded there
 only when it failed outright or came back `notFinished`, distinguished by
 `kind`. On a clean run it is **empty**. `coverage.failedCells` counts only the
@@ -356,7 +359,8 @@ checks both; a stamp that fails either is treated as fabricated and the report
 is not published. If your numbers do not add up, you took them from the wrong
 place. Go back to `coverage` rather than adjusting one to fit.
 
-Write the stamp even when everything failed. Especially then.
+Write the stamp even when everything failed. Especially then. Reporting the
+numbers accurately matters more than the report reading well.
 
 # Some reviews must not be published in public
 
@@ -454,8 +458,8 @@ counting at the first `## Refuted`. So:
 
 - headings stay `### [SEVERITY] Title`, severity spelled `CRITICAL`, `HIGH`,
   `MEDIUM` or `LOW`;
-- `## Refuted` keeps that exact spelling and stays **directly below**
-  `## Findings`, and a refuted entry never gets a `###` heading;
+- `## Refuted` keeps that exact spelling and stays below `## Findings` and
+  `## Earlier findings`, and a refuted entry never gets a `###` heading;
 - **a bracketed-severity `###` heading appears only under `## Findings`**; a
   bracketed severity in a table cell or a bullet is safe;
 - `## Summary` sits above `## Findings` and holds prose only;

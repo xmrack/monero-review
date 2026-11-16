@@ -32,9 +32,8 @@ re-deriving it. If it is absent, run `git diff --name-only origin/base...HEAD`
 yourself and say under Not covered that the harness did not provide the list,
 so paths inside moved submodules and bumped Rust dependencies were not listed.
 
-Hand every path to the workflow exactly as git printed it, without the `#`
-lines. Do not filter it, reorder
-it, or trim it: anything you drop becomes a file never reviewed and never
+Drop the `#` lines and hand every path to the workflow exactly as git printed
+it. Apart from that, do not filter, reorder or trim the list: anything you drop becomes a file never reviewed and never
 reported as unreviewed.
 
 An empty list means there is nothing to review: say so and stop.
@@ -63,6 +62,7 @@ it in the queue.
 ```
 Workflow({ name: "monero-deep-scan",
            args: { root: <absolute path of the checkout>,
+                   profile: "deep",
                    pr: <number from PR_CONTEXT.md, or null>,
                    changedFiles: [<the list from step 2, verbatim>],
                    maxUnits: 8,
@@ -188,8 +188,8 @@ When Coverage names what a reader could not finish and promises what is in it
 ("three things it could not read to the bottom"), reproduce those items, not a
 different, more general list.
 
-**Accounted for** carries the file total against `coverage.unaccounted`, only
-when it does not come out even. Per-area counts must add up exactly.
+**Accounted for** carries the file total against `coverage.unaccounted`;
+write it whenever a file was excluded or unaccounted, as the template says. Per-area counts must add up exactly.
 
 Write `findings` (including `merged` and `rescued` ones), `refuted`,
 `refactorDrift` and `commentDiscrepancy` as the REPORT SPEC describes. Give the

@@ -214,8 +214,9 @@ Do these six things, in this order, over what you are about to write:
 3. **Turn every passive into an active** unless you truly do not know who acts.
    In a finding, if you do not know who acts, that is a gap in the finding.
 4. **Grep your own draft three times.** First for our jargon: unit, cell,
-   lens, angle, seam, candidate, mapper, `coverage.`. Each hit is a fact you
-   have not yet translated. Then for `PR_`, `RUST_DEPS`, `TOOLING`,
+   lens, angle, seam, candidate, mapper, `coverage.`. Each hit outside the
+   locator line's `angles agreed` and the stamps is a fact you have not yet
+   translated. Then for `PR_`, `RUST_DEPS`, `TOOLING`,
    `rust-deps/`, `deps-include/` and `review.md`. Each hit is a citation the
    reader cannot open; the table under *Our files never reach the reader
    either* says what to put there instead. Then for the em dash and the en
