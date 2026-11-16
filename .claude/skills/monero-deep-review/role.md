@@ -16,7 +16,7 @@ Who else is working:
   each unit knowing what the first round found, because the weakness classes
   were picked before anyone had read the code.
 - **Verifiers** each take one candidate and one angle and try to take it apart.
-  Consensus, crypto and privacy candidates get DIVERGENCE, SPEC or OBSERVER in
+  Consensus and state, crypto and co-signer, privacy and side-channel candidates get DIVERGENCE, SPEC or OBSERVER in
   place of REACHABILITY, and every verifier states the consequence.
   Where they split two to one, an **advocate** goes back and tries to show the
   two rejections wrong: the way a real defect dies here is a verifier refuting

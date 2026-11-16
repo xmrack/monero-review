@@ -5,7 +5,7 @@ how bad each outcome is. Use it to answer the reachability question concretely
 (name the boundary, then trace the call sequence from it to the changed code)
 and to rate what you find.
 
-Verified against master `3fd0f88c2` (2026-10-25). The severity tiers follow the
+Verified against master `ef78ff3d` (2026-11-13). The severity tiers follow the
 classes of vulnerability the project has actually had to fix and how it rated
 them. Verify locations against the checkout — this is a
 map, not a substitute for reading the tree. Where a symbol index has been built
@@ -96,7 +96,7 @@ connections; `--max-connections-per-ip` defaults to 1, with IPv6 grouped by
 /64; there is no rate limit on accepting connections. Transaction relay
 (Dandelion++, anonymity-network queues) is in
 `src/cryptonote_protocol/levin_notify.cpp`. Peers arriving over Tor or I2P
-(`--anonymous-inbound`) may send only handshake, timed sync and
+(`--anonymous-inbound`, or `--i2p-sam` for I2P) may send only handshake, timed sync and
 `NOTIFY_NEW_TRANSACTIONS` (`is_filtered_command` in `net_node.cpp`), and
 `has_too_many_connections` does not apply to them.
 
@@ -122,7 +122,9 @@ the restricted surface; a public client with valid PoW reaches full block
 validation through `submit_block`.
 
 `--restricted-rpc` defaults to false. `--rpc-restricted-bind-port` adds a
-second, restricted server. `--public-node` restricts nothing: it advertises
+second, restricted server; `--rpc-login` applies to it too unless
+`--rpc-restricted-no-login` is set (`rpc_args::process` with `parse_login`
+false; `src/daemon/daemon.cpp`). `--public-node` restricts nothing: it advertises
 an RPC port to peers and throws "restricted RPC mode is required" unless
 restriction is already on (`parse_public_rpc_port`, `src/daemon/main.cpp`).
 With `--rpc-restricted-bind-port` set it advertises that port; otherwise, with
@@ -375,7 +377,7 @@ Two consequences reviewers miss:
   0` become consensus at v17 (`HF_VERSION_REJECT_LARGE_EXTRA`,
   `HF_VERSION_REJECT_UNLOCK_TIME`); the fee stays policy. Check which version
   a change targets.
-- **The pool feeds the block template.** `fill_block_template` takes pool
+- **The pool feeds the block template.** `get_block_template_backlog` takes pool
   transactions without re-running `ver_non_input_consensus`; it relies on
   `tx_memory_pool::validate` re-checking the pool when the fork changes. A pool
   that holds anything consensus rejects makes every default miner build an
@@ -473,11 +475,13 @@ works on X25519, not the Ed25519 points key images live on, and no consensus
 check calls it. Wallets use it, and on the FCMP++ branch the daemon uses it
 only to build a Carrot coinbase (`construct_miner_tx`).
 
-**FCMP++ and Carrot** (`src/fcmp_pp/`). Built and linked into `ringct`, but
-on master it has no caller in `src/` outside its own directory. Carrot is not
-merged and no `HF_VERSION_FCMP*` exists yet (see `codebase-notes.md`). Rate it
-as it will run once activated, not as dead code. When it activates it adds
-consensus **state**, not only new rules:
+**FCMP++ and Carrot** (`src/fcmp_pp/`). On master no consensus check calls it
+and no `HF_VERSION_FCMP*` or `RCTTypeFcmpPlusPlus` exists; the DB grows the
+curve tree only in `ENABLE_FCMP_INTEGRATION` builds, and proof verification
+(`rct::batchVerifyFcmpPpProofs`) has test callers only. `txout_to_carrot_v1`
+parses but `check_output_types` rejects it at every version (see
+`codebase-notes.md`). Rate it as it will run once activated, not as dead code.
+When it activates it adds consensus **state**, not only new rules:
 
 - a curve tree of every spendable output, with a root each block commits to
   and each transaction references;
@@ -532,6 +536,10 @@ signed hashes.
   majority agreement) feed update checks (`--check-updates`, default
   `notify`), DNS checkpoints and the DNS blocklist (`--enable-dns-blocklist`,
   default off). Whoever controls the moneropulse zones is trusted here, by design.
+  The `/update` RPC (unrestricted only, `on_update`) also refuses the DNS check
+  behind `--proxy` without `--proxy-allow-dns-leaks` (`core::is_dns_allowed`),
+  and refuses to download over an existing `path` (checked with
+  `symlink_status`) whose SHA-256 differs from the announced hash.
 - **DNS checkpoints are fetched on mainnet without
   `--enforce-dns-checkpointing`.** The flag only adds the fetch at init.
   During sync `core::update_checkpoints` fetches hourly unless
@@ -622,6 +630,10 @@ take.
   A flaw in Dandelion++ that reveals where transactions came from is
   protocol-level, and HIGH.
 - A sender making a wallet unable to spend or sweep, without loss.
+- A timing, cache or memory-access leak of secret key material (a spend or
+  view key, a Carrot or FCMP++ secret, a multisig share) with a named observer
+  who can measure it, such as a co-located process or a peer timing replies.
+  HIGH when a remote observer can recover a spend key.
 - A HIGH effect that only works if the user takes an action the attacker
   needs, such as visiting a page while the daemon runs (a cross-site
   `stop_daemon`).
@@ -630,7 +642,9 @@ take.
 
 - Code with no production caller, or reachable only from trusted
   configuration or an operator who opened the admin interface on purpose.
-- Theoretical side channels with no demonstrated measurement path.
+- A side channel with no observer who can measure it. Name the observers
+  considered; secret-dependent timing in key or proof code is MEDIUM once one
+  can (see above).
 - Attacks needing more than 50% of hashrate, which the VRP puts out of scope.
 - Hardening: a missing check that something else already enforces.
 

@@ -4,7 +4,7 @@ What the `monero-project/monero` tree is, how its parts fit together, and how
 to read it without being misled. **Shared by every skill in this repository** —
 this directory belongs to no one skill.
 
-Written against master `3fd0f88c2` (2026-10-25). Where a file names its own
+Written against master `ef78ff3d` (2026-11-13). Where a file names its own
 verification commit, that commit is what it was last checked against. Every
 path and symbol was confirmed against a checkout. Cite files and symbols, never line numbers or
 counts that drift; give the grep that finds them instead. When something disagrees with the tree in front of you, **the tree
@@ -19,7 +19,7 @@ wins** — and fix the file.
 | **`subsystems-node.md`** | the diff touches epee, serialization, p2p or `src/net`, the protocol handler, core, blockchain, the DB, rpc, the daemon or `src/common` |
 | **`subsystems-wallet.md`** | the diff touches `wallet2`, wallet-rpc, `wallet_api`, simplewallet or the device layer |
 | **`subsystems-crypto.md`** | the diff touches `src/crypto`, `src/ringct`, `src/fcmp_pp`, multisig or proof-of-work |
-| **`subsystems-fcmp-carrot.md`** | the diff is FCMP++/Carrot integration work: `src/carrot_core`, `src/carrot_impl`, `RCTTypeFcmpPlusPlus`, Carrot outputs, the curve tree in the DB, wallet tree sync, fork gating or `external/mx25519` |
+| **`subsystems-fcmp-carrot.md`** | the diff is FCMP++/Carrot integration work: `src/carrot_core`, `src/carrot_impl`, `RCTTypeFcmpPlusPlus`, Carrot outputs (`txout_to_carrot_v1`), the curve tree in the DB (`ENABLE_FCMP_INTEGRATION` code in `src/blockchain_db`), proof verification, wallet tree sync, fork gating or `external/mx25519` |
 | **`macros.md`** | **before believing any grep result**, and before saying "nothing calls this" or "this field is unvalidated" |
 | **`coding-style.md`** | you are about to comment on style, or need to know which of the four dialects a hunk belongs to |
 | **`errors-and-concurrency.md`** | before judging a failure path, and before calling anything a race |
@@ -38,8 +38,9 @@ suspect of it and what has already been refuted:
 
 The four below are the **history half** — what audits, papers and past
 incidents found, and the diff shapes that would repeat them. They were checked
-against master `3fd0f88c2`, fcmp++-stage `f25388d` and monero-oxide
-`31c26d96e`; cite the audit, paper or disclosure a section names.
+against master (each file names its commit), fcmp++-stage `f25388d` and
+monero-oxide `31c26d96e` (master now pins `77788c36`); cite the audit, paper
+or disclosure a section names.
 
 | file | read it when |
 |---|---|

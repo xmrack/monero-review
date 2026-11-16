@@ -87,7 +87,8 @@ Both run `.claude/workflows/monero-deep-scan.js` under different profiles.
 
 Every candidate goes to a panel whose votes are counted in code, and the count
 settles severity at what the panel actually found, moving a proposer's guess up
-or down. Consensus, crypto and privacy candidates get a specialist angle
+or down. Consensus and state, crypto and co-signer, privacy and side-channel
+candidates get a specialist angle
 (divergence, spec, observer) in reachability's place, and every verifier says
 what the defect buys; one that buys nothing is refuted. What survives is
 checked for duplicates.

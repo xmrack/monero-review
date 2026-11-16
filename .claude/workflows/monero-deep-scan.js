@@ -7,7 +7,7 @@ export const meta = {
     { title: 'Research', detail: 'deep: one researcher per unit x weakness class, then the seams and a per-unit gap pass together. standard: one researcher per unit carrying all of its classes, and no second round' },
     { title: 'Adjudicate', detail: 'observations a researcher deferred to another unit, settled by somebody' },
     { title: 'Check refactors', detail: 'every hunk reported as a refactor that changed behaviour, read against origin/base by somebody who did not propose it; the ones nothing can tell apart are dropped' },
-    { title: 'Verify', detail: 'three angles per candidate at deep, two at standard, with a specialist in place of REACHABILITY for consensus, crypto and privacy; counted here rather than in a model' },
+    { title: 'Verify', detail: 'three angles per candidate at deep, two at standard, with a specialist in place of REACHABILITY for consensus, state, crypto, co-signer, privacy and side-channel classes; counted here rather than in a model' },
     { title: 'Re-look', detail: 'candidates one vote short (2-1 at deep, 1-1 at standard) get an advocate, so a wrong refutation is not final' },
     { title: 'Merge', detail: 'findings that survived and look like one defect reported twice, grouped so the report says it once; skipped entirely when nothing is even a candidate for it' },
     { title: 'Recheck on master', detail: 'merged pull requests only: every finding read again on upstream master and its base branch, and the ones a named later commit fixed moved out of the findings' },
@@ -57,7 +57,7 @@ export const meta = {
 const CATEGORIES = [
   'consensus-divergence', 'fork-gating', 'chain-state', 'db-transaction',
   'wire-deserialization', 'serialization-compat', 'p2p-levin', 'rpc-surface',
-  'crypto-correctness', 'key-handling', 'counterparty-protocol', 'privacy',
+  'crypto-correctness', 'key-handling', 'side-channel', 'counterparty-protocol', 'privacy',
   'memory-safety', 'integer-overflow', 'concurrency', 'resource-exhaustion',
   'wallet-boundary', 'supply-chain', 'prompt-injection',
 ]
@@ -96,15 +96,19 @@ const PROVENANCES = ['introduced', 'newly-reachable', 'pre-existing']
 // angle does now is attack the leg that was least covered: whether anything
 // in between actually stops it.
 const ALL_ANGLES = ['REACHABILITY', 'IMPACT', 'GUARD']
-// REACHABILITY asks whether an attacker's input gets there. For three
+// REACHABILITY asks whether an attacker's input gets there. For these
 // categories that is the wrong question, so a specialist takes its slot and
 // the panel stays the same size:
-//   DIVERGENCE  consensus: would two honest nodes reach different verdicts?
-//   SPEC        crypto: does the code compute what the construction says?
-//   OBSERVER    privacy: who learns what they could not learn before?
+//   DIVERGENCE  consensus and state: would two honest nodes, or one node
+//               before and after a reorg, restart or upgrade, disagree?
+//   SPEC        crypto and co-signer protocols: does the code compute what
+//               the construction says?
+//   OBSERVER    privacy and side channels: who learns what they could not?
 const SPECIALIST = {
-  'consensus-divergence': 'DIVERGENCE', 'fork-gating': 'DIVERGENCE',
-  'crypto-correctness': 'SPEC', privacy: 'OBSERVER',
+  'consensus-divergence': 'DIVERGENCE', 'fork-gating': 'DIVERGENCE', 'chain-state': 'DIVERGENCE',
+  'db-transaction': 'DIVERGENCE', 'serialization-compat': 'DIVERGENCE',
+  'crypto-correctness': 'SPEC', 'counterparty-protocol': 'SPEC',
+  privacy: 'OBSERVER', 'side-channel': 'OBSERVER',
 }
 
 const sevRank = (s) => { const i = SEVERITIES.indexOf(s); return i < 0 ? SEVERITIES.length - 1 : i }
@@ -555,7 +559,9 @@ const CELL_CEILING = BOUNDED ? 8 : Infinity
 // The classes every deep unit of production source is read for, whatever the
 // mapper picks: it is told to pick sparingly, and on 10724 it left the FCMP++
 // tree hashing unread for crypto correctness, memory safety and resource
-// exhaustion. The mapper adds to the floor; it cannot remove from it.
+// exhaustion. The mapper adds to the floor; it cannot remove from it. The
+// Monero-specific classes are floored by path too: the mapper picks before it
+// reads the code, and those are the classes a guess most often leaves out.
 const SOURCE_FILE = /\.(c|cc|cpp|cxx|h|hh|hpp|inl|rs|s|S|asm)$/
 const TEST_OR_DOC = /^(tests|docs?)\/|\.md$/
 // What builds or pins the code rather than being it: build scripts, the
@@ -569,6 +575,15 @@ const CONSENSUS_TEST = /^tests\/(core_tests|unit_tests\/(hardfork|blockchain_db|
 const FLOOR_ALL = ['memory-safety', 'integer-overflow', 'resource-exhaustion']
 const FLOOR_BY_PATH = [
   [/^src\/(crypto|ringct|fcmp_pp|multisig|carrot_[a-z]+|device)\/|^external\/(mx25519|randomx|supercop)\//, ['crypto-correctness']],
+  [/^src\/(crypto|ringct|fcmp_pp|carrot_[a-z]+|device)\/|^external\/(mx25519|supercop)\//, ['side-channel']],
+  [/^src\/(hardforks|cryptonote_core)\/|^src\/cryptonote_config\.h$|^src\/cryptonote_basic\/cryptonote_format_utils/, ['fork-gating']],
+  [/^src\/(blockchain_db|cryptonote_core)\/|^src\/wallet\/wallet2\.cpp$/, ['chain-state']],
+  [/^src\/blockchain_db\//, ['db-transaction']],
+  [/^src\/(serialization|cryptonote_basic|ringct|fcmp_pp|carrot_[a-z]+)\/|^src\/wallet\/wallet2\.(cpp|h)$/, ['serialization-compat']],
+  [/^src\/(multisig|device[a-z_]*)\//, ['counterparty-protocol', 'key-handling']],
+  [/^src\/(wallet|simplewallet|cryptonote_protocol|carrot_impl)\/|^src\/p2p\/net_node/, ['privacy']],
+  // Rust source a Cargo pin moves: FCMP++ proofs, curve trees, Carrot.
+  [/^rust-deps\//, ['crypto-correctness', 'consensus-divergence', 'side-channel']],
   [/^src\/(crypto|ringct|fcmp_pp|cryptonote_basic|cryptonote_core|blockchain_db|hardforks|carrot_[a-z]+)\/|^external\/randomx\//,
    ['consensus-divergence']],
   [/^src\/(p2p|cryptonote_protocol|net)\/|^contrib\/epee\/(include|src)\/(net|levin|abstract_tcp)/, ['p2p-levin', 'wire-deserialization']],
@@ -612,9 +627,9 @@ const ANGLE_BRIEF = {
   REACHABILITY: 'Start at the input. Is it attacker-controlled in the terms of trust-boundaries.md, and is the path live in a default build? Walk the routes the proposer did not.',
   GUARD: 'Grant input and path, then find what stops it anyway: a serializer bound, a CHECK_AND_ASSERT_MES frames up, passes_max_size_check, a per-command byte cap, a type that cannot hold the value. Read it; do not assume it.',
   IMPACT: 'Grant the mechanism and ask what it buys: chain split, theft, remote crash, stuck thread, privacy loss, or nothing an observer did not already have.',
-  DIVERGENCE: 'Ask whether two honest nodes reach different verdicts on the same block or transaction: base against head, either side of the fork height, pruned against full, or after different reorgs. Find the exact input that splits them, or the reason none can.',
-  SPEC: 'Compare the code with the construction it implements: the paper or spec, the reference implementation (monero-oxide under rust-deps/, the other language binding, the test vectors). Check scalar reduction, point validity and subgroup, identity and zero cases, transcript binding, and every input whose source is a peer.',
-  OBSERVER: 'Name the observer -- network watcher, remote node, peer, recipient, sender, chain analyst -- and what they learn here that they could not learn before. An observer who already had it is not a finding.',
+  DIVERGENCE: 'Ask whether two honest nodes reach different verdicts on the same block or transaction: base against head, either side of the fork height, pruned against full, or after different reorgs. For state, DB and format defects, also compare one node before and after a reorg, a crash between writes, a restart or an upgrade that reads old data. Find the exact input or event that splits them, or the reason none can.',
+  SPEC: 'Compare the code with the construction it implements: the paper or spec, the reference implementation (monero-oxide under rust-deps/, the other language binding, the test vectors). Check scalar reduction, point validity and subgroup, identity and zero cases, transcript binding, nonce generation and reuse across co-signer rounds, and every input whose source is a peer, co-signer or device.',
+  OBSERVER: 'Name the observer -- network watcher, remote node, peer, recipient, sender, chain analyst, co-located process -- and what they learn here that they could not learn before. For timing, cache or memory-access leaks, say what the observer measures and how many samples it needs. An observer who already had it is not a finding.',
 }
 // Researchers and verifiers run one tier down at standard. Not a guess: the
 // deep run's own accounting put thinking tokens at 80% of the output bill,
@@ -659,6 +674,9 @@ const CONTEXT = [
   '  version is the path itself. Wherever these instructions say git show',
   '  origin/base:<path> or a "+" line in git diff origin/base...HEAD, use those',
   '  instead for such a path. PR_SUBMODULES.md lists them per submodule.',
+  'A path under rust-deps/<name>/ is Rust source that moved with a Cargo pin. Its',
+  '  change is `rtool git rust-deps/<name> diff <old> <new> -- <path inside>`, with',
+  '  the two revisions from RUST_DEPS.md; treat its "+" lines as this pull request\'s.',
   // Never the `owner/repo#number` form, and never a github.com pull URL.
   // Whatever an agent echoes can reach a published issue body, and GitHub
   // files a cross-reference on the upstream pull request from either shape --
@@ -878,7 +896,14 @@ for (const u of units) {
 const DEFAULT_LENSES = ['memory-safety', 'integer-overflow', 'resource-exhaustion', 'consensus-divergence']
 for (const u of units) {
   const lenses = (u.lenses && u.lenses.length ? u.lenses : DEFAULT_LENSES)
-  if (!BOUNDED) { for (const lens of lenses) cells.push({ unit: u, lens, lenses: [lens] }); continue }
+  if (!BOUNDED) {
+    // The generic classes share one cell, which pays for the Monero-specific
+    // floors: each of those keeps a researcher of its own.
+    const generic = lenses.filter((l) => FLOOR_ALL.includes(l))
+    if (generic.length) cells.push({ unit: u, lens: generic.join(', '), lenses: generic })
+    for (const lens of lenses) if (!FLOOR_ALL.includes(lens)) cells.push({ unit: u, lens, lenses: [lens] })
+    continue
+  }
   // Standard: one researcher per unit, or one per share of its classes when
   // the unit is large, so one context is not asked to hold thousands of lines
   // under every class at once.
@@ -909,19 +934,19 @@ phase('Research')
 
 const researchCell = (cell) => agent(
   [CONTEXT, '',
-   BOUNDED
+   BOUNDED || cell.lenses.length > 1
      ? 'Examine ONE unit of this change for the weakness classes named below.'
      : 'Examine ONE unit of this change for ONE class of weakness.',
    '',
    'Unit: ' + cell.unit.name,
    'What it does: ' + cell.unit.role,
    'Trust boundary: ' + cell.unit.boundary,
-   (BOUNDED ? 'Weakness classes: ' : 'Weakness class: ') + cell.lens,
+   (cell.lenses.length > 1 ? 'Weakness classes: ' : 'Weakness class: ') + cell.lens,
    BOUNDED
      ? 'Take them one at a time and finish each before starting the next, so a\nclass late in the list is not read through the theory an earlier one gave\nyou. ' + (cell.split
        ? 'This unit is large, so its other classes went to other researchers; nobody\nelse covers these.'
        : 'Nobody else is covering this unit: there is no second round here.')
-     : '',
+     : cell.lenses.length > 1 ? 'Take them one at a time and finish each before starting the next.' : '',
    'Before you read the code, read the section of .claude/references/monero/lenses.md',
    'for each class: it says where in this tree that class of defect lives.',
    '',

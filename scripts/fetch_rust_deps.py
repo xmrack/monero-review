@@ -543,6 +543,28 @@ def fetch(url, sha, dest, also=None):
     return True, ""
 
 
+# Changed Rust source in a bumped dependency joins the review's changed-file
+# list: `<lines>\trust-deps/<name>/<path>` per file, in <root>/RUST_FILES.txt.
+RUST_FILES = "RUST_FILES.txt"
+NOT_PRODUCTION = re.compile(r"(^|/)(tests?|benches|examples|fuzz)/")
+
+
+def changed_rust_files(dest, old_sha, new_sha):
+    """The .rs files a bump changes, with added+deleted lines, as (path, n)."""
+    res = git_in(dest, "diff", "--numstat", "--no-renames", old_sha, new_sha)
+    if res.returncode != 0:
+        return []
+    out = []
+    for line in res.stdout.splitlines():
+        parts = line.split("\t", 2)
+        if len(parts) != 3 or not parts[2].endswith(".rs") or NOT_PRODUCTION.search(parts[2]):
+            continue
+        n = sum(int(x) for x in parts[:2] if x.isdigit())
+        if n and all(c.isprintable() and c not in '"\\' for c in parts[2]):
+            out.append((parts[2], n))
+    return out
+
+
 def bump_report(dest, old_sha, new_sha, patch_path):
     """Precompute what a revision bump changed. Returns a list of md lines.
 
@@ -785,6 +807,10 @@ def main():
     stale = os.path.join(root, "rust-deps")
     if os.path.isdir(stale):
         shutil.rmtree(stale, ignore_errors=True)
+    try:
+        os.remove(os.path.join(root, RUST_FILES))
+    except OSError:
+        pass
 
     locks = find_lockfiles(root)
 
@@ -907,6 +933,16 @@ def main():
                 lines += [f"- **Previous revision (`origin/base`): `{prev}`**", ""]
                 lines += bump_report(dest, prev, sha,
                                      os.path.join(root, "rust-deps", name + ".bump.diff"))
+                changed = changed_rust_files(dest, prev, sha)
+                if changed:
+                    lines += [f"- **{len(changed)} changed Rust source file(s) are in the changed-file "
+                              f"list as `rust-deps/{name}/<path>`.** Diff one with "
+                              f"`rtool git rust-deps/{name} diff {prev[:12]} {sha[:12]} -- <path>`.", ""]
+                    try:
+                        with open(os.path.join(root, RUST_FILES), "a", encoding="utf-8") as fh:
+                            fh.writelines(f"{n}\trust-deps/{name}/{path}\n" for path, n in changed)
+                    except OSError as exc:
+                        print(f"warn: could not write {RUST_FILES}: {exc}", file=sys.stderr)
             else:
                 lines += [""]
         else:

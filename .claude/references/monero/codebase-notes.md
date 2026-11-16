@@ -187,12 +187,34 @@ host-supplied values do damage.
 
 ## FCMP++ work
 
-`src/fcmp_pp/` is on master and in the build, and it is **not
-consensus-reachable**. Get that right in both directions: `ringct` links the
-`fcmp_pp` target (`src/ringct/CMakeLists.txt`), but no code in `src/` outside
-the directory calls into it; its only callers are tests
-(`tests/unit_tests/curve_trees.cpp`, `tests/unit_tests/crypto.cpp`,
-`tests/crypto/main.cpp`). `rct::verPointsForTorsion` in
+`src/fcmp_pp/` is on master and in the build, and **no consensus check runs
+it**. Get that right in both directions. What master has
+(`git grep -n fcmp_pp -- src ':!src/fcmp_pp'`):
+
+- **Tree building in the DB, behind a build flag.** `BlockchainDB::add_block`
+  calls `handle_fcmp_tree` (`advance_tree`, `grow_tree`) and
+  `BlockchainLMDB::remove_block` calls `BlockchainDB::trim_block` only under
+  `ENABLE_FCMP_INTEGRATION` (CMake option, default `OFF`; CI builds it `ON`,
+  `grep -n FCMP_INTEGRATION .github/workflows/build.yml`). With it, `db_lmdb.cpp`
+  sets `VERSION` 7, adds `migrate_5_7` and the tables `locked_outputs`,
+  `timelocked_outputs`, `leaves`, `layers`, `tree_edges`, `tree_meta`;
+  without it `VERSION` stays 5 and none of that runs. No block header carries
+  a root and nothing reads `get_tree_root_at_blk_idx` outside `db_lmdb.cpp`.
+- **Unconditional DB plumbing.** `Blockchain::handle_block_to_main_chain`
+  builds `transparent_amount_commitments` (`collect_transparent_amount_commitments`,
+  `tx_verification_utils.cpp`) and passes it to `add_block` /
+  `add_transaction`, which throw if a v1 or coinbase amount is missing from it.
+  Output ids are called `unified_id` (`get_output_tx_and_index_from_unified`,
+  `total_outputs`). `get_last_locked_block_index_for_tree` and
+  `get_outs_by_last_locked_block` (`cryptonote_format_utils.cpp`) feed only
+  the flagged tree code.
+- **Proof verification with test callers only.** `fcmp_pp::verify`
+  (`src/fcmp_pp/verify.cpp`) and `rct::batchVerifyFcmpPpProofs`
+  (`src/ringct/rctSigs.cpp`, thread-pool batches by input count) are called
+  from `tests/unit_tests/fcmp_pp.cpp` and `tests/performance_tests/fcmp_pp.h`.
+  No `RCTTypeFcmpPlusPlus` and no `HF_VERSION_FCMP*` exist.
+
+`rct::verPointsForTorsion` in
 `src/ringct/rctSigs.cpp` likewise has no production caller, only
 `tests/unit_tests/crypto.cpp`. The primitive under it,
 `crypto::get_valid_torsion_cleared_point_vartime` (`src/crypto/crypto.cpp`),
@@ -204,20 +226,27 @@ still stops at `RCTTypeBulletproofPlus = 6`. A defect in the dormant code is
 still a finding, rated as it will run once live: see `refutations.md`, "Not
 refutations".
 
-Carrot is present only as groundwork: `CarrotOutputPairV1` in
-`src/fcmp_pp/fcmp_pp_types.h` and the Ed25519-to-X25519 helpers
+Carrot is present only as groundwork. `txout_to_carrot_v1` (`{key}` only; view
+tag and anchor are commented TODOs) sits in `txout_target_v` with binary tag
+`0x1`, which held the 32-byte `txout_to_scripthash` before, so the byte-level
+parse is unchanged; JSON tags are `carrot_v1` / `to_carrot_v1`.
+`check_output_types` rejects it at every hard-fork version and
+`get_output_public_key` returns false for it. `to_output_pair` maps it to
+`CarrotOutputPairV1` (`src/fcmp_pp/fcmp_pp_types.h`). Also present: the
+Ed25519-to-X25519 helpers
 `ge_p3_to_x25519` / `edwards_bytes_to_x25519_vartime` in
 `src/crypto/crypto-ops.c`, which nothing outside that file calls except
 `tests/unit_tests/x25519.cpp`, plus the unused X25519 wrapper
 `src/crypto/x25519.h` over `external/mx25519`
-(`git grep -n x25519 -- src tests`). There is no Carrot address, output type or
-scanning code on master.
+(`git grep -n x25519 -- src tests`). There is no Carrot address or scanning
+code on master.
 
 **It also means Monero master builds Rust.** `src/fcmp_pp/fcmp_pp_rust/` is a
 staticlib crate linked as `libfcmp_pp_rust.a`. Its `Cargo.toml` pulls
-`helioselene`, `ec-divisors`, `full-chain-membership-proofs` and the
-`monero-fcmp-plus-plus` crates from `monero-oxide/monero-oxide` at a pinned
-git `rev`, and patches `crypto-bigint` to a fork **branch** (the exact commit
+`helioselene`, `generalized-bulletproofs`, `ec-divisors`,
+`full-chain-membership-proofs` and the `monero-fcmp-plus-plus` crates from
+`monero-oxide/monero-oxide` at a pinned git `rev` (plus `multiexp` and
+`rand_core` from crates.io), and patches `crypto-bigint` to a fork **branch** (the exact commit
 is pinned only by `Cargo.lock`; the build passes `cargo build --locked`).
 The C ABI is `fcmp++.h`, checked for C compatibility by `ffi_api_c_compat.c`
 in `src/fcmp_pp/CMakeLists.txt`. A change under there is a supply-chain change

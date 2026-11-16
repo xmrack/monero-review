@@ -152,8 +152,28 @@ wallet RPC `query_key`.
 
 Ask whether a secret can reach a log line, an exception message, an RPC
 response, a core dump, or an unscrubbed copy (a `std::string` or a plain
-array). Ask whether secret-dependent work runs in variable time where an
-observer can measure it.
+array). Timing and cache leaks are `side-channel`.
+
+## side-channel
+
+Look at secret-dependent work in `src/crypto/` (`crypto-ops.c`, the `_vartime`
+functions), `src/fcmp_pp/`, `src/carrot_core/`, `src/device/`, and in
+monero-oxide under `rust-deps/` (helioselene, dalek-ff-group, the FCMP++
+prover, Carrot scanning).
+
+Ask whether a branch, a loop bound, a table index or a memory access depends on
+a secret: a spend or view key, a Carrot or FCMP++ blinding factor, a nonce, a
+multisig share. In Rust, check that secret values go through `subtle`
+(`ConditionallySelectable`, `ct_eq`, `Choice`) and never through `==`, `if`,
+early returns or `_vartime` calls; a `_vartime` name on a function that takes a
+secret is the usual tell. Check the FFI as well: a constant-time Rust function
+called with a length or flag the C++ side derives from a secret is not
+constant-time.
+
+Then name the observer and the measurement: a co-located process (cache or
+branch-predictor timing), a remote peer timing a wallet's or node's replies,
+or a hardware device's host. Say how many samples it needs. A leak with no
+observer who can measure it is LOW (`trust-boundaries.md`, Severity).
 
 ## counterparty-protocol
 

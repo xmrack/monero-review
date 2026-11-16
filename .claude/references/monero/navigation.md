@@ -213,7 +213,7 @@ enormous — always pipe through `grep`.
 | the C++ LMDB wrapper (`lmdb::database`) | `src/lmdb/` — **not** the block store, which is `src/blockchain_db/lmdb/` |
 | the RandomX shim | `src/crypto/rx-slow-hash.c`; there is no `rx-slow-hash.h`, the declarations are in `hash-ops.h` |
 | `slow_hash_allocate_state` | declared in no header at all — callers (`blockchain.cpp`, `miner.cpp`) write a local `extern "C"` |
-| FCMP++ / curve trees | `src/fcmp_pp/` (`curve_trees`, `tower_cycle`, `fcmp_pp_crypto`) over the Rust FFI. On master nothing outside `src/fcmp_pp` and `tests/` includes it; `ringct` only links it. `src/carrot_core` and `src/carrot_impl` are not on master; only Carrot-spec primitives are (`src/crypto/x25519.cpp`, `ge_p3_to_x25519` in `crypto-ops.h`) |
+| FCMP++ / curve trees | `src/fcmp_pp/` (`curve_trees`, `tower_cycle`, `fcmp_pp_crypto`, `fcmp_pp_types`, `verify`) over the Rust FFI. Outside it: tree storage in `src/blockchain_db/blockchain_db.cpp` (`handle_fcmp_tree`, `grow_tree`, `trim_block`) and `lmdb/db_lmdb.cpp`, live only under `ENABLE_FCMP_INTEGRATION`; leaf grouping in `cryptonote_format_utils.cpp` (`get_outs_by_last_locked_block`); `rct::batchVerifyFcmpPpProofs` in `rctSigs.cpp` (test callers only). `src/carrot_core` and `src/carrot_impl` are not on master; only `txout_to_carrot_v1` (`cryptonote_basic.h`) and Carrot-spec primitives are (`src/crypto/x25519.cpp`, `ge_p3_to_x25519` in `crypto-ops.h`) |
 
 ## Things that look like one thing and are another
 

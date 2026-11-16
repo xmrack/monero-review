@@ -3,7 +3,7 @@
 The build system and the test topology, from the point of view of somebody
 who has to judge whether a change to either is safe.
 
-Measured at master `3fd0f88c2` (2026-10-25).
+Measured at master `ef78ff3d` (2026-11-13).
 
 ---
 
@@ -43,7 +43,8 @@ The resulting library dependency graph is in `architecture.md`.
 | `BUILD_TESTS` | OFF | gates the whole of `tests/` |
 | `STATIC` | OFF | static linking |
 | `BUILD_SHARED_LIBS` | ON for a non-`STATIC` debug build, else OFF | internal libraries as shared |
-| `SANITIZE` | OFF | `-fsanitize=address,undefined` |
+| `SANITIZE` | OFF | `-fsanitize=address,undefined`; `src/crypto/CMakeLists.txt` adds `-fno-sanitize=shift-base` to `crypto-ops.c` |
+| `ENABLE_FCMP_INTEGRATION` | OFF | defines `ENABLE_FCMP_INTEGRATION`: LMDB `VERSION` 7, curve-tree tables and tree growth on `add_block` (`codebase-notes.md`, "FCMP++ work"); release builds leave it off |
 | `NO_AES` | OFF | selects a different `cn_slow_hash` implementation |
 | `USE_DEVICE_TREZOR` | ON (env-overridable, `cmake/CheckTrezor.cmake`) | builds `src/device_trezor`; **switched off with only a CMake warning** if protobuf is missing unless `USE_DEVICE_TREZOR_MANDATORY` (set by CI and Guix) |
 | `BUILD_GUI_DEPS` | OFF | gates `libwallet_api_tests`; it and `trezor_tests` (`TREZOR_DEBUG`) are the only targets that link `wallet_api` (`EXCLUDE_FROM_ALL`) |
@@ -124,8 +125,10 @@ default `HOSTS` list in `guix-build` is what is released.
 ## CI: three workflows
 
 - **`.github/workflows/build.yml`** — the matrix build; every compile job but
-  `build-docker` uses `BUILD_DEFAULT` (`BUILD_TESTS`, `BUILD_GUI_DEPS` and `ENABLE_FUZZ_TEST`
-  ON, `Release`), so fuzz targets are compiled but not run. The Debian/Ubuntu
+  `build-docker` and `test-ubuntu` uses `BUILD_DEFAULT` (`BUILD_TESTS`, `BUILD_GUI_DEPS` and `ENABLE_FUZZ_TEST`
+  ON, `Release`), so fuzz targets are compiled but not run. `test-ubuntu` uses
+  `BUILD_DEFAULT_WITH_FCMP_INTEGRATION_ENABLED` (the same plus
+  `ENABLE_FCMP_INTEGRATION=ON`), so only Ubuntu tests run the tree code. The Debian/Ubuntu
   jobs install a **pinned Rust toolchain** (`INSTALL_RUST`): it fetches
   `rustup-init` 1.29.0, checks it against a hardcoded SHA-256, and installs
   toolchain `1.93`. The macOS, MSYS2 and Arch jobs use the platform's Rust.
@@ -201,9 +204,12 @@ be visible through `chaingen_tests_list.h`.
 `net_load_tests_clt/srv`, and the `functional_tests` and `cpu_power_test`
 C++ binaries. A change to one of those is not exercised by CI's test step.
 
-**FCMP++ coverage** is `tests/unit_tests/curve_trees.cpp`, the `fcmp_pp`
-cases in `tests/unit_tests/crypto.cpp`, and the `cncrypto` vectors below; no
-`core_tests` class, functional test or fuzz target exercises `src/fcmp_pp`
+**FCMP++ coverage** is `tests/unit_tests/curve_trees.cpp`,
+`tests/unit_tests/fcmp_pp.cpp` (proof verification from the fixed vectors
+`tests/data/fcmp_pp_verify_inputs_*in.bin`), the `fcmp_pp` cases in
+`tests/unit_tests/crypto.cpp`, `tests/performance_tests/fcmp_pp.h`, and the
+`cncrypto` vectors below; no fuzz target exercises `src/fcmp_pp`, and the
+DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
 (`git grep -il 'fcmp\|curve_trees' -- tests`).
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
@@ -258,7 +264,7 @@ script names hyphenate where some source files use underscores, e.g.
   `make tests` does **not** build the list above it.
 - `tests/core_tests/double_spend.inl` is a template implementation `#include`d
   from the bottom of `double_spend.h`, listed under headers.
-- `tests/crypto/{crypto-ops,crypto-ops-data,hash,random}.c` and `crypto.cpp`
+- `tests/crypto/{crypto-ops-data,hash,random}.c` and `crypto.cpp`
   `#include` the corresponding `src/crypto` file (`hash.c` also pulls in
   `keccak.c`; `crypto.cpp` adds test wrappers) — `cncrypto-tests` **recompiles crypto
   internals** rather than linking `cncrypto`, so it can reach static functions.

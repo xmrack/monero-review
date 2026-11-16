@@ -84,8 +84,9 @@ Before you form a theory, read:
 - The subsystem file for your paths: `subsystems-node.md`,
   `subsystems-wallet.md` or `subsystems-crypto.md`, and
   `subsystems-fcmp-carrot.md` for `src/fcmp_pp`, `src/carrot_*`, the curve
-  trees or `external/mx25519` -- the others describe master, where FCMP++ and
-  Carrot are not wired in.
+  trees or `external/mx25519` -- the others describe master, where no
+  consensus check runs FCMP++ or Carrot code (the DB tree code is behind
+  `ENABLE_FCMP_INTEGRATION`; see `codebase-notes.md`, "FCMP++ work").
 
 On demand: `macros.md` **before you trust a grep** (most control flow and
 every wire-facing serializer is macro-generated), `flows.md`,

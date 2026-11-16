@@ -3,11 +3,14 @@
 What the FCMP++/Carrot integration changes, the rules it must keep, and the
 questions to ask of a pull request that brings part of it to master.
 
-**Where this comes from.** On master, `src/fcmp_pp` is staged with no callers
-and Carrot is absent (`codebase-notes.md`, "FCMP++ work"). The integration is
+**Where this comes from.** Master has the tree code wired into the DB behind
+the `ENABLE_FCMP_INTEGRATION` build flag, proof verification with test callers
+only, and a stub `txout_to_carrot_v1` that consensus rejects; no fork, RCT type
+or consensus caller (`codebase-notes.md`, "FCMP++ work"). The integration is
 built on the `fcmp++-stage` branch of `seraphis-migration/monero` and reaches
 master in pieces. Claims marked **(branch)** were checked against that branch
-at `f25388d` (2026-10-21); **(master)** against master `3fd0f88c2`. Design
+at `f25388d` (2026-10-21); **(master)** against master `ef78ff3d`
+(2026-11-13). Design
 claims come from the Carrot specification and the FCMP++
 integration notes.
 
@@ -52,7 +55,10 @@ the mixin block in `Blockchain::check_tx_inputs`.
   `fcmp_pp_proof_len(inputs, n_tree_layers)` with no length prefix.
 - `txout_to_carrot_v1 {key, view_tag, encrypted_janus_anchor}`: 3-byte view
   tag, 16-byte encrypted anchor; amount and commitment stay in `rctSigBase`. It
-  takes binary variant tag `0x1`, which master gives to `txout_to_scripthash`.
+  takes binary variant tag `0x1`, formerly `txout_to_scripthash`. **(master)**
+  has the type at `0x1` with `key` only (the other fields are commented TODOs);
+  `check_output_types` rejects it at every version. Adding the fields changes
+  its wire size.
 - `block` gains `fcmp_pp_n_tree_layers` and `fcmp_pp_tree_root`, serialized
   only when `major_version >= HF_VERSION_FCMP_PLUS_PLUS`.
 - Inputs stay `txin_to_key`, with `amount == 0` and empty `key_offsets`.
@@ -102,6 +108,22 @@ with chunk widths 38 and 18 (`curve_trees.h`); `FCMP_PLUS_PLUS_MAX_LAYERS` is
 12. Two honest nodes must hold the same root at every block, or the chain
 splits.
 
+### What master has (master)
+
+Behind `ENABLE_FCMP_INTEGRATION` (default `OFF`, on in CI `test-ubuntu`):
+`BlockchainDB::add_block` (`blockchain_db.cpp`) calls
+`BlockchainDB::handle_fcmp_tree` → `add_locked_outs` and `advance_tree` →
+`grow_tree`; `BlockchainLMDB::remove_block` calls `BlockchainDB::trim_block`;
+`BlockchainLMDB::remove_output` also deletes from `locked_outputs`. LMDB
+`VERSION` is 7 with `migrate_5_7` and the six tables below; without the flag it
+is 5 and none of this runs. Leaves come from `to_output_pair` and
+`get_outs_by_last_locked_block` (`cryptonote_format_utils.cpp`).
+`get_last_locked_block_index_for_tree` ignores non-coinbase `unlock_time`
+from block 3686382 (`UNLOCK_TIME_DEPRECATION_BLOCK`, mainnet height used on
+every network) and maps time-based unlocks with fixed mainnet v16 constants
+(`HF_V16_HEIGHT`, `HF_V16_TIMESTAMP`). Nothing commits the root to a block
+header or reads `get_tree_root_at_blk_idx` outside `db_lmdb.cpp`.
+
 ### When an output enters (branch)
 
 - `cryptonote::handle_fcmp_tree` (`blockchain.cpp`) runs after each block.
@@ -134,7 +156,7 @@ splits.
 
 - New LMDB tables (`db_lmdb.cpp`): `locked_outputs`, `leaves`, `layers`,
   `tree_edges`, `tree_meta`, `timelocked_outputs`. DB `VERSION` goes from 5
-  (master) to 6.
+  to 6 on the branch; master uses 7 (`migrate_5_7`) under the build flag.
 - `migrate_5_6` builds the tree from all existing outputs in two resumable
   steps, ending in `advance_tree` per block, so it shares the code above.
 - `BlockchainLMDB::remove_block` calls `BlockchainDB::trim_block`, which trims
@@ -200,7 +222,9 @@ differ from the one the proof binds.
 ### FFI contracts (branch)
 
 - `fcmp_pp_verify_input_new` trusts `proof_len`; it only `debug_assert`s it.
-  Every caller must check the length first.
+  Every caller must check the length first. **(master)** returns `-4` when
+  `proof_len != fcmp_pp_proof_size(n_inputs, n_tree_layers)`, but checks
+  neither `FCMP_PLUS_PLUS_MAX_INPUTS` nor `FCMP_PLUS_PLUS_MAX_LAYERS`.
 - It dereferences the tree-root pointer unchecked;
   `collect_fcmp_pp_tx_verify_input` checks the root is not null.
 - Both Cargo profiles set `panic = "abort"` and `overflow-checks = true`. A
@@ -212,7 +236,9 @@ differ from the one the proof binds.
 
 - `batch_ver_fcmp_pp_consensus` verifies a block's unverified FCMP++
   transactions together; `rct::batchVerifyFcmpPpProofs` spreads them over the
-  thread pool by input count. One bad proof fails its batch.
+  thread pool by input count. One bad proof fails its batch. **(master)** has
+  `rct::batchVerifyFcmpPpProofs` and `fcmp_pp::verify` (`src/fcmp_pp/verify.cpp`)
+  with test callers only.
 - `make_input_verification_id(txid, tree_root, n_tree_layers)` marks a verified
   transaction; a matching ID skips re-verification. `tx_pool`'s
   `expect_invalid_tx_inputs` uses it to stop relaying transactions a reorg has

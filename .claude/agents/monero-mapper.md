@@ -71,7 +71,7 @@ tree, which is the quickest way to tell whether a unit needs it.
 Choose lenses deliberately and sparingly. A ring signature change does not need
 `supply-chain`; a CMake change does not need `crypto-correctness`. Two or three
 apt lenses per unit produce better work than the whole list, because each one
-you add spends a researcher.
+you add spends a researcher at deep and divides one at standard.
 
 Sparing is not the same as timid, and the classic failure here is reaching for
 the generic ones. A hard-fork gating change, a reorg path, a DB write, a cache

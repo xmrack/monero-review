@@ -11,7 +11,7 @@ deanonymises the user directly.
 different threat models, and a finding real in one is often
 unreachable in another. Always name the one you mean.
 
-Verified against master `3fd0f88c2` (2026-10-25).
+Verified against master `ef78ff3d` (2026-11-13).
 
 No FCMP++ or Carrot code is in the wallet on master: `grep -rli 'fcmp\|carrot' src/wallet src/simplewallet src/device`
 finds nothing. Wallet-side FCMP++/Carrot work lives off master.
@@ -191,6 +191,15 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   and passphrase with a chacha20 keystream) and then `decrypt_viewkey` to undo
   the view-key part; `wallet2::decrypt_keys` does the reverse. Both first call
   `verify_password_with_cached_key`. The names describe the spend key only.
+- **simplewallet output can reach the log file.** `success_msg_writer` also
+  writes to the `msgwriter` log category; `tools::unlogged_success_msg_writer`
+  (`src/common/scoped_message_writer.h`) does not, and is used for multisig
+  info and tx keys. Seeds go through `write_secret` straight to the stdout
+  descriptor, and `set_log_command_arguments(false)` keeps command arguments
+  out of debug logs. A new secret printed with `success_msg_writer` is logged.
+- **`wallet2::sign` throws** unless the key for the requested address and
+  `signature_type` derives to that address's public key, so a watch-only
+  wallet cannot produce an unverifiable spend-key signature.
 - **`hashchain::size()` is a height, not a container size** — it returns
   `m_blockchain.size() + m_offset`, and `operator[]` subtracts the offset.
 - **`m_global_output_index` comes from the daemon and is stored unverified.**
@@ -266,7 +275,9 @@ input amounts, commitments, key images, ring members and destinations
 against `m_transfers` and the account keys, and require non-zero change to
 go to the sender. `sanity_check_unsigned_tx_set` takes no `m_transfers`, and
 in `wallet2::sign_tx` the later `m_transfers` checks run after
-`import_outputs` has loaded the transfers from the same unsigned set. Its
+`import_outputs` has loaded the transfers from the same unsigned set.
+`sign_tx`, `parse_tx_from_str` and both `import_outputs` overloads refuse a
+multisig wallet (`m_multisig`). Its
 header states what it cannot check: URL destinations,
 `tx_construction_data::extra` versus the final `tx_extra`, and `mixRing`
 on deserialized txs. In `commit_tx` the check runs only to decide whether
@@ -287,7 +298,9 @@ thread**, under an explicit comment. The only cross-thread callers are
 `stop_refresh()` and `send_stop_signal()`, from the signal handler that
 `t_daemon::run` installs and from `t_daemon::stop`; `stop_refresh()` touches only the `std::atomic`
 members declared in `wallet_rpc_server.h` and, guarded by them, the
-`m_wallet` pointer (`m_wallet->shutdown()`).
+`m_wallet` pointer (`m_wallet->shutdown()`). Off Windows, `t_daemon::run` also
+installs a `SIGUSR1` handler that only sets an atomic; a polling thread
+calls `mlog_reopen`.
 
 **Startup order.** In `t_daemon::run`, `wrpc->init` (which binds the
 listener) runs before any wallet is loaded, and a generated RPC login is

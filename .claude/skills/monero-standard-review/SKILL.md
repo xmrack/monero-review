@@ -35,7 +35,7 @@ This is the deep pipeline with the expensive parts removed. It runs the same
   That stage is cheap and it is the only thing standing between an
   observation somebody wrote down and nobody ever reading it;
 - puts each candidate to **two** verifier angles, REACHABILITY and GUARD,
-  and requires both. A consensus, crypto or privacy candidate gets a
+  and requires both. A consensus, state, crypto, co-signer, privacy or side-channel candidate gets a
   specialist in REACHABILITY's place (DIVERGENCE, SPEC or OBSERVER), and every
   angle states what the defect buys: a `none` counts as a rejection. No candidate can reach three agreeing votes, and the
   report says so where it counts: the locator line on every finding reads

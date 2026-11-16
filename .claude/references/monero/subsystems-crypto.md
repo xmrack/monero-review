@@ -10,7 +10,7 @@ agree bit for bit. So the highest-value question about a change here is usually
 not "is this instruction correct" but **"do all the paths still produce the
 same bytes"**.
 
-Verified against master `3fd0f88c2` (2026-10-25).
+Verified against master `ef78ff3d` (2026-11-13).
 
 ---
 
@@ -212,19 +212,23 @@ reporting one.
 ## `src/fcmp_pp/` — Full-Chain Membership Proofs, as of master
 
 **Staged, not live.** Get this right in both directions: the code is present
-and in the build, and it is not consensus-reachable today. A defect in it is still a finding, rated as it will run once live: see
+and in the build, and no consensus check runs it today; the DB calls the tree
+code only in `ENABLE_FCMP_INTEGRATION` builds (`codebase-notes.md`, "FCMP++
+work"). A defect in it is still a finding, rated as it will run once live: see
 `refutations.md`, "Not refutations".
 
 What exists: `curve_trees.{h,cpp}`, `fcmp_pp_crypto.{h,cpp}`,
-`fcmp_pp_types.{h,cpp}`, `tower_cycle.{h,cpp}`, `ffi_api_c_compat.c` (a 46-byte
+`fcmp_pp_types.{h,cpp}`, `fcmp_pp_serialization.h`, `tower_cycle.{h,cpp}`,
+`verify.{h,cpp}`, `ffi_api_c_compat.c` (a 46-byte
 C-compatibility probe), and `fcmp_pp_rust/` — a Rust crate.
 
 **Monero master builds Rust.** `src/fcmp_pp/CMakeLists.txt` links
 `libfcmp_pp_rust.a`, whose manifest (`fcmp_pp_rust/Cargo.toml`) pulls
-`ciphersuite` and `dalek-ff-group` from crates.io, `helioselene` and the
-FCMP++ crates (`ec-divisors`, `full-chain-membership-proofs`,
-`monero-fcmp-plus-plus*`) from one git `rev` of
-`github.com/monero-oxide/monero-oxide`, and patches `crypto-bigint` to the
+`ciphersuite`, `dalek-ff-group`, `multiexp` and `rand_core` from crates.io,
+`helioselene` and the FCMP++ crates (`generalized-bulletproofs`,
+`ec-divisors`, `full-chain-membership-proofs`, `monero-fcmp-plus-plus*`) from
+one git `rev` of `github.com/monero-oxide/monero-oxide` (`77788c36` on
+`ef78ff3d`), and patches `crypto-bigint` to the
 `c-repr` branch of a personal fork (`kayabaNerve/crypto-bigint`; the exact
 commit is pinned only in `Cargo.lock`). Cargo runs with `--locked`. Both
 profiles set `panic = "abort"` and `overflow-checks = true`. The Ubuntu CI
@@ -235,16 +239,27 @@ vendors the crates (`contrib/guix/rust/config.toml`). **A change under
 `fcmp_pp_rust/` or to `Cargo.lock` is a supply-chain change**, whatever the
 diff looks like.
 
-**The FFI surface on master is tree hashing only.** `fcmp_pp_rust/src/lib.rs`
-exports the hash-init points, `hash_grow_helios` / `hash_grow_selene`
+**The FFI surface on master: tree hashing and proof verification.**
+`fcmp_pp_rust/src/lib.rs` exports the hash-init points, `hash_grow_helios` / `hash_grow_selene`
 (wrapping `full_chain_membership_proofs::tree::hash_grow`), Selene/Helios
 point-to-cycle-scalar conversion, `selene_scalar_from_bytes`, zero scalars,
 to-bytes helpers and the point decoders `helios_point_from_bytes` /
 `selene_point_from_bytes` (`ec_elem_from_bytes!` with `read_G`; reached from
 `CurveTrees::tree_edge_to_last_hashes` via `Helios::from_bytes` /
-`Selene::from_bytes`). There is no prove, verify, key-image or spend-authorization (SA/L) entry point.
-The `int`-returning exports return `-1` for a null out-pointer and `-2` for a
-Rust-side failure; `tower_cycle.cpp` is the only C++ caller. Input pointers
+`Selene::from_bytes`). Verification adds `selene_tree_root` /
+`helios_tree_root`, `membership_proof_size`, `fcmp_pp_proof_size`,
+`fcmp_pp_verify_input_new`, `fcmp_pp_n_inputs`, `fcmp_pp_verify` and the
+`destroy_*` frees; there is no prove or key-image entry point.
+`fcmp_pp_verify_input_new` null-checks its pointers, rejects zero inputs or
+layers (`-2`), mismatched key-image count (`-3`) and
+`proof_len != fcmp_pp_proof_size(n_inputs, n_tree_layers)` (`-4`), then
+decodes key images with `read_G`. It does **not** check
+`n_inputs <= FCMP_PLUS_PLUS_MAX_INPUTS` or
+`n_tree_layers <= FCMP_PLUS_PLUS_MAX_LAYERS` (its doc comment leaves that to
+the caller); in C++ only `fcmp_pp::membership_proof_len` asserts those caps.
+`fcmp_pp_verify` batch-verifies with `OsRng` weights. The tree-hashing
+`int` exports return `-1` for a null out-pointer and `-2` for a Rust-side
+failure; `tower_cycle.cpp` calls them. Input pointers
 other than the out-pointer are not null-checked (`selene_scalar_from_bytes`
 and the two point decoders read 32 bytes unconditionally; `hash_grow_helios`/`hash_grow_selene` check
 `hash_out` but not `new_children.buf` when `len` is non-zero — a `Slice` may
@@ -260,8 +275,8 @@ null-check neither `obj` nor `bytes_out`: they build the 32-byte slice with
 `src/crypto/generators.cpp` carries the FCMP++ generators `T`, `U` and `V` as
 raw constants, each with a `//Source:` comment naming where it came from;
 `init_gens` only `static_assert`s their first byte, and only debug-build
-`assert`s reproduce them in full (they matched monero-oxide at the pinned
-`rev` on `3fd0f88c2`). They must equal
+`assert`s reproduce them in full (they match monero-oxide `77788c36`, the
+pinned `rev` on `ef78ff3d`). They must equal
 monero-oxide's `CompressedPoint::T` (`monero-oxide/ed25519/src/compressed_point.rs`)
 and `FCMP_PLUS_PLUS_U` / `FCMP_PLUS_PLUS_V`
 (`monero-oxide/ringct/fcmp++/generators/src/lib.rs`) at the pinned revision.
@@ -282,20 +297,19 @@ CMake `try_compile`s `ffi_api_c_compat.c` and fails the build with "The FCMP++
 FFI API header 'fcmp++.h' has broken compatibility with C" if the checked-in,
 hand-written header `fcmp_pp_rust/fcmp++.h` stops being C-compatible.
 
-**Nothing outside `src/fcmp_pp/` calls into it.** `src/ringct` still links
-the `fcmp_pp` library (`src/ringct/CMakeLists.txt`) but includes none of its
-headers. The torsion check lives in `crypto`:
-`rct::verPointsForTorsion` (`src/ringct/rctSigs.cpp`) and
+**Callers outside `src/fcmp_pp/`** (`git grep -n fcmp_pp -- src ':!src/fcmp_pp'`):
+`src/ringct/rctSigs.cpp` (`rct::batchVerifyFcmpPpProofs`, test callers
+only), `src/blockchain_db` (`BlockchainLMDB` constructs `curve_trees_v1()`
+always; `BlockchainDB::grow_tree` calls `get_tree_extension` only under
+`ENABLE_FCMP_INTEGRATION`) and `cryptonote_format_utils.{h,cpp}`
+(`to_output_pair`, `get_outs_by_last_locked_block`). The torsion check lives
+in `crypto`: `rct::verPointsForTorsion` (`src/ringct/rctSigs.cpp`) and
 `fcmp_pp::curve_trees::output_to_tuple` (two calls, plus two `assert`-only
 uses in its `!NDEBUG` block that compile out in release) call
 `crypto::get_valid_torsion_cleared_point_vartime` (`src/crypto/crypto.cpp`).
-Neither caller runs in production: `rct::verPointsForTorsion` appears only in
-`rctSigs.h`, `rctSigs.cpp` and `tests/unit_tests/crypto.cpp`, and no daemon or
-wallet code calls anything in `src/fcmp_pp/curve_trees.cpp` — only
-`tests/unit_tests/curve_trees.cpp` reaches `output_to_tuple` and
-`get_tree_extension`. Check with `git grep -n fcmp_pp -- src ':!src/fcmp_pp'`,
-which on master finds only the two CMake lines.
-`RCTType` still stops at `RCTTypeBulletproofPlus = 6`.
+`rct::verPointsForTorsion` appears only in `rctSigs.h`, `rctSigs.cpp` and
+`tests/unit_tests/crypto.cpp`; `output_to_tuple` runs in a default build only
+from tests. `RCTType` still stops at `RCTTypeBulletproofPlus = 6`.
 
 `fcmp_pp_crypto.h` exports `mul8_is_identity_vartime`,
 `point_to_ed_derivatives`, `ed_derivatives_to_wei_x_y`, `point_to_wei_x_y` and

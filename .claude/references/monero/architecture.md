@@ -4,7 +4,7 @@ How the Monero tree fits together: the layers, what depends on what, and the
 handful of structural facts that explain most of what looks strange when you
 open a file here.
 
-Verified against `monero-project/monero` master `3fd0f88c2` (2026-10-25).
+Verified against `monero-project/monero` master `ef78ff3d` (2026-11-13).
 Line counts and link edges move; the shape does not. Re-check anything you are
 about to put in a finding.
 
@@ -53,7 +53,7 @@ checkpoints   ringct_basic   fcmp_pp ......... src/fcmp_pp (-> cncrypto, common,
 cryptonote_basic .+     | ...... src/cryptonote_basic (-> common, cncrypto,
   |                     |          checkpoints, cryptonote_format_utils_basic,
   |                     |          device, ringct_basic)
-blockchain_db           | ...... src/blockchain_db (-> cryptonote_basic, ringct_basic)
+blockchain_db           | ...... src/blockchain_db (-> cryptonote_basic, fcmp_pp, ringct_basic)
   |                     |
 cryptonote_core <-------+ ...... src/cryptonote_core (-> blockchain_db, ringct,
   |                                device, hardforks, version, wire)
@@ -100,14 +100,14 @@ over 2,000 lines (approximate counts; `wc -l` for current ones):
 | lines | file | why it matters |
 |------:|------|----------------|
 | ~16000 | `src/wallet/wallet2.cpp` | the entire wallet, one translation unit |
-| ~11700 | `src/simplewallet/simplewallet.cpp` | the CLI command table and prompts |
-|  ~5800 | `src/blockchain_db/lmdb/db_lmdb.cpp` | the only shipped `BlockchainDB` |
+| ~11900 | `src/simplewallet/simplewallet.cpp` | the CLI command table and prompts |
+|  ~7000 | `src/blockchain_db/lmdb/db_lmdb.cpp` | the only shipped `BlockchainDB` |
 |  ~5600 | `src/cryptonote_core/blockchain.cpp` | validation and reorganisation |
-|  ~5400 | `src/wallet/wallet_rpc_server.cpp` | the unattended wallet surface |
+|  ~5500 | `src/wallet/wallet_rpc_server.cpp` | the unattended wallet surface |
 |  ~4100 | `src/crypto/crypto-ops.c` | Ed25519 arithmetic, C, `ref10`-derived |
-|  ~3200 | `src/p2p/net_node.inl` | the node; a `.inl`, not a `.cpp` |
+|  ~3400 | `src/p2p/net_node.inl` | the node; a `.inl`, not a `.cpp` |
 |  ~3200 | `src/rpc/core_rpc_server.cpp` | the daemon's HTTP surface |
-|  ~2900 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
+|  ~3000 | `src/cryptonote_protocol/cryptonote_protocol_handler.inl` | the P2P trust boundary |
 |  ~2100 | `contrib/epee/include/net/abstract_tcp_server2.inl` | the TCP connection layer under both P2P and HTTP RPC |
 
 The `.inl` files are implementations, not inline helpers. Grep that
@@ -217,12 +217,13 @@ The C++ side guards the boundary: CMake `try_compile`s
 the checked-in, hand-written header `src/fcmp_pp/fcmp_pp_rust/fcmp++.h` stops
 being C-compatible.
 
-**FCMP++ is staged, not live.** On master nothing in `src/` outside
-`src/fcmp_pp/` calls into it (only `tests/unit_tests` and `tests/crypto` do); `src/ringct`
-links the library but includes none of its headers, and there is no
-`HF_VERSION_*` for it. Carrot is likewise absent from master beyond
-helpers such as `ge_p3_to_x25519` in `src/crypto/crypto-ops.h` and
-comments. Torsion clearing is not part of FCMP++:
+**FCMP++ is staged, not live.** On master no consensus check calls it and
+there is no `HF_VERSION_*` for it. `src/blockchain_db` grows the curve tree
+only when built with `ENABLE_FCMP_INTEGRATION` (default `OFF`), and
+`rct::batchVerifyFcmpPpProofs` in `src/ringct/rctSigs.cpp` has test callers
+only (`codebase-notes.md`, "FCMP++ work"). Carrot is groundwork only: the
+`txout_to_carrot_v1` output type, which `check_output_types` rejects, and
+helpers such as `ge_p3_to_x25519` in `src/crypto/crypto-ops.h`. Torsion clearing is not part of FCMP++:
 `crypto::get_valid_torsion_cleared_point_vartime` is in `src/crypto/`, is
 used by `src/fcmp_pp/curve_trees.cpp`, and is live in shipped code through
 `crypto::pubkey_clear_torsion`: `src/wallet/wallet2.cpp` (payment-ID

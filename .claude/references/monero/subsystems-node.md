@@ -8,7 +8,7 @@ Wallet subsystems are in `subsystems-wallet.md`; crypto in
 `subsystems-crypto.md`; the end-to-end paths through all of these are in
 `flows.md`.
 
-Verified against master `3fd0f88c2` (2026-10-25). Symbols confirmed by grep; cited by file
+Verified against master `ef78ff3d` (2026-11-13). Symbols confirmed by grep; cited by file
 and enclosing function or symbol, not line number.
 
 ---
@@ -62,8 +62,12 @@ throw rather than return:
   path** (a repeated scalar key: last one wins; a repeated object key is
   merged into the existing section via `open_section`). The binary check is a `lower_bound` comparison in
   `read(section&)`.
-- `ps_min_bytes<T>::strict` is 1 for `section` and `array_entry`, so for those
-  the proportional bound permits a count equal to the whole remaining input.
+- `ps_min_bytes<T>::strict` is 1 for `section`, so for it the proportional
+  bound permits a count equal to the whole remaining input.
+- **Nested arrays are rejected on the binary path.**
+  `load_storage_array_entry` has no `SERIALIZE_TYPE_ARRAY` case and throws
+  "unknown entry_type code"; `read_ae` `static_assert`s it is never
+  instantiated for `array_entry`.
 - On a 32-bit build, `read_varint`'s `v` is a `size_t`, so the 64-bit marker
   branch truncates before the shift.
 - epee's JSON parser is hand-written. Do **not** assume rapidjson semantics
@@ -173,7 +177,10 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   RPC types.
 - `VARIANT_TAG` values legitimately collide across different variants: both
   `txin_to_script` and `txout_to_script` are `0x0`. Tags are scoped to their
-  own variant's type list.
+  own variant's type list. `txout_target_v` tag `0x1` is now
+  `txout_to_carrot_v1` (32-byte `key`, the size `txout_to_scripthash` had);
+  `check_output_types` rejects it. `variant.h` serializes `std::variant` as
+  well as `boost::variant`.
 - `std::list` and `std::forward_list` are **not** serializable, despite
   `serialization.h` including `<list>` — `is_container` (`containers.h`)
   lists only deque, map,
@@ -420,7 +427,11 @@ and an atomic counter.
 **Pruning** (`src/common/pruning.{h,cpp}`): stripe arithmetic over a seed.
 `prune_worker` only ever deletes from `m_txs_prunable` and
 `m_txs_prunable_tip`; v1 transactions are never pruned and tip blocks
-(`CRYPTONOTE_PRUNING_TIP_BLOCKS` = 5500) are never pruned.
+(`CRYPTONOTE_PRUNING_TIP_BLOCKS` = 5500) are never pruned. Pruned block sync
+(`--sync-pruned-blocks`) starts at `HF_VERSION_DYNAMIC_FEE` (the RingCT fork),
+and `get_pruned_transaction_weight` (`cryptonote_format_utils.cpp`)
+reconstructs weight for every type from `RCTTypeFull` to
+`RCTTypeBulletproofPlus`, Borromean included.
 
 **Traps.**
 
@@ -574,6 +585,14 @@ peerlist, peer id and connect function. **All non-public zones borrow the
 public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 `COMMAND_TIMED_SYNC` and `NOTIFY_NEW_TRANSACTIONS` are allowed
 (`is_filtered_command`).
+
+**I2P over SAM.** `--i2p-sam` (`src/net/i2p_sam.{h,cpp}`, `docs/I2P_SAM.md`)
+replaces `--tx-proxy`/`--anonymous-inbound` for the I2P zone: outbound uses
+`sam_connect`; inbound sockets are opened by monerod to the router's SAM
+bridge (`STREAM ACCEPT`) and handed to `boosted_tcp_server::add_connection`
+with `is_income = true`, the bytes read past the SAM reply passed as
+`initial_data`, and the remote I2P destination taken from that reply. The
+inbound key is persisted as `i2p_private_key` in the data directory.
 
 **Peer lists.** White (verified), gray (heard about), anchor (eclipse
 resistance). An address enters the white list only after a successful outbound
@@ -730,8 +749,7 @@ a **per-translation-unit macro**: every `.cpp` does
 **Other facts worth having.** `src/common/i18n.h` is a stub —
 `i18n_translate(str, context)` returns `str` and there is no `i18n.cpp`
 anywhere in the tree, so every `tr("...")` is a no-op today.
-`src/common/dns_utils.h` declares `DNS_TYPE_AAAA = 8` (the IANA value for AAAA
-is 28). `src/common/timings.cc` and `src/common/aligned.c` are not `.cpp`, so a
+`src/common/timings.cc` and `src/common/aligned.c` are not `.cpp`, so a
 `*.cpp` glob misses them. `stack_trace.cpp` compiles only under the
 `STACK_TRACE` option and interposes on `__cxa_throw` process-wide.
 `memwipe` and `wipeable_string` live in `contrib/epee`, not here.
