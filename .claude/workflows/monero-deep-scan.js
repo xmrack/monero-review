@@ -41,7 +41,7 @@ export const meta = {
 // adjudicators (cheap, and the only thing standing between an observation
 // somebody wrote down and nobody reading it), and a counted panel.
 
-// Kept in step with specs/finding-spec.md, which the agents read. Changing one
+// Kept in step with .claude/specs/finding-spec.md, which the agents read. Changing one
 // without the other makes the agents fail schema validation.
 //
 // Five of these were added after a review of what the fleet was NOT finding.
@@ -732,7 +732,7 @@ const CONTEXT = [
   'wire-facing serializer is macro-generated and has no text form.',
   'What audits, papers and past incidents found: audits-crypto.md,',
   'audits-fcmp-carrot.md, past-vulnerabilities.md, privacy-and-network.md.',
-  'The candidate standard: .claude/skills/monero-deep-review/specs/finding-spec.md',
+  'The candidate standard: .claude/specs/finding-spec.md',
   '',
   'Callers: rtool callers <fn> prints cscope (src+contrib, then tests) AND every',
   'git grep -w match; rtool def <symbol> finds a C++ or Rust definition. A hit is',

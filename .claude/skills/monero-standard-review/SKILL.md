@@ -7,77 +7,23 @@ allowed-tools: Read, Grep, Glob, Write(./**), Edit(./**), Workflow, Agent(monero
 
 # Monero standard review
 
-**This is the review.** Every pull request the sweep picks up gets this one;
-`/monero-deep-review` is the escalation above it, and there is nothing below.
+**This is the review.** Every pull request the sweep picks up gets this one,
+and every dispatch that does not say `mode=deep`. `/monero-deep-review` is the
+escalation above it; there is nothing below it. A session that cannot dispatch
+the fleet stops and says so: there is no single-reviewer fallback.
 
-It replaced a single reviewer holding the entire change in one context. That
-shape is fine for a three-file patch and it degrades as the diff widens: every
-tool result stays in the window for the rest of the run, so the files read last
-are read by the most diluted context, and nothing checked whether they had been
-read at all. That reviewer is gone rather than kept as a fallback: the report
-it wrote was indistinguishable from this one's, so a session that cannot
-dispatch the fleet stops and says so instead of reviewing worse and publishing
-something that reads the same.
+It runs the `monero-deep-scan` workflow under `profile: "standard"`: at most
+**5** units checked against the real changed-file list, **one researcher per
+unit** with all its weakness classes, **no seam pass and no per-unit second
+look**, an adjudicator for every observation a researcher hands on, **two**
+verifier angles per candidate (REACHABILITY, or a specialist DIVERGENCE, SPEC
+or OBSERVER in its place, and GUARD; both required, and a `none` consequence
+counts as a rejection), an advocate on a 1-1 split, a re-read of every earlier
+review's findings at this head, and a merge of surviving findings that one
+change at one place would fix (severity the worst member's, every member's
+line and vote kept). The role below names who does what.
 
-This is the deep pipeline with the expensive parts removed. It runs the same
-`monero-deep-scan` workflow under `profile: "standard"`, which:
-
-- maps the change into at most **5** units and checks the partition against
-  the real changed-file list, exactly as the deep pass does;
-- dispatches **one researcher per unit** (two or more for a large unit, sharing its classes), carrying all of that unit's weakness
-  classes, instead of one per unit per class;
-- runs **no seam pass and no per-unit second look**. On the one measured deep
-  run those two were 28.1% of the fleet's cost and produced one candidate
-  between them, which the panel then refuted unanimously. This profile is what
-  the whole queue pays for, twice an hour, so an agent that does not earn its
-  place is money spent on every pull request upstream opens;
-- still adjudicates every observation a researcher hands on rather than files.
-  That stage is cheap and it is the only thing standing between an
-  observation somebody wrote down and nobody ever reading it;
-- puts each candidate to **two** verifier angles, REACHABILITY and GUARD,
-  and requires both. A consensus, state, crypto, co-signer, privacy or side-channel candidate gets a
-  specialist in REACHABILITY's place (DIVERGENCE, SPEC or OBSERVER), and every
-  angle states what the defect buys: a `none` counts as a rejection. No candidate can reach three agreeing votes, and the
-  report says so where it counts: the locator line on every finding reads
-  `<n>/2 angles agreed`, against a deep review's `<n>/3`. There is no
-  confidence word in a heading at either tier -- two graded words in one
-  bracket read as one scale and blur the severity;
-- sends a 1-1 split to an **advocate**, who reads the rejection's deciding
-  line and either shows it wrong or lets it stand. A tie used to be filed as
-  refuted on one verifier's word, and `## Refuted` then told a maintainer the
-  idea had been checked and was wrong;
-- re-reads every finding an earlier review of this pull request published,
-  at this head, and says what became of each one;
-- **merges the findings that survive**, exactly as the deep pass does. Several
-  confirmed candidates can be one defect reached from two directions, and
-  publishing each under its own heading shows a maintainer the same bug twice
-  and makes the real finding read as one of three. A group nominated
-  mechanically -- shared file, symbol or title -- goes to one agent that decides
-  whether one change at one place would fix them all; the group is a partition
-  checked in code, the severity is the worst member's, and every member's line
-  and vote is carried into the entry that replaces it. Nothing is nominated on
-  most reports, and the stage then costs nothing at all.
-
-What you give up is real and the report has to say so: no cross-unit trace, no
-second look at a unit whose lens assignment was made before anyone read the
-code, and one fewer angle on every candidate.
-
-## How it is reached
-
-By default, always. Every scheduled tick and every dispatch that does not say
-`mode=deep` lands here, whether it names a PR or sweeps the queue. There is no
-routing decision and nothing to configure: two tiers, and this is the one that
-is not an escalation.
-
-```bash
-gh workflow run review.yml --repo xmrack/monero-review -f pr=11155
-gh workflow run review.yml --repo xmrack/monero-review -f mode=standard -f pr=sweep
-```
-
-The workflow appends `Workflow` and the five `Agent(...)` grants when it
-dispatches this skill, exactly as it does for the deep pass, and runs
-no separate refutation pass -- this pipeline is its own adversary, and such a
-pass would rewrite `review.md` in place and throw `## Coverage` away.
+No separate refutation pass runs after this one.
 
 ## The job
 
@@ -87,15 +33,13 @@ There is one job. Read its recipe and follow it as written:
 
 ## Environment and paths (use verbatim)
 
-- [REPORT SPEC -- the shape of `review.md`](${CLAUDE_SKILL_DIR}/specs/report-spec.md)
+- [REPORT SPEC -- the shape of `review.md`](.claude/specs/report-spec.md).
+  Shared by both tiers; use its `standard` column.
 - [HOUSE STYLE -- how the prose is written](.claude/references/writing.md).
-  Orwell's six rules, the Simplified Technical English rules that apply, the
-  words to cut, and the pass to run over the draft. Read it with the REPORT
-  SPEC: that one is the structure, this one is the writing.
-- [FINDING SPEC -- the shape of a candidate](.claude/skills/monero-deep-review/specs/finding-spec.md),
-  shared with the deep review and enforced as a schema in the workflow. Not
-  duplicated here: the candidate standard does not change with the tier, only
-  how many agents apply it.
+  Read it with the REPORT SPEC: that one is the structure, this one is the
+  writing.
+- [FINDING SPEC -- the shape of a candidate](.claude/specs/finding-spec.md),
+  shared with the deep review and enforced as a schema in the workflow.
 - Shared Monero references, which every skill here uses:
   - `.claude/references/monero/` -- how the codebase works. `README.md` is the
     index; `macros.md` and `flows.md` are the two every agent should have read

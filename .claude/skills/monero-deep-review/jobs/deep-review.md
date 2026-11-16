@@ -4,13 +4,10 @@ Resolve what is under review, start the run, write `review.md`.
 
 ## 1. Fix the range
 
-The harness fetched the PR head and pointed `origin/base` at the branch it
-targets. Confirm that instead of assuming it, one command per call:
+Confirm the harness's setup, one command per call:
 
 - `git rev-parse --verify --quiet origin/base`: empty means this checkout was
-  not prepared by the harness. Stop and say so. Without `origin/base` there is
-  no honest range, and falling back to `master` would hand you an entire
-  branch's divergence on any backport.
+  not prepared by the harness. Stop and say so. Never fall back to `master`.
 - `git rev-parse --short=12 HEAD`: the head under review. Quote it.
 
 The range is `origin/base...HEAD`, three dots, never inside `$(...)`.
@@ -18,32 +15,25 @@ The range is `origin/base...HEAD`, three dots, never inside `$(...)`.
 `PR_CONTEXT.md` opens with a `Pull request: <upstream>#<n>` line written by the
 harness, outside the author-supplied fence, and then the author's own title.
 Take the number and title from there and treat the rest as the author's claims.
-If that line is absent (an older harness, or a checkout prepared by hand),
-pass `pr: null` rather than guessing; the workflow handles it.
+If that line is absent, pass `pr: null` rather than guessing.
 
 The harness also writes a `PR state:` line: `open`, `merged` or `closed`.
 On `merged`, confirm `git rev-parse --verify --quiet origin/master` and pass
-`masterRef: "origin/master"` in step 4: the workflow then reads every finding
-again on master and `origin/base`, which later changes may have fixed. If the
-ref is missing, pass no `masterRef` and say under **Not covered** that the
-findings were not checked against master. On `closed`, the pull request was
-never merged, so pass no `masterRef` and say in the summary that its code did
-not land. On anything else, pass no `masterRef`.
+`masterRef: "origin/master"` in step 4. If the ref is missing, pass no
+`masterRef` and say under **Not covered** that the findings were not checked
+against master. On `closed`, pass no `masterRef` and say in the summary that
+its code did not land. On anything else, pass no `masterRef`.
 
 ## 2. List the changed files
 
 `PR_FILES.md` already holds them, one path per line (lines starting `#` are
-not paths), written by the harness from `git diff --name-only
-origin/base...HEAD` before you started. Read it rather than re-deriving it, and
-if it is absent run that command yourself and say in the report that the
-harness did not provide the list.
+not paths). Read it rather than
+re-deriving it. If it is absent, run `git diff --name-only origin/base...HEAD`
+yourself and say in the report that the harness did not provide the list.
 
-Hand this list to the workflow exactly as git printed it. Do not filter it,
-reorder it by what looks important, or trim it to something manageable. The
-workflow's coverage check compares the mapper's answer against precisely this
-list, so anything you drop here becomes a file that was never reviewed and
-never reported as unreviewed, which is the one failure this job is built to
-prevent.
+Hand the list to the workflow exactly as it stands. Do not filter it, reorder
+it, or trim it: anything you drop becomes a file never reviewed and never
+reported as unreviewed.
 
 An empty list means there is nothing to review: say so and stop.
 
@@ -52,35 +42,19 @@ For the report's `Change:` line: `git diff --shortstat origin/base...HEAD`
 ## 3. Confirm you can actually run it
 
 Check that `Workflow` is among the tools available to you right now, with its
-parameters. This skill's frontmatter asking for it proves nothing, and neither
-does the workflow's allowlist: an allowlist says what would be PERMITTED, and
-permitting a tool the CLI does not ship does not bring it back.
-
-There is no second tool to check for. The fleet's result reaches you as a
-completion notification that starts a new turn (step 4b), not through a tool
-you call. `TaskOutput`, which this step used to require, no longer exists in
-the CLI this harness runs, and nothing replaces it.
+parameters. This skill's frontmatter and the workflow's allowlist prove
+nothing. There is no second tool to check for: the result arrives as a
+completion notification (step 4b).
 
 If `Workflow` is missing, stop with one line saying this session does not have
-it, so nothing ran. There is no lesser
-reviewer to fall back to -- a single-reviewer fallback existed once and was
-removed, because a report it produced was indistinguishable from one the fleet
-produced. Do not improvise around it. Dispatching the agents
-yourself would yield a report claiming a verification nobody performed, which
-is the one thing this skill must never produce.
+it, so nothing ran. There is no lesser reviewer to fall back to. Do not
+improvise around it, and do not dispatch the agents yourself. In the CI
+harness the tool is granted on `mode=deep`, so reaching this stop there means
+the harness is misconfigured and the run should be diagnosed, not retried.
 
-**Say it in chat and write nothing to `review.md`.** That file is the
-harness's input, not a place to leave a note. A file explaining why nothing
-ran carries no severity heading, so `labels.py` reads it as a review that
-found nothing, the harness files the issue that marks this pull request
-reviewed, and it is never looked at again, so a harness misconfiguration turns
-into a permanent clean bill of health. An absent file is read correctly: the
-run failed and the pull request stays in the queue.
-
-In the CI harness the tool is granted (`.github/workflows/review.yml` appends
-`Workflow` and the five `Agent(...)` grants when it is dispatched with
-`mode=deep`), so reaching this stop there means the harness is misconfigured
-and the run should be diagnosed rather than retried.
+**Say it in chat and write nothing to `review.md`.** A file there is read as a
+review that found nothing, and retires the pull request. An absent file keeps
+it in the queue.
 
 ## 4. Start the run
 
@@ -96,21 +70,14 @@ Workflow({ name: "monero-deep-scan",
                    masterRef: <"origin/master" when step 1 says merged, else omit> } })
 ```
 
-`root` has to be absolute. The agents `cd` to it before doing anything, because
-the working directory is not reliably the checkout.
+`root` has to be absolute. Pass `args` as a real object rather than a
+JSON-encoded string.
 
 `PR_NUMSTAT.txt` holds `<changed lines><TAB><path>` per file. Pass the sum as
-`changedLines` and the pairs as `lineCounts`; the workflow sizes the review
-from them. `PR_PRIOR.json` holds the findings earlier reviews of this pull
-request published at older heads. Pass the array exactly as it is: the
-workflow re-reads each one at this head and returns what became of it in
-`priorFindings`, and the report must account for every entry.
-
-Prefer passing `args` as a real object rather than a JSON-encoded string. Both
-work, and that is measured: the first two CI deep runs both serialised it to a
-string, and the one that got as far as running the fleet partitioned all 50
-changed files correctly, so the harness parses it. An object is simply the documented shape
-and one less thing between you and the script.
+`changedLines` and the pairs as `lineCounts`. `PR_PRIOR.json` holds the
+findings earlier reviews of this pull request published at older heads. Pass
+the array exactly as it is; the report must account for every entry the
+workflow returns in `priorFindings`.
 
 Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, that this is the deep pass, and that nothing is a finding
@@ -118,120 +85,66 @@ until the verifiers have finished.
 
 ## 4b. End your turn, and write nothing until you are woken
 
-The Workflow tool **always returns immediately**. Its result says
-`Workflow launched in background. Task ID: <id>` and the fleet then runs
-outside your turn. Your job now is to end the turn and wait to be woken.
+The Workflow tool **always returns immediately**:
+`Workflow launched in background. Task ID: <id>`. The fleet then runs outside
+your turn.
 
 **End the turn right after the message above.** Call nothing else: no polling,
-no `sleep`, no reading the fleet's transcripts. The harness holds the session
-open while the fleet runs, and when the workflow finishes it starts a new turn
-for you with a `<task-notification>` for that Task ID. MEASURED on CLI 2.1.280
-in print mode, through the Agent SDK: the Lead ended its turn, the fleet ran
-on, and the notification arrived as a fresh user turn carrying the workflow's
-return value. A wide diff takes a few hours to get there. That is expected.
+no `sleep`, no reading the fleet's transcripts. When the workflow finishes, a
+new turn starts with a `<task-notification>` for that Task ID. A wide diff
+takes a few hours. That is expected.
 
 Do not write `review.md`, and do not summarise anything, before that
-notification arrives. A report written ahead of the result has no pipeline
-behind it.
+notification arrives.
 
 The notification's `<status>` should be `completed`, and `<result>` carries the
 workflow's return value. If `<result>` is missing, cut short, or not valid JSON,
 Read the file named in `<output-file>`. If that fails too, Read the journal
 named in `<diagnostics>`, which has one line per agent. Do not rebuild the
-result from memory.
-
-Per-stage progress shows under `/workflows` when a human is watching; do not
-narrate it yourself.
+result from memory. Do not narrate per-stage progress.
 
 You get back `findings`, `refuted`, `unverified`, `coverage`, and a `next` line.
-Follow `next`. Note that `unverified` is a list of candidates no panel decided,
-while `coverage.candidatesUnverified` is only its count (plus any whose panel
-threw, which are a count with no record). When something has to be named, use
-the list.
+Follow `next`. `unverified` is the list of candidates no panel decided;
+`coverage.candidatesUnverified` is only its count. When something has to be
+named, use the list.
 
 If the workflow genuinely fails rather than returning (the notification's
 status is `failed` or `killed`, or neither `<result>` nor `<output-file>`
 yields a result), say so and write nothing.
-A report with no pipeline behind it is the one thing this skill must never
-produce.
 
 ## 5. Write `review.md`
 
-Read the REPORT SPEC now, not before. Then read the house style,
-`.claude/references/writing.md`: Orwell's six rules, the Simplified Technical
-English rules that apply, the words to cut, and the six-step pass to run over
-the draft. Then write `review.md` in the repository root with `Write`.
+Read the REPORT SPEC now, not before, and use its `deep` column. Then read
+the house style, `.claude/references/writing.md`. Then write `review.md` in the
+repository root with `Write`. The `next` line in the workflow result maps each
+returned field onto the template. Follow it.
 
-The reader is a Monero maintainer with a queue and an afternoon, answering
-three questions: is something wrong, where is it, what do I change. The
-structure follows those three, and the `next` line in the workflow result maps
-each returned field onto the template. Follow it. A deep review buys more
-agents, not more words.
+**Publish the fix that came back.** Check it names a real file and function
+and that it covers the defect; correct it and say so where reading the code
+contradicts it. Do not replace it with a restatement of the defect. On a
+merged finding there is one **Fix.** for the whole entry.
 
-**Publish the fix that came back.** Each finding carries a `fix` written by the
-researcher that read the guards and the callers. Check it names a real file and
-function and that it covers the defect; correct it and say so where reading the
-code contradicts it. Do not replace it with a restatement of the defect:
-"validate the length" is what this field exists to stop. On a merged finding
-there is one **Fix.** for the whole entry, because one change at one place
-fixing them all is what the merge decided.
+Severity arrives already settled. Publish it as returned, and put every entry
+in `coverage.severityChanged` on Coverage's **Corrections.** line with both
+values.
 
-Severity arrives already settled: the workflow set it to the median of what
-its agreeing verifiers actually rated, which can move a proposal up or down.
-Publish it as returned, and put every entry in `coverage.severityChanged` on
-Coverage's **Corrections.** line with both values.
-
-So does `provenance`, and it is the other thing you publish exactly as
-returned: `introduced`, `newly-reachable` or `pre-existing`, settled by the
-panel against `origin/base` rather than by the agent that proposed it. It says
-where the vulnerable code sits relative to this change, not how old the code
-is: a line the change adds is the change's own, and only `pre-existing` means
-the code is outside what the pull request touched. It goes in the finding's **Where it came from.** block
-and, whenever any finding is not this change's, on the Result line too, because
-a maintainer is deciding between "do not merge this" and "file this against
-master" and that split is the first thing they need.
-
-A `pre-existing` finding is a finding. The run traced a real weakness in code
-this change touches, and it is published like any other. What it is not is an
-accusation: never write it as though the author caused it, and end its locator
-line with ` · not introduced by this pull request`, in those exact words. That
-phrase is what a reader scanning the findings sees before reaching **Where it
-came from.**, and `labels.py` matches it literally to put a `pre-existing`
-label on the issue, so a paraphrase drops the label silently. Only
-`pre-existing` gets it: a finding this change introduced, made newly reachable,
-or let past a guard it added is this change's business. Put
+So does `provenance` (`introduced`, `newly-reachable` or `pre-existing`):
+publish it exactly as returned, in the finding's **Where it came from.** block
+and, whenever any finding is not this change's, on the Result line. Put
 `coverage.provenanceCorrected` (proposers the panel overruled) and
-`coverage.provenanceDisputed` (confirming verifiers that split; the
-proposer's label stands if any of them backs it, otherwise the weakest any
-would defend)
-on **Corrections.**, and where a merged entry carries `provenanceMixed`, give
-each site its own answer instead of one label for all of them.
-
-**Do not publish a confidence.** The heading is `### [SEVERITY] Title`. The
-workflow returns a confidence and uses it internally, but two graded words in
-one bracket read as one scale and blur how bad a finding is. The locator line
-carries `<n>/3 angles agreed` instead, which is the same information as a
-number.
-
-Before you write a finding down, read its cited line and check it still says
-what the proposal quoted. Nothing upstream does that for you, and a wrong
-citation is the fastest way to lose the reader.
+`coverage.provenanceDisputed` (confirming verifiers that split; the proposer's
+label stands if any of them backs it, otherwise the weakest any would defend)
+on **Corrections.** Where a merged entry carries `provenanceMixed`, give each
+site its own answer instead of one label for all of them.
 
 A finding carrying `rescued` gets a **Panel split.** line above **Defect.**:
 the real split from its vote record, what the two rejections relied on, and the
 line the advocate showed they were wrong about. When `rescuedMemberId` is set,
-name which site of the merged finding that was. Say it plainly, because this is a
-finding a majority of the panel rejected, and the reader is entitled to know
-that before the claim rather than after it.
+name which site of the merged finding that was.
 
-Coverage is a table, then one labelled line for each thing below that
-actually happened -- never a paragraph, and never a field name from the
-returned object in front of the reader. **A line whose answer is "none",
-"nothing" or arithmetic that comes out even is omitted entirely**, so on a
-clean review Coverage is the table alone. That is the point: a block of `none`s
-teaches a maintainer to scroll past the run where one of them is not `none`.
-Omitting a line is never omitting a fact, so where a value below is a gap in
-the review, its line is how the gap gets said, and it goes in:
+Coverage follows the REPORT SPEC: a table, then a labelled line only for each
+thing that actually happened, never a field name from the returned object.
+Where a value below is a gap in the review, its line goes in:
 
 - the areas and the weakness classes read over each;
 - every excluded file with its reason;
@@ -239,130 +152,51 @@ the review, its line is how the gap gets said, and it goes in:
   excluded;
 - **what the pass across the areas did, when it did not do it.**
   `coverage.seamPassApplicable` false on a single-area change, and
-  `coverage.seamFailed` true meaning it was applicable and nobody looked, are
-  both limits on the review and both get the line, with the reason. A pass that
-  ran and found nothing (`coverage.seamRan` true, `coverage.seamFresh` zero)
-  needs no line: the stamp records that it ran. Never write a pass that did not
-  run up as a clean cross-area result;
+  `coverage.seamFailed` true (applicable, and nobody looked), both get the
+  line, with the reason. A pass that ran and found nothing
+  (`coverage.seamRan` true, `coverage.seamFresh` zero) needs no line. Never
+  write a pass that did not run up as a clean cross-area result;
 - what the second look over each area found (`coverage.gapFresh`) when it found
   something, and any area it failed to cover (`coverage.gapFailed`);
-- any id in `coverage.anchorDoubted`: a finding two verifiers could not find
-  at its cited line. Re-anchor it from the code or drop the finding, and say
-  which you did in **Corrections.**;
 - `coverage.marginalReLooked` and `coverage.rescuedOnReLook`: how many
   proposals fell one vote short, and which the advocate saved;
 - **any area whose reader failed.** `coverage.failedCells` is the count and the
   `failed: true` entries in `coverage.researchAccount` name them. If this is
   not zero it goes in the summary too;
 - any proposal no panel decided, named under **Not covered** with its file and
-  line: the `unverified` list holds them and `coverage.candidatesUnverified`
-  counts them. There is no longer a counts line to hide one in, and a digit was
-  never enough for a reader to do anything with;
-- **the observations one reader handed to another, all of them.**
-  `coverage.deferred` holds every one, each with its own adjudicator and a
-  `ruling`. `filed` became a proposal and is already accounted for among the
-  findings or the refutations. `did-not-hold` means somebody read the code and
-  it did not survive, so say what it was and give the adjudicator's reason, which
-  is in `coverage.researchAccount` under the matching `deferred/<n>` tag. Do
-  not drop a `did-not-hold` silently: an observation somebody wrote down and
-  somebody else disposed of is exactly what the next reviewer will otherwise
-  propose again;
-- **every entry in `coverage.deferredUnclaimed`**, quoted with its file and
-  line, in **Not covered**. Their adjudicator came back unusable, so nothing
-  ever looked at them. They were not refuted; they were missed. On the first CI
-  deep run, before that stage existed, exactly this happened to both
-  observations the run produced: one named a file, a line, a mechanism and an
-  impact, reached no panel, and appeared nowhere in the report;
+  line, from the `unverified` list;
+- **the observations one reader handed to another.** `coverage.deferred` holds
+  every one, each with a `ruling`. `filed` became a proposal and needs no
+  separate mention; for `did-not-hold`, say what it was and give the
+  adjudicator's reason from `coverage.researchAccount` under the matching
+  `deferred/<n>` tag; never drop a `did-not-hold` silently. Quote every
+  entry in `coverage.deferredUnclaimed` in **Not covered** with its file and
+  line: nothing ever looked at it;
+- any id in `coverage.anchorDoubted`: re-anchor it from the code or drop the
+  finding, and say which you did in **Corrections.**;
 - `coverage.mapperFallback` when the partition was unusable and the whole
-  change was read as one area: complete, but blunter;
-- `coverage.unitsAllowed` when it is below `coverage.unitCeiling`, since the
-  cap scales with the size of the change;
-- the merge, from `coverage.mergeGroups` and `coverage.mergeClusters`. A
-  non-zero `coverage.mergeFailed` means a group came back unusable and its
-  findings publish separately, so say so in **Corrections.**, because that is a
-  possible duplicate in the report rather than a hidden one.
+  change was read as one area;
+- `coverage.unitsAllowed` when it is below `coverage.unitCeiling`;
+- the merge: how many confirmed proposals were read as one defect, from
+  `coverage.mergeGroups` and `coverage.mergeClusters`. A non-zero
+  `coverage.mergeFailed` means a group came back unusable and its findings
+  publish separately: say so in **Corrections.**
 
-When Coverage names what a reader could not finish and promises the reader
-what is in it ("three things it could not read to the bottom"), reproduce
-those items. Do not point at an account and then print a different, more
-general list; that sentence is a promise a reader will try to cash.
+When Coverage names what a reader could not finish and promises what is in it
+("three things it could not read to the bottom"), reproduce those items, not a
+different, more general list.
 
-Give the file arithmetic so it can be checked: every area's file list either
-names every path or gives a count and names none. "4 x CMakeLists.txt" when
-there are five makes the table sum to 49 of 50, and a reader adding it up
-cannot tell a prose slip from a coverage hole. **Accounted for** carries the
-total against `coverage.unaccounted`, and is written only when that arithmetic
-does not come out even -- a file excluded, or a changed file the table does not
-cover. Every file read and none excluded, no line: the table is the account.
+**Accounted for** carries the file total against `coverage.unaccounted`, only
+when it does not come out even. Per-area counts must add up exactly.
 
-A finding carrying `merged` is several confirmed proposals a merge agent read
-as **one defect**. Write it as one `### [SEVERITY]` entry: a locator line per
-site in `merged.sites` with that site's vote, a final line giving
-`merged.sameDefectBecause`, and one **Fix.** Never split it back into one entry
-per site and never drop a site: the first makes the stamp's `published` wrong,
-the second loses a place the fix has to hold.
+Write `findings` (including `merged` and `rescued` ones), `refuted`,
+`refactorDrift` and `commentDiscrepancy` as the REPORT SPEC describes. Give the
+**Refactors.** arithmetic only when `coverage.driftProposed` is non-zero. Where
+a `refactorDrift` entry carries `lineCorrected` the checker moved the citation;
+put that on **Corrections.** `commentDiscrepancy` gets no Coverage line.
 
-`refactorDrift` is not a finding and not a refutation. Each entry is a hunk
-that presents itself as behaviour-preserving and does not behave that way: no
-panel graded it, it has no severity and no vote, and it must never get a
-`### [SEVERITY]` heading. Write the entries under `## Needs human review`,
-below `## Refuted`, one bullet each leading with what the head does that
-`origin/base` does not, then the entry's `distinguishingInput` as a **Told
-apart by.** clause, then the quoted claim that made the hunk look like a
-refactor. Leave which behaviour was intended to the reader, and give no
-severity, no fix and no guess at reachability. Omit the heading when the array
-is empty.
-
-What arrives in that array has already been checked: every observation a
-researcher raised went to a reader that did not propose it, and the ones
-nothing could tell apart were dropped before you saw them. Two things follow.
-Publish `distinguishingInput` in every bullet, because a maintainer decides
-whether to open the file on that clause alone and it is what separates this
-section from a list of hunches. Stamp `drift=coverage.driftProposed` and
-`driftPublished=coverage.driftPublished` always, and give the same arithmetic on
-the Coverage **Refactors.** line only when `coverage.driftProposed` is non-zero:
-raised, published, the rest dropped by the check. Nothing raised, no line -- the
-stamp already separates "nothing drifted" from "nobody looked". Where an entry
-carries `lineCorrected` the checker moved the citation, which goes on
-**Corrections.**
-
-`coverage.driftUnchecked` is the other half of the honesty. Those are entries
-whose checker returned nothing usable, so nobody read them. They are not in the
-section and they must not be silently absent: name each one under **Not
-covered** with its file and line. An absent section reads as "nothing drifted",
-which is only true if that list is empty.
-
-`commentDiscrepancy` is not a finding either. Each entry is a comment -- or a
-sentence of the description, a commit message or the upstream review discussion
--- that the code underneath contradicts. No panel graded it, it has no severity
-and no vote, and it must never get a `### [SEVERITY]` heading. Write the
-entries under `## Comment discrepancy`, below `## Needs human review`, one
-bullet each leading with what the code does, then the claim quoted exactly from
-`says` and named, then the entry's `shownBy` as a **Wrong where.** clause.
-Quote `says` rather than paraphrasing it: a maintainer is going to open that
-line, and a paraphrase publishes the reviewer's reading of the comment as the
-comment. Leave which of the two is meant to change to the reader.
-
-Omit the heading entirely when the array is empty, and stamp
-`comments=coverage.commentDiscrepancies` always, which is what separates
-"nothing disagreed" from "nobody looked at the comments". Nothing on the
-Coverage lines: a channel with no check stage behind it has no arithmetic to
-report.
-
-Keep `refuted` in the report, one line each. It is most of what this pipeline
-produces and it is how the next reviewer avoids buying a panel for the same
-idea twice. Nothing merges that list upstream, so two proposals killed by the
-same line may share one bullet naming both sites, but only when the refutation
-is genuinely the same one, and never by dropping a site.
-
-End the file with the coverage stamp the REPORT SPEC describes: the HTML
-comment carrying `cells`, `failedCells`, `drift`, `driftPublished`,
-`comments` and the rest, straight from `coverage`.
-The harness reads it and refuses to publish a run whose research mostly failed,
-or whose panels mostly returned no verdict, because such a run and a genuinely
-clean one are otherwise indistinguishable from the outside. Write it even when
-everything failed; that is the case it exists for.
-
+End the file with the coverage stamp the REPORT SPEC describes, from
+`coverage`, even when everything failed. `profile=deep`.
 
 ## 6. Say what happened
 
@@ -372,18 +206,15 @@ stood up, how many of those were published as one entry with another, and where
 
 If the report goes private (see "Some reviews must not be published in public"
 in the REPORT SPEC), this message names `review.md` and the count of findings,
-and nothing else: no titles, files, functions or bug classes. It is kept in the
-execution log, and nothing it says may describe the bug.
+and nothing else: no titles, files, functions or bug classes.
 
 If `coverage.unaccounted` is not empty, lead with that rather than the findings.
 If `coverage.failedCells` is a large share of the cells dispatched, lead with
-*that*: the run did not review what it set out to, and no number of clean units
-makes up for the ones nobody read.
+*that*: the run did not review what it set out to.
 
 "No findings" is a complete and ordinary result. Say it plainly.
 
 ## Out of scope for this job
 
 Nothing is commented upstream, no branch is pushed, no code from the PR is built
-or executed. The deliverable is `review.md` on disk. What becomes of it is the
-harness's business.
+or executed. The deliverable is `review.md` on disk.

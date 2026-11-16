@@ -107,6 +107,12 @@ checked for duplicates.
   Its judgement files are the other half: what to *suspect*, where the rest
   says what the code *is*.
 
+**Specs**, shared by both tiers: `.claude/specs/finding-spec.md` (what counts
+as a candidate, its fields and severity) and `.claude/specs/report-spec.md`
+(the shape of the published report, with a short per-tier table).
+
+Why things are the way they are: `DESIGN.md`. No agent reads it.
+
 **Skills:**
 
 - `monero-standard-review/` — **the automatic review.** Every PR on the queue gets it.
