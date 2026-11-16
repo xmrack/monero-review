@@ -127,15 +127,17 @@ const medianSeverity = (sevs) => {
   const ranks = sevs.map(sevRank).sort((a, b) => a - b)
   return SEVERITIES[ranks[Math.floor(ranks.length / 2)]]
 }
-// Two agreeing votes have no middle. Taking the milder of a split published
-// every CRITICAL/HIGH disagreement at standard as HIGH, set by angles that
-// were never asked about impact. So the proposal stands unless both votes move
-// it the same way, and then it moves only as far as the nearer vote.
-const settleSeverity = (proposed, sevs) => {
-  if (sevs.length !== 2) return medianSeverity(sevs)
+// Two agreeing votes have no middle, and the proposal is not a tie-break: it
+// is a guess made before verification, and anchoring on it carried its
+// variance into the published severity. A split settles at the milder rating,
+// unless both verifiers name the same severe consequence, which supports the
+// worse one.
+const SEVERE_CONSEQUENCES = ['funds-or-inflation', 'chain-split', 'remote-crash']
+const settleSeverity = (sevs, classes) => {
+  if (sevs.length !== 2 || sevs[0] === sevs[1]) return medianSeverity(sevs)
   const r = sevs.map(sevRank)
-  const lo = Math.min(...r), hi = Math.max(...r)
-  return SEVERITIES[Math.min(hi, Math.max(lo, sevRank(proposed)))]
+  const severe = classes.length === 2 && classes[0] === classes[1] && SEVERE_CONSEQUENCES.includes(classes[0])
+  return SEVERITIES[severe ? Math.min(...r) : Math.max(...r)]
 }
 const capConfidence = (want, cap) => {
   const i = CONFIDENCES.indexOf(want) < 0 ? 2 : CONFIDENCES.indexOf(want)
@@ -1896,7 +1898,6 @@ const verifyAngle = (c, angle) => agent(
      '  where:            ' + c.file + ':' + c.line + ' in ' + c.symbol,
      '  the quoted line:  ' + JSON.stringify(c.snippet),
      '  category:         ' + c.category,
-     '  proposed as:      ' + c.severity + ', confidence ' + c.confidence,
      '  untrusted input:  ' + c.untrustedInput,
      '  which reaches:    ' + c.reaches,
      '  missing guard:    ' + c.missingGuard,
@@ -1909,9 +1910,9 @@ const verifyAngle = (c, angle) => agent(
          '; missing guard: ' + o.missingGuard)] : []),
      '',
      'Read that path and line and set anchorMatches to whether the quoted line is',
-     'really there. If it holds, give the severity the code supports -- the count',
-     'settles the published severity from what the panel actually reads, in either',
-     'direction, so rate what you read rather than matching the proposal.',
+     'really there. If it holds, give the severity the code supports. The',
+     'proposer\'s rating is withheld; the count settles the published severity',
+     'from what the panel reads.',
      '',
      'WHETHER THIS DIFF CAUSED IT IS NOT A REASON TO REJECT IT. A weakness that',
      'reads the same on origin/base still lets somebody do something they should',
@@ -1980,14 +1981,22 @@ const judged = await parallel(candidates.map((c) => () =>
     ? provVotes[0] : null
   const ratedSeverities = agreeing.map((v) => v.severity).filter(Boolean)
   // A protocol-level privacy break is HIGH at least, whatever the position
-  // it needs. Floored when at least half the confirming votes call it that.
+  // it needs. Floored when a strict majority of confirming votes call it that.
   const protocolVotes = agreeing.filter((v) => v.protocolPrivacy === true).length
-  const protocolPrivacy = agreeing.length > 0 && protocolVotes * 2 >= agreeing.length
+  const protocolPrivacy = protocolVotes * 2 > agreeing.length
   // A confirming vote with no rating counts as the proposal. Dropped, it let
   // the one rating left settle the finding alone, CRITICAL to LOW on one vote.
   const severityVotes = agreeing.map((v) => v.severity || c.severity)
-  const settled = severityVotes.length ? settleSeverity(c.severity, severityVotes) : c.severity
-  const severity = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
+  const settled = severityVotes.length
+    ? settleSeverity(severityVotes, agreeing.map((v) => v.consequenceClass)) : c.severity
+  const calibrated = protocolPrivacy ? worseSeverity(settled, 'HIGH') : settled
+  // Live code files privately at HIGH and above, so a finding any confirming
+  // verifier calls pre-existing keeps its worst rating and the half-vote
+  // privacy floor: routing fails private, not public.
+  const worst = severityVotes.reduce((a, b) => worseSeverity(a, b), calibrated)
+  const severity = provVotes.includes('pre-existing')
+    ? worseSeverity(worst, protocolVotes > 0 && protocolVotes * 2 >= agreeing.length ? 'HIGH' : worst)
+    : calibrated
   // Except at CRITICAL and HIGH, where any confirming verifier's
   // `pre-existing` settles it: that label is what files the review privately,
   // and a severe finding wrongly called this change's own is published.

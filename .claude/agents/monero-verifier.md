@@ -131,8 +131,8 @@ Before you finish, check `refutations.md`. If it settles this claim, cite it.
 # Rating it, if it holds
 
 Give the severity the code supports, on the ladder in the finding standard.
-The published severity is settled from what the panel reads, up as readily as
-down, so rate what you read rather than matching the proposal.
+You are not shown the proposer's rating. The published severity is settled
+from what the panel reads.
 
 # When you are sent as an advocate instead
 
