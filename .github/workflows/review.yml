@@ -2154,7 +2154,7 @@ jobs:
           find . -path ./.git -prune -o \
             \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude \) \
             -exec rm -rf {} + 2>/dev/null || true
-          d=$PWD
+          d=$(pwd -P)
           while [ "$d" != / ]; do
             d=$(dirname "$d")
             find "$d" -maxdepth 1 \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json \) \

@@ -893,7 +893,7 @@ echo "==> asking the disclosure gate"
 find "$CACHE" -path "$CACHE/.git" -prune -o \
   \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json -o -iname .claude \) \
   -exec rm -rf {} + 2>/dev/null || true
-d=$CACHE
+d=$(cd "$CACHE" && pwd -P)
 while [ "$d" != / ]; do
   d=$(dirname "$d")
   find "$d" -maxdepth 1 \( -iname CLAUDE.md -o -iname CLAUDE.local.md -o -iname AGENTS.md -o -iname AGENTS.override.md -o -iname .mcp.json \) \
