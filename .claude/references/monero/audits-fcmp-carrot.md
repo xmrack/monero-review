@@ -9,14 +9,17 @@ checked in.
 
 | tag | tree | commit |
 |---|---|---|
-| **(master)** | `monero-project/monero` master | `3fd0f88c2` (2026-10-25) |
+| **(master)** | `monero-project/monero` master | `ef78ff3d` (2026-11-13) |
 | **(branch)** | `seraphis-migration/monero` `fcmp++-stage` | `f25388d` (2026-10-21) |
 | **(oxide)** | `monero-oxide` `fcmp++` | `31c26d96e` (2026-08-18), the revision the branch pins in `src/fcmp_pp/fcmp_pp_rust/Cargo.toml` |
 
-(oxide) paths are relative to the monero-oxide root. Master has the leaf
-pipeline and Rust FFI in `src/fcmp_pp` with no consensus caller, and no Carrot;
-`src/carrot_core`, `src/carrot_impl` and the consensus call sites are
-branch-only.
+(oxide) paths are relative to the monero-oxide root. Master pins monero-oxide
+`77788c36` (2026-09-22), not `31c26d96e`. Master has the leaf pipeline, the
+DB tree code behind `ENABLE_FCMP_INTEGRATION` (default off), proof
+verification (`fcmp_pp::verify`, `rct::batchVerifyFcmpPpProofs`) with test
+callers only, and a `txout_to_carrot_v1` stub that consensus rejects;
+`src/carrot_core`, `src/carrot_impl`, `RCTTypeFcmpPlusPlus`, the fork gates
+and the consensus call sites are branch-only.
 
 **Naming.** "Cypher Stack 2024" is the FCMP++ security proof. "Cypher Stack GBP
 2024" is the Generalized Bulletproofs proof. "Carrot spec" is jeffro256's text
@@ -312,11 +315,12 @@ Function Analysis observations (no ratings):
 
 **Tree maintenance** (j-berman 2026, integration design doc). Block `n` adds
 every output whose last locked block is `n+9`, so the tree runs ahead of the
-chain. Timestamp unlocks map to a block through `get_last_locked_block_index`,
-a new consensus rule for FCMP++ spends. `BlockchainDB::trim_block` reverts one
+chain. Timestamp unlocks map to a block through `get_last_locked_block_index`
+(master: `get_last_locked_block_index_for_tree`), a new consensus rule for
+FCMP++ spends. `BlockchainDB::trim_block` reverts one
 block at a time from stored tree edges. Outputs off Ed25519, or identity after
 clearing, are skipped. Proof length is fixed by `(inputs, n_tree_layers)`
-(`fcmp_pp::fcmp_pp_proof_len`, branch).
+(`fcmp_pp::fcmp_pp_proof_len`, master and branch).
 
 **A PR here is risky if it:**
 

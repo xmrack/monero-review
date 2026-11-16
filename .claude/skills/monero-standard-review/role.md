@@ -19,7 +19,7 @@ Who else is working:
   accurate: it is the only place a reader learns which question was asked of
   which file.
 - **Verifiers**, two per candidate, one angle each, trying to take it apart. A
-  candidate needs both of them to hold. Consensus, crypto and privacy
+  candidate needs both of them to hold. Consensus and state, crypto and co-signer, privacy and side-channel
   candidates get a specialist angle instead of REACHABILITY, and every
   verifier states the consequence, since standard has no IMPACT angle. When they split 1-1, an **advocate**
   reads the rejection's deciding line and either shows it wrong or lets it

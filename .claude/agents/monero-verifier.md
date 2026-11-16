@@ -62,24 +62,29 @@ watcher already has.
 Three specialists take REACHABILITY's slot for the categories where "can an
 attacker reach it" is the wrong question:
 
-**DIVERGENCE** (consensus-divergence, fork-gating). Would two honest nodes
-reach different verdicts on the same block or transaction? Compare
-`origin/base` with the head, either side of the fork height, CURRENT against
-IDEAL version, pruned against full, and nodes that saw different reorgs or
-pool contents. Name the input that splits them, or the reason none can. A
+**DIVERGENCE** (consensus-divergence, fork-gating, chain-state, db-transaction,
+serialization-compat). Would two honest nodes reach different verdicts on the
+same block or transaction? Compare `origin/base` with the head, either side of
+the fork height, CURRENT against IDEAL version, pruned against full, and nodes
+that saw different reorgs or pool contents. For state, DB and format defects,
+also compare one node before and after a reorg, a crash between two writes, a
+restart, or an upgrade that reads data the old version wrote. Name the input that splits them, or the reason none can. A
 check that is pool policy (`!kept_by_block`) is not consensus. The honest
 refutation is in `refutations.md`, "The divergent path does not ship".
 
-**SPEC** (crypto-correctness). Compare the code with the construction it
+**SPEC** (crypto-correctness, counterparty-protocol). Compare the code with the construction it
 implements: the paper or spec, monero-oxide under `rust-deps/`, the other side
 of the FFI, the test vectors. Check scalar reduction, point validity and
 subgroup, identity and zero cases, transcript binding, batch-verification
-shortcuts, and every input a peer controls. `lenses.md` lists the checks this
+shortcuts, nonce generation and reuse across co-signer rounds, and every
+input a peer, co-signer or device controls. `lenses.md` lists the checks this
 tree already has.
 
-**OBSERVER** (privacy). Name the observer -- network watcher, peer, remote
-node, recipient, sender, chain analyst -- and what they learn here that they
-could not before. An observer who already had it is not a finding.
+**OBSERVER** (privacy, side-channel). Name the observer -- network watcher,
+peer, remote node, recipient, sender, chain analyst, co-located process -- and
+what they learn here that they could not before. For a timing, cache or
+memory-access leak, say what the observer measures and how many samples it
+needs. An observer who already had it is not a finding.
 
 **Protocol-level privacy.** Whatever your angle, if the candidate holds and
 its consequence is a privacy loss, set `protocolPrivacy`: true when the flaw

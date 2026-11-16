@@ -27,12 +27,16 @@ success, -1 for a null out-pointer, -2 when the Rust call fails (e.g.
 `hash_grow_helios`/`hash_grow_selene` getting `None` from `hash_grow`, or a
 decode failure in the `ec_elem_from_bytes` macro, `Err(_) => -2`). The
 `*_hash_init_point` and `*_zero_scalar` exports return structs by value and
-the four `*_to_bytes` exports (macro `ec_elem_to_bytes`) return `void`. The
-C++ side calls them only from `src/fcmp_pp/tower_cycle.cpp`, wrapping the
-`int` ones in `CHECK_FFI_RES`, which throws; the others (e.g.
-`Selene::hash_init_point`, `Selene::zero_scalar`, `Selene::to_bytes`) are
-called bare because they have no status to check
-(`git grep -n CHECK_FFI_RES -- src/fcmp_pp/tower_cycle.cpp`). The crate builds with `panic = "abort"` in both profiles, so a
+the four `*_to_bytes` exports (macro `ec_elem_to_bytes`) return `void`.
+The verification exports differ: `fcmp_pp_verify_input_new` returns `-1` to
+`-9` by failure, `fcmp_pp_verify` returns `bool`, and the size and
+`fcmp_pp_n_inputs` exports return `usize`. The C++ side calls them only from
+`src/fcmp_pp/` (`tower_cycle.cpp`, `fcmp_pp_types.cpp`, `verify.cpp`),
+wrapping the `int` ones in `CHECK_FFI_RES`, which throws (inside
+`fcmp_pp::fcmp_pp_verify_input_new` a `CATCH_ENTRY` turns that into a null
+return); the others (e.g. `Selene::hash_init_point`, `Selene::zero_scalar`,
+`Selene::to_bytes`) are called bare because they have no status to check
+(`git grep -n CHECK_FFI_RES -- src/fcmp_pp`). The crate builds with `panic = "abort"` in both profiles, so a
 Rust panic terminates the process rather than unwinding into C++.
 
 **Indentation is a reliable fingerprint**: 2 spaces in the core, 4 in most

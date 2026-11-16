@@ -20,7 +20,7 @@ depends entirely on which directory you are in.
 | `bool` with a catch-all that converts any exception to `false` | `ringct` *verification* (`verRct`, `verRctSemanticsSimple`, `verRctNonSemanticsSimple`, … in `rctSigs.cpp`) |
 | `expect<T>` + custom `std::error_code` categories | `src/common`, `src/net`, `src/lmdb`, `src/rpc/zmq_*`, address parsing in `src/p2p`; epee `wire` defines the categories but throws them (`WIRE_DLOG_THROW`) |
 | `bool` + a sticky status object | `src/wallet/api` |
-| `int` status code across the Rust FFI (`0` ok, negative error) | `src/fcmp_pp/fcmp_pp_rust/src/lib.rs`; `tower_cycle.cpp` turns non-zero into a throw (`CHECK_FFI_RES`) |
+| `int` status code across the Rust FFI (`0` ok, negative error) | `src/fcmp_pp/fcmp_pp_rust/src/lib.rs`; `tower_cycle.cpp` and `fcmp_pp_types.cpp` turn non-zero into a throw (`CHECK_FFI_RES`); `fcmp_pp_verify` returns `bool` |
 | process exit — no channel at all | `src/crypto` C files (`abort()`); `crypto.cpp`'s `local_abort` (`_exit(1)` under `NDEBUG`); a Rust panic (below) |
 
 `src/crypto/crypto.cpp` is itself mixed: most functions return `bool`, but the
@@ -197,15 +197,19 @@ concurrently with that server's own io threads.
 
 In a wallet: the `wallet_api` background refresh thread
 (`WalletImpl::WalletImpl`, `src/wallet/api/wallet.cpp`), the simplewallet idle
-thread (`m_idle_thread`), the Trezor live-refresh thread
+thread (`m_idle_thread`), the simplewallet signal thread (off Windows: the
+handler only writes to a pipe, the thread stops the console), the Trezor
+live-refresh thread
 (`device_trezor::init`), and the same shared compute pool.
 **`monero-wallet-rpc` runs exactly one network thread** (`run(1, true)` in
 `wallet_rpc_server::run`), under the comment `DO NOT START THIS SERVER IN MORE
 THEN 1 THREADS WITHOUT REFACTORING`.
 
-`boost::thread` is the idiom — **`std::thread` appears on exactly one line of
-`src/`** (the `arg_prep_blocks_threads` default in `cryptonote_core.cpp`,
-calling only `hardware_concurrency()`). Over `src/` + `contrib/epee`,
+`boost::thread` is the idiom. `std::thread` is rare
+(`git grep -n 'std::thread' -- src contrib/epee`): the
+`arg_prep_blocks_threads` default (`hardware_concurrency()` only), the
+simplewallet signal thread, the wallet-rpc `SIGUSR1` log-reopen thread and a
+detached `raise(SIGINT)` in `readline_buffer.cpp`. Over `src/` + `contrib/epee`,
 `CRITICAL_REGION_LOCAL` and `boost::mutex` are the most common locking
 tokens; `boost::recursive_mutex`, `boost::unique_lock`, `std::mutex` and
 `std::lock_guard` each appear well under a hundred times (`grep -rhoF "NAME"

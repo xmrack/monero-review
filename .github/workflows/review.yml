@@ -871,7 +871,7 @@ jobs:
           fi
 
           # Names this job writes at the top level start out absent.
-          rm -rf diffstat.txt differr.txt PR_*.md PR_PRIOR.json PR_NUMSTAT.txt TOOLING.md RUST_DEPS.md \
+          rm -rf diffstat.txt differr.txt PR_*.md PR_PRIOR.json PR_NUMSTAT.txt TOOLING.md RUST_DEPS.md RUST_FILES.txt \
             rust-deps deps-include submodule-base submodule-diffs \
             tags tags-rust rust.files cscope.* tests.out review.md \
             workflow-updates.json exec-pass1.json
@@ -1678,6 +1678,7 @@ jobs:
             echo "rtool (run \`rtool help\`): def, callers, history, git inside a"
             echo "submodule or rust-deps/<name>, and weggli in C++ mode."
           } >> TOOLING.md
+          bash "$RUNNER_TEMP/harness-scripts/ref_drift.sh" . >> TOOLING.md || true
 
       # WHICH REVIEW THIS RUN IS, resolved once, in one place. Every step
       # below reads these outputs rather than re-deriving the decision from
@@ -1785,16 +1786,19 @@ jobs:
           {
             echo "# Files changed by this pull request, from"
             echo "# git diff --name-only origin/base...HEAD, plus the paths changed"
-            echo "# inside each moved submodule"
+            echo "# inside each moved submodule and each bumped Rust dependency"
             echo "# Lines starting with # are not paths."
             git diff --name-only origin/base...HEAD
             # Paths inside a moved submodule: see PR_SUBMODULES.md.
             cat "$RUNNER_TEMP/submodule-files" 2>/dev/null || true
+            # Rust source a dependency bump changes: see RUST_DEPS.md.
+            cut -f2 RUST_FILES.txt 2>/dev/null || true
           } > PR_FILES.md
           # Changed lines per path, for sizing the review: the Lead passes them
           # to the workflow as changedLines and lineCounts. Binary files count 0.
           git diff -z --numstat origin/base...HEAD \
             | python3 -I "$RUNNER_TEMP/harness-scripts/numstat.py" > PR_NUMSTAT.txt
+          cat RUST_FILES.txt >> PR_NUMSTAT.txt 2>/dev/null || true
           echo "$(awk -F'\t' '{n+=$1} END {print n+0}' PR_NUMSTAT.txt) changed line(s)"
           # `|| true`: grep -c exits 1 on a zero count, which `set -e` would
           # take as a step failure on an empty diff.

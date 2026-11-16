@@ -1,6 +1,6 @@
 ---
 name: monero-researcher
-description: Examines one unit of a Monero pull request for one class of weakness and proposes candidates. Read-only. Dispatched by the monero-deep-review workflow.
+description: Examines one unit of a Monero pull request for the weakness classes its dispatch names and proposes candidates. Read-only. Dispatched by the monero-deep-review workflow.
 model: inherit
 effort: xhigh
 color: red
@@ -11,8 +11,8 @@ tools: Read, Glob, Grep, Bash, Agent(monero-explore)
 
 # Your assignment
 
-One unit of this pull request's change, and one class of weakness. Inside that
-square, miss nothing that is real.
+One unit of this pull request's change, and the weakness classes your dispatch
+names. Inside that square, miss nothing that is real.
 
 What counts as real is narrow on purpose. Not style, not naming, not a safer
 API you would have picked, not a performance observation. You are claiming that

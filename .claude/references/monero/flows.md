@@ -9,16 +9,16 @@ Read the flow that covers whatever a diff touches before forming a theory. A
 change that looks local usually sits somewhere in one of these six, and its
 blast radius is whatever comes after it in the list.
 
-Traced against master `3fd0f88c2` (2026-10-25). Symbols were confirmed by
+Traced against master `ef78ff3d` (2026-11-13). Symbols were confirmed by
 reading the code; line numbers are not given because they rot fastest. Find a
 symbol with `git grep -n`, not with a remembered line.
 
-None of these flows reaches FCMP++ or Carrot code on master: `src/fcmp_pp` is
-built and `src/ringct` links it, but nothing in `src/` outside the directory
-calls into it (`git grep -n fcmp_pp -- src ':!src/fcmp_pp'` finds only the two
-CMake lines). Its callers are tests: `tests/unit_tests` links it, and
-`tests/crypto/main.cpp` compiles `fcmp_pp/fcmp_pp_crypto.cpp` in by
-`#include`. Consensus, wallet and RPC paths below are CLSAG/RingCT only.
+No consensus check below runs FCMP++ or Carrot code on master; consensus,
+wallet and RPC paths are CLSAG/RingCT only. What is reachable: block storage
+(flow 1, step 12) grows a curve tree when built with `ENABLE_FCMP_INTEGRATION`
+(CMake option, default `OFF`), and `rct::batchVerifyFcmpPpProofs` /
+`fcmp_pp::verify` exist with test callers only
+(`git grep -n 'fcmp_pp' -- src ':!src/fcmp_pp'` lists the users).
 
 ---
 
@@ -124,7 +124,11 @@ attacker-exposed sequence in the daemon.
     `add_block_as_invalid`; other failures leave the id uncached.
 12. **`BlockchainLMDB::add_block`** — `src/blockchain_db/lmdb/db_lmdb.cpp`,
     inside the still-open batch. Throws `BLOCK_EXISTS`, `BLOCK_PARENT_DNE`,
-    `KEY_IMAGE_EXISTS` on conflict.
+    `KEY_IMAGE_EXISTS` on conflict. It calls `BlockchainDB::add_block`
+    (`blockchain_db.cpp`) with the `transparent_amount_commitments` map built
+    in step 11 (`collect_transparent_amount_commitments`); v1 and coinbase
+    output commitments come from that map, and a missing amount throws. Under
+    `ENABLE_FCMP_INTEGRATION` it then runs `handle_fcmp_tree`.
 13. **`cleanup_handle_incoming_blocks` → `batch_stop` or `batch_abort`.**
     Committed only if `m_batch_success` is still true, and only by the thread
     that opened the batch.
@@ -230,8 +234,12 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     via `relay_transactions` → `node_server::send_txs`. A zone with noise
     enabled (Tor/I2P) sends fixed-size fragmented covert messages; otherwise
     the public zone uses Dandelion++ stem or fluff by epoch.
-13. **`tx_memory_pool::fill_block_template`** — walks
-    `m_txs_by_fee_and_receive_time`. **A tx is skipped unless
+13. **`tx_memory_pool::get_block_template_backlog`**, called from
+    `Blockchain::create_block_template`, which pops the last selected tx and
+    retries if `construct_miner_tx` fails. Walks
+    `m_txs_by_fee_and_receive_time`; key-image conflicts are found through the
+    `m_spent_key_images` bimap, without parsing the tx; `is_transaction_ready_to_go`
+    re-runs `check_tx_inputs` only. **A tx is skipped unless
     `meta.matches(category)`**, where `category` is `relay_category::legacy`
     (block, fluff or `none`), or `relay_category::broadcasted` (block or fluff)
     when `include_sensitive` is false (restricted RPC `getblocktemplate`). A
@@ -526,7 +534,8 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
 2. **`process_payload_sync_data`** — a public-zone peer's claimed height is
    **taken at face value as the sync target** (`set_target_blockchain_height`)
    when it exceeds the current target and we lack its top block; its
-   claimed cumulative difficulty is not read. Only the hard-fork version, the
+   claimed cumulative difficulty is not read. Only a height below
+   `CRYPTONOTE_MAX_BLOCK_NUMBER`, the hard-fork version, the
    pruning seed shape and, on the public zone when the claimed top id is a
    block we hold, the claimed height against that block are checked; a
    downward height revision costs one score point (`hit_score`), not a

@@ -217,10 +217,11 @@ grain. Roughly, by subtree: `cryptonote_core` and `cryptonote_basic` are
 mostly `CHECK_AND_ASSERT_MES`; `ringct` mixes it with
 `CHECK_AND_ASSERT_THROW_MES`; `multisig` and `fcmp_pp` are almost entirely
 `CHECK_AND_ASSERT_THROW_MES`; `wallet` is dominated by
-`THROW_WALLET_EXCEPTION_IF`; `blockchain_db` uses none of the three (it uses
-`throw0`/`throw1`). In `src/fcmp_pp/tower_cycle.cpp`, `CHECK_FFI_RES` wraps
-`CHECK_AND_ASSERT_THROW_MES(r == 0, …)` on a local `r`, so those FFI throw
-sites do not match a grep for the inner macro. Per-subtree counts:
+`THROW_WALLET_EXCEPTION_IF`; `blockchain_db` mostly uses `throw0`/`throw1`,
+with a few `CHECK_AND_ASSERT_THROW_MES` in the FCMP++ tree code (master
+`ef78ff3d`). `src/fcmp_pp/tower_cycle.cpp` and `src/fcmp_pp/fcmp_pp_types.cpp`
+each define `CHECK_FFI_RES`, which wraps `CHECK_AND_ASSERT_THROW_MES(r == 0, …)`,
+so those FFI throw sites do not match a grep for the inner macro. Per-subtree counts:
 `grep -rhoP "(?<![A-Za-z_])CHECK_AND_ASSERT_MES\(" src/<dir> | wc -l`.
 **`src/crypto` uses none of them** — no epee check or log macros, dozens of
 raw `assert(`.

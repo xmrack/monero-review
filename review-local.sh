@@ -577,6 +577,7 @@ fi
   echo "- cppcheck: dies on epee/Boost macros, even with include paths."
   echo "- flawfinder: finds nothing here; it targets legacy C."
 } > "$CACHE/TOOLING.md"
+bash "$HERE/scripts/ref_drift.sh" "$CACHE" >> "$CACHE/TOOLING.md" || true
 
 # Symbol index for precise cross-reference. Skipped silently if ctags/cscope
 # are absent -- `sudo apt install universal-ctags cscope` to enable. It walks
@@ -627,15 +628,17 @@ FLEET_TOOLS="Workflow,Agent(monero-mapper),Agent(monero-researcher),Agent(monero
 {
   echo "# Files changed by this pull request, from"
   echo "# git diff --name-only origin/base...HEAD, plus the paths changed"
-  echo "# inside each moved submodule"
+  echo "# inside each moved submodule and each bumped Rust dependency"
   echo "# Lines starting with # are not paths."
   ( cd "$CACHE" && git diff --name-only origin/base...HEAD )
   cat "$SUBFILES"
+  cut -f2 "$CACHE/RUST_FILES.txt" 2>/dev/null || true
 } > "$CACHE/PR_FILES.md"
 rm -f "$SUBFILES"
 # Per-path changed lines and earlier published findings, as in the workflow.
 git -C "$CACHE" diff -z --numstat origin/base...HEAD \
   | python3 -I "$HERE/scripts/numstat.py" > "$CACHE/PR_NUMSTAT.txt"
+cat "$CACHE/RUST_FILES.txt" >> "$CACHE/PR_NUMSTAT.txt" 2>/dev/null || true
 GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
   python3 -I "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
   > "$CACHE/PR_PRIOR.json" 2>/dev/null || echo '[]' > "$CACHE/PR_PRIOR.json"

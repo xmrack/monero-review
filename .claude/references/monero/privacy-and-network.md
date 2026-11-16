@@ -6,7 +6,7 @@ Published research on Monero's on-chain and network privacy, turned into
 questions for reviewing a pull request. Read the `privacy` section of
 `lenses.md` and the adversary table in `trust-boundaries.md` first.
 
-Paths and symbols were checked on master `3fd0f88c2` (2026-10-25); when the
+Paths and symbols were checked on master `ef78ff3d` (2026-11-13); when the
 tree disagrees, the tree wins. Cite files and symbols, never line numbers.
 Paper numbers are quoted as stated and attributed. Where a paper describes an
 older release and master differs, this file says so.
@@ -309,7 +309,9 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   notification drops the peer.
 - **Zone routing.** `node_server::send_txs` sends anything received from a
   peer over the public zone. Local transactions go to an anonymity zone when
-  `--tx-proxy` is set.
+  `--tx-proxy` (or `--i2p-sam` for I2P) is set. A `--tx-proxy` hostname is
+  resolved once at startup with local DNS (`net::socks::endpoint::get` with
+  `resolve_host`); `.onion` and `.i2p` names are refused there.
 - **Noise.** With noise on, `send_noise` sends fixed `CRYPTONOTE_NOISE_BYTES`
   packets every `CRYPTONOTE_NOISE_MIN_DELAY` plus up to
   `CRYPTONOTE_NOISE_DELAY_RANGE` seconds on `CRYPTONOTE_NOISE_CHANNELS`
@@ -321,8 +323,9 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   `core::on_transactions_relayed`). RPC pool queries use
   `allow_sensitive = !request_has_rpc_origin || !restricted`, and
   `on_getblocktemplate` passes `include_sensitive` only when unrestricted;
-  `get_block_template_backlog` and `get_txpool_backlog` default to broadcast
-  transactions.
+  `get_txpool_backlog` defaults to broadcast transactions, and
+  `Blockchain::get_miner_data` and `send_miner_notifications` call
+  `get_block_template_backlog` with `include_sensitive` false.
 - **No disconnect on relayed offences.** `tx_memory_pool::add_tx` sets
   `m_no_drop_offense` for double spends, low fees, oversize extra and nonzero
   unlock time, so `handle_notify_new_transactions` keeps the connection,

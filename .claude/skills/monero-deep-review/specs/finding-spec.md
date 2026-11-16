@@ -203,8 +203,8 @@ None of this applies to `snippet`, which is copied exactly, whatever its style.
 
 `consensus-divergence`, `fork-gating`, `chain-state`, `db-transaction`,
 `wire-deserialization`, `serialization-compat`, `p2p-levin`, `rpc-surface`,
-`crypto-correctness`, `key-handling`, `counterparty-protocol`, `privacy`,
-`memory-safety`, `integer-overflow`, `concurrency`, `resource-exhaustion`,
+`crypto-correctness`, `key-handling`, `side-channel`, `counterparty-protocol`,
+`privacy`, `memory-safety`, `integer-overflow`, `concurrency`, `resource-exhaustion`,
 `wallet-boundary`, `supply-chain`, `prompt-injection`.
 
 Name the defect, not the attack or its outcome. Two researchers who agree on
@@ -223,6 +223,7 @@ lives in the tree is in `.claude/references/monero/lenses.md`.
 | `db-transaction` | a write is not durable or not atomic. A `LockedTXN` whose destructor aborts, an early return between the writes and the commit, a batch that was already open so the nested one is a no-op, a raw-struct layout change that needs a migration |
 | `wire-deserialization` | untrusted bytes drive a count, a length, an allocation or an index while being parsed |
 | `serialization-compat` | the bytes parse but mean something different than they did: a version field not bumped, a field one serializer writes and another does not read, a struct whose layout moved under code that reads it raw, a default that is indistinguishable from absent |
+| `side-channel` | a branch, loop bound, table index or memory access depends on a secret (a key, a blinding factor, a nonce, a multisig share), so an observer who measures time, cache or power learns it. A secret that reaches a log or an RPC response is `key-handling` |
 | `counterparty-protocol` | a multisig co-signer, a cold-signing partner or a hardware device sends something that makes the wallet do the wrong thing -- reuse a nonce, sign what it did not display, reveal a share |
 | `wallet-boundary` | a daemon's response corrupts, crashes or misleads the wallet that trusted it |
 

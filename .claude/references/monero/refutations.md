@@ -242,9 +242,11 @@ silently. One constructor that skips the check therefore halts tree growth
 for every output in that call, and the other torsion classes go into the
 tree unnoticed.
 
-Nothing on master constructs a `CarrotOutputPairV1` (the FCMP++ branch
-does) -- check with `git grep -n CarrotOutputPairV1` -- so no untrusted point
-reaches the skip there. Two limits:
+On master the only constructor is `cryptonote::to_output_pair`
+(`cryptonote_format_utils.cpp`), for a `txout_to_carrot_v1` output, and
+`check_output_types` rejects that type at every hard-fork version, so no
+untrusted point reaches the skip there (check with
+`git grep -n CarrotOutputPairV1`; the FCMP++ branch adds more). Two limits:
 
 - **It expires when a constructor appears.** Code that wraps outputs in a
   `CarrotOutputPairV1` must first check BOTH the output pubkey and the
