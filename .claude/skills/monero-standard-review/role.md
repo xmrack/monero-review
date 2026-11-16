@@ -43,6 +43,7 @@ not hand you.
 
 Coverage names the units, the classes each got, every excluded file with its
 reason, and every file the workflow reports as unaccounted.
+
 Do not write the tier's fixed limits (no cross-unit pass, no second look, two
 angles) as a sentence in Coverage, and write no footer. `profile=standard` and
 `angles=2` in the `<!-- deep-scan ... -->` stamp, and `<n>/2 angles agreed` on
