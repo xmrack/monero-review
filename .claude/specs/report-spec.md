@@ -4,8 +4,9 @@
 # `review.md`
 
 **Read `.claude/references/writing.md` before you write a line of this file.**
-This spec gives the structure; that file gives the prose. A deep review buys
-more agents, not more words.
+This spec gives the structure; that file gives the prose. A report that
+follows this spec in 1,800 words of hedged passive voice has failed; a deep
+review buys more agents, not more words.
 
 Everything below follows the reader's three questions (is something wrong,
 where is it, what do I change). Evidence comes after the answer, never before
@@ -24,7 +25,8 @@ table applies to both.
 | **Across areas.** and **Second look.** lines | never written | written as described under Coverage |
 
 In the template and the stamp, write the digit and the word for your tier,
-never `<k>` or `<profile>`.
+never `<k>` or `<profile>`: the stamp reads `profile=standard ... angles=2` at
+standard and `profile=deep ... angles=3` at deep.
 
 # Sections
 
@@ -146,11 +148,15 @@ reaches, in a clause. "none reachable" is a complete answer. `Change` and
 words, not the title's framing; where the two differ, say so. Then the one
 finding that matters, or that none does. Never a restatement of `Result:`,
 never a description of the review (no "I examined", no method, no effort),
-never hedged ("some areas may warrant further review"). It always names a
-changed file nobody accounted for and an area nobody read. When
+never hedged ("some areas may warrant further review"). When a changed file
+went unaccounted for or an area went unread, it names them: they matter more
+than a LOW. When
 `## Needs human review` or `## Comment discrepancy` is not empty, it says so
 in a clause, and what it is about: those sections sit below `## Refuted`,
-where `labels.py` stops counting severities.
+where `labels.py` stops counting severities. On a no-findings review the
+Summary does the most work: "Adds a bounds check to the RPC handler and its
+test. Nothing in the diff reaches a trust boundary and no guard was removed."
+tells a maintainer they can stop reading.
 
 # The finding
 
@@ -244,7 +250,8 @@ Quote `says` exactly; `shownBy` is required. Never in an entry: a style note
 (terse, informal, incomplete or mildly stale), a rewrite of the comment, or a
 restatement of the code. **Five entries at most, one per claim**: the same
 sentence quoted twice, or one mistake at three lines, is one entry. A sentence
-that merely describes an earlier head is not a discrepancy. Choose the five
+of the description that merely describes an earlier head is not a
+discrepancy. Choose the five
 whose believers would write the worst code, and say under **Not covered** how
 many you left out.
 
@@ -293,7 +300,9 @@ a limit applies to), nominate it for
 corrections to `.claude/references/monero/`. Never edit either from here, and
 **none of it goes in the report**: it goes in the
 **`<!-- workflow-updates ... -->` stamp**, a JSON array of objects with
-`file`, `says`, `correction` and `evidence`, second to last in the file,
+`file`, `says`, `correction` and `evidence`, copied from the run's
+`referenceUpdates` and from any refutation you are nominating, second to last
+in the file,
 immediately above the coverage stamp. Omit it when there is nothing (an empty
 array is also fine). A separate job reads only these fields, so:
 
@@ -314,7 +323,7 @@ present and every value a plain integer taken verbatim from the returned
 
 | field | from |
 | --- | --- |
-| `profile` | the literal `<profile>` for your tier, the profile you passed. Checked against the mode the harness dispatched; a mismatch is treated as the run not having happened |
+| `profile` | `standard` or `deep`, the profile you passed. Checked against the mode the harness dispatched; a mismatch is treated as the run not having happened |
 | `units` | `coverage.units.length` |
 | `cells` | `coverage.cells` |
 | `failedCells` | `coverage.failedCells` |

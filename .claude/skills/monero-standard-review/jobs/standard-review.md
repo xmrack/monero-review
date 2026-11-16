@@ -26,11 +26,14 @@ its code did not land. On anything else, pass no `masterRef`.
 
 ## 2. Take the changed-file list
 
-`PR_FILES.md` already holds it, one path per line. Read it rather than
+`PR_FILES.md` already holds it, one path per line (lines starting `#` are
+not paths). Read it rather than
 re-deriving it. If it is absent, run `git diff --name-only origin/base...HEAD`
-yourself and say in the report that the harness did not provide the list.
+yourself and say under Not covered that the harness did not provide the list,
+so paths inside moved submodules and bumped Rust dependencies were not listed.
 
-Hand the list to the workflow exactly as it stands. Do not filter it, reorder
+Hand every path to the workflow exactly as git printed it, without the `#`
+lines. Do not filter it, reorder
 it, or trim it: anything you drop becomes a file never reviewed and never
 reported as unreviewed.
 

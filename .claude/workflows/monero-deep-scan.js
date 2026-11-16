@@ -529,7 +529,7 @@ const MERGE_SCHEMA = {
 const a = (args && typeof args === 'object') ? args : {}
 const ROOT = a.root
 const PR = a.pr
-const CHANGED = Array.isArray(a.changedFiles) ? a.changedFiles.filter(Boolean) : []
+const CHANGED = Array.isArray(a.changedFiles) ? a.changedFiles.filter((f) => f && !String(f).startsWith('#')) : []
 // Anything that is not exactly 'standard' is the deep profile. Defaulting the
 // unrecognised value to the HEAVIER shape is deliberate: a typo in a dispatch
 // should cost money, not coverage.

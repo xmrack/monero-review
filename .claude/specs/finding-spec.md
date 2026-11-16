@@ -90,8 +90,8 @@ needs no reachability argument.
 
 A behaviour change inside something presented as a refactor is **not a
 candidate at all**, and does not belong in `candidates`. It goes in
-`refactorDrift`, which faces no panel and carries no severity, whether or not
-anybody can reach it. `distinguishingInput` is required on each entry: a
+`refactorDrift`, which faces no panel and carries no severity. When an
+attacker can reach the changed behaviour, also propose that as a candidate. `distinguishingInput` is required on each entry: a
 reader who did not propose it gets both versions of the file and must name the
 input under which they observably differ, or the entry is dropped.
 
