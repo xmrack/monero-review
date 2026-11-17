@@ -192,6 +192,21 @@ prime, and point-versus-negation handling, have both repeatedly looked like
 breaks and turned out to be fine once the protocol's own constraints were taken
 into account. Read the construction, not just the function.
 
+## `connect_async` cannot leak into `connections_`
+
+A throw inside `boosted_tcp_server<t_protocol_handler>::connect_async`
+(`contrib/epee/include/net/abstract_tcp_server2.inl`), for example from a
+socket option call, does not leave the new connection stranded in
+`connections_`. Right after the insert, the function creates a
+`scope_exit_handler` (via `create_scope_leave_handler`) that calls
+`connections_.erase(new_connection_l)` under `connections_mutex`, and
+nothing dismisses it, so the erase runs on every return path, normal or
+exceptional. A "connection leaks on exception" finding against
+`connect_async` is refuted unless the throw comes before that guard is in
+place. Re-check that the guard is still there and still not dismissed on the
+head you are reviewing
+(`grep -n 'scope_exit_handler' contrib/epee/include/net/abstract_tcp_server2.inl`).
+
 ## Not refutations: "nobody reaches it" and "it is not live yet"
 
 Neither kills a candidate. If the defect is real and nothing guards it, but no
