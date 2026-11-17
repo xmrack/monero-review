@@ -1,0 +1,14 @@
+diff --git a/contrib/epee/include/net/abstract_tcp_server2.inl b/contrib/epee/include/net/abstract_tcp_server2.inl
+index 7d81553b..486c5045 100644
+--- a/contrib/epee/include/net/abstract_tcp_server2.inl
++++ b/contrib/epee/include/net/abstract_tcp_server2.inl
+@@ -876,8 +876,7 @@ namespace net_utils
+       // this check, but multiple responses could. Clients can avoid this case
+       // by reading the entire response before making another request. P2P
+       // should never hit the MAX_BYTES check (when using default values).
+-      if (m_state.data.write.queue.size() <= ABSTRACT_SERVER_SEND_QUE_MAX_COUNT &&
+-          m_state.data.write.total_bytes <= static_cast<shared_state&>(connection_basic::get_state()).response_soft_limit)
++      if (m_state.data.write.queue.size() <= ABSTRACT_SERVER_SEND_QUE_MAX_COUNT)
+         return true;
+ 
+       MWARNING("Connection " << get_context().m_connection_id << " tripped write limit, terminating");

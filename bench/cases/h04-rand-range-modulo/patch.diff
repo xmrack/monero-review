@@ -1,0 +1,16 @@
+diff --git a/src/crypto/crypto.cpp b/src/crypto/crypto.cpp
+index 8399ef2b..01a832df 100644
+--- a/src/crypto/crypto.cpp
++++ b/src/crypto/crypto.cpp
+@@ -115,9 +115,8 @@ namespace crypto {
+ 
+   template<typename T>
+   typename std::enable_if<std::is_integral<T>::value, T>::type rand_range(T range_min, T range_max) {
+-    crypto::random_device rd;
+-    std::uniform_int_distribution<T> dis(range_min, range_max);
+-    return dis(rd);
++    const T span = range_max - range_min + 1;
++    return range_min + static_cast<T>(crypto::rand<typename std::make_unsigned<T>::type>() % span);
+   }
+   #define INSTANTIATE_RAND_RANGE(t) template t rand_range<t>(t,t);
+   INSTANTIATE_RAND_RANGE(long)

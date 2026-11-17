@@ -1,0 +1,17 @@
+diff --git a/src/cryptonote_protocol/cryptonote_protocol_handler.inl b/src/cryptonote_protocol/cryptonote_protocol_handler.inl
+index 9deb9372..925d8a6d 100644
+--- a/src/cryptonote_protocol/cryptonote_protocol_handler.inl
++++ b/src/cryptonote_protocol/cryptonote_protocol_handler.inl
+@@ -983,12 +983,6 @@ namespace cryptonote
+   template<class t_core>
+   int t_cryptonote_protocol_handler<t_core>::handle_request_get_objects(int command, NOTIFY_REQUEST_GET_OBJECTS::request& arg, cryptonote_connection_context& context)
+   {
+-    if (context.m_state == cryptonote_connection_context::state_before_handshake)
+-    {
+-      LOG_ERROR_CCONTEXT("Requested objects before handshake, dropping connection");
+-      drop_connection(context, false, false);
+-      return LEVIN_ERROR_CONNECTION;
+-    }
+     MLOG_P2P_MESSAGE("Received NOTIFY_REQUEST_GET_OBJECTS (" << arg.blocks.size() << " blocks)");
+     if (arg.blocks.size() > CURRENCY_PROTOCOL_MAX_OBJECT_REQUEST_COUNT)
+       {

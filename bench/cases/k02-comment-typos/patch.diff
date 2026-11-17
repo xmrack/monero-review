@@ -1,0 +1,13 @@
+diff --git a/contrib/epee/include/net/http_protocol_handler.inl b/contrib/epee/include/net/http_protocol_handler.inl
+index 8c997b5e..5945bb4d 100644
+--- a/contrib/epee/include/net/http_protocol_handler.inl
++++ b/contrib/epee/include/net/http_protocol_handler.inl
+@@ -301,7 +301,7 @@ namespace net_utils
+ 			{
+ 			case http_state_retriving_comand_line:
+ 				//The HTTP protocol does not place any a priori limit on the length of a URI.  (c)RFC2616
+-				//but we forebly restirct it len to HTTP_MAX_URI_LEN to make it more safely
++				//but we forcibly restrict its length to HTTP_MAX_URI_LEN to make it safer
+ 				if(!m_cache.size())
+ 					break;
+ 

@@ -1,0 +1,17 @@
+diff --git a/src/cryptonote_basic/cryptonote_basic_impl.cpp b/src/cryptonote_basic/cryptonote_basic_impl.cpp
+index e61b4107..e1a022cc 100644
+--- a/src/cryptonote_basic/cryptonote_basic_impl.cpp
++++ b/src/cryptonote_basic/cryptonote_basic_impl.cpp
+@@ -220,12 +220,6 @@ namespace cryptonote {
+       }
+     }
+ 
+-    if (!check_address(info.address))
+-    {
+-      LOG_PRINT_L1("Failed to validate address keys");
+-      return false;
+-    }
+-
+     return true;
+   }
+   //--------------------------------------------------------------------------------

@@ -1,0 +1,19 @@
+diff --git a/src/cryptonote_basic/cryptonote_format_utils.cpp b/src/cryptonote_basic/cryptonote_format_utils.cpp
+index 2cff3630..2d23527f 100644
+--- a/src/cryptonote_basic/cryptonote_format_utils.cpp
++++ b/src/cryptonote_basic/cryptonote_format_utils.cpp
+@@ -1069,10 +1069,10 @@ namespace cryptonote
+   //---------------------------------------------------------------
+   uint64_t get_outs_money_amount(const transaction& tx)
+   {
+-    uint64_t outputs_amount = 0;
+-    for(const auto& o: tx.vout)
+-      outputs_amount += o.amount;
+-    return outputs_amount;
++    uint64_t total = 0;
++    for (const auto& o: tx.vout)
++      total += o.amount;
++    return total;
+   }
+   //---------------------------------------------------------------
+   bool get_output_public_key(const cryptonote::tx_out& out, crypto::public_key& output_public_key)

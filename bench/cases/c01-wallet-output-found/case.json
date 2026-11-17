@@ -1,0 +1,13 @@
+{
+  "id": "c01-wallet-output-found",
+  "split": "catalogued",
+  "category": [
+    "wallet-boundary"
+  ],
+  "severity": "HIGH",
+  "source": "Bypass via additional (subaddress) tx pubkeys",
+  "title": "wallet2: reset output_found for each tx pubkey pass",
+  "body": "`output_found` is shared across every pass of the tx pubkey loop in `process_new_transaction`, so a later pass skips outputs an earlier pass matched with a different derivation. Scope it to the pass so each derivation is checked against every output.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99001
+}

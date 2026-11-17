@@ -14,7 +14,9 @@ Where the tree disagrees with this file, the tree wins.
 ## How to use this file
 
 Find the class the diff touches and read its "reintroduces this if it"
-line. Three patterns recur:
+line. Each entry names its category from `finding-spec.md`; a researcher sent
+with one class reads the entries tagged with it before the code. Three
+patterns recur:
 
 - **The guard is on one path and not its sibling:** additional tx keys,
   Wallet API offline signing, the reserve-proof key-image check, the device
@@ -32,6 +34,8 @@ Consensus does not require `tx_extra` fields to be unique or canonical and
 never decodes `ecdhInfo`. The wallet decides what it received from both.
 
 ### Duplicate tx pubkey counts a deposit N times (2018, HackerOne #364904, #377592)
+
+Category: `wallet-boundary`.
 
 **Mechanism.** `wallet2::process_new_transaction` scans all outputs once per
 tx pubkey in `tx_extra`, accumulating into `tx_money_got_in_outs` with no
@@ -52,6 +56,8 @@ the deduplicated result; or makes the "received output ignored" branch stop
 subtracting.
 
 ### Bypass via additional (subaddress) tx pubkeys (2018, HackerOne #379049)
+
+Category: `wallet-boundary`.
 
 **Mechanism.** The first fix deduplicated primary pubkeys
 (`public_keys_seen`); it does not appear to have included the
@@ -77,6 +83,8 @@ from the inline path.
 
 ### Wallet decoded amounts from RingCT data in coinbase transactions (2019)
 
+Category: `wallet-boundary`.
+
 **Mechanism.** Coinbase amounts are in the clear. For a coinbase output with
 clear amount 0, `wallet2::scan_output` still called `tools::decodeRct` on the
 miner-supplied `rct_signatures`, so a miner chose the amount the wallet
@@ -94,6 +102,8 @@ path; or relaxes the `RCTTypeNull` rule (e.g. for a new coinbase format)
 without a wallet-side equivalent.
 
 ### Malformed `ecdhInfo` makes the wallet unable to sweep (2019, HackerOne #506496)
+
+Category: `wallet-boundary`; also `fail-open`.
 
 **Mechanism.** A sender kept the commitment honest and put garbage in the
 encrypted amount. `rct::decodeRct` threw; the `tools::decodeRct` wrapper in
@@ -119,6 +129,8 @@ added there decodes every output as 0 and skips it. `wallet2::import_key_images`
 
 ### Exabyte allocation in `portable_storage` binary load (2019, HackerOne #506498)
 
+Category: `wire-deserialization`; also `resource-exhaustion`.
+
 **Mechanism.** epee's binary reader called `reserve()` with an array count
 from a varint. A few bytes asked for about 4 EB, over Levin, so over P2P.
 
@@ -138,6 +150,8 @@ untrusted bytes with no `limits_t`.
 
 ### Signed `char` as an array index in the JSON parser (2020, HackerOne #825091)
 
+Category: `memory-safety`; also `wire-deserialization`.
+
 **Mechanism.** The epee JSON string parser looked up hex digits with
 `isx[(int)*++it]`; a byte above 0x7F read before the table. Found by
 fuzzing; reachable from any JSON RPC body.
@@ -150,6 +164,8 @@ indexes `isx[(unsigned char)*++it]`; other lookups in that file cast to
 derived from one, in a parser. Grep the diff for `[*it]`, `[c]`, `[(int)`.
 
 ### Stack VLA sized by the block's transaction count (2019, HackerOne #519120)
+
+Category: `memory-safety`; also `wire-deserialization`.
 
 **Mechanism.** `tree_hash` allocated `char ints[cnt][HASH_SIZE]` on the
 stack with `cnt` from a block's `tx_hashes`; a large count overflowed it.
@@ -167,6 +183,8 @@ and feeds `tree_hash`.
 
 ### Crafted cold-wallet files (dev meeting 2017-07-23)
 
+Category: `wire-deserialization`; also `counterparty-protocol`.
+
 Boost-serialized wallet files could crash the loader, and cold-signing
 files used that format. Today `wallet2::parse_unsigned_tx_from_str` refuses
 versions `'\003'` and `'\004'` as deprecated; `'\005'` is decrypted, read
@@ -183,6 +201,8 @@ whole fix; where the method is public, only a bound helps.
 
 ### `get_random_rct_outs.bin` loop (2018, HackerOne #391611)
 
+Category: `resource-exhaustion`; also `rpc-surface`.
+
 **Mechanism.** An unbounded `outs_count` drove a rejection-sampling loop
 that ran until it had that many distinct outputs, holding the blockchain
 lock. **Fix today.** The method is gone; decoy selection is in the wallet.
@@ -192,6 +212,8 @@ has N distinct items with N from the request. Ask whether N can be
 unreachable and whether the loop holds `m_blockchain_lock`.
 
 ### `get_output_distribution` with many amounts (2021, HackerOne #1379707)
+
+Category: `resource-exhaustion`; also `rpc-surface`.
 
 **Mechanism.** A long `amounts` list built one distribution per amount and
 exhausted memory in about 90 seconds.
@@ -209,6 +231,8 @@ restricted method without a cap like `RESTRICTED_TRANSACTIONS_COUNT`,
 `MAX_RESTRICTED_GLOBAL_FAKE_OUTS_COUNT` (top of `core_rpc_server.cpp`).
 
 ### Zero TCP window queues responses until OOM: CVE-2025-26819 (2024, HackerOne #2912194)
+
+Category: `resource-exhaustion`.
 
 **Mechanism.** A client that never reads leaves responses in the epee send
 queue, which capped messages, not bytes: 1000 queued 17 MB responses came
@@ -232,6 +256,8 @@ saying why.
 
 ### `get_fee_estimate` with a huge `grace_blocks` (2024, HackerOne #2338094)
 
+Category: `resource-exhaustion`; also `integer-overflow`, `fee-and-weight`.
+
 **Mechanism.** `Blockchain::get_dynamic_base_fee_estimate_2021_scaling` ran
 `for (i < grace_blocks) rm.insert(0)` before its `grace_blocks <= 100`
 check, so `2^64-1` pinned an RPC thread, with an unsigned
@@ -249,6 +275,8 @@ dominate.
 
 ### Unbounded leading CRLFs spin the HTTP handler (2018, HackerOne #344499)
 
+Category: `resource-exhaustion`.
+
 **Mechanism.** The epee HTTP handler erased leading CR/LF with no cap.
 **Fix today.** `simple_http_connection_handler::handle_buff_in` in
 `contrib/epee/include/net/http_protocol_handler.inl` counts them in
@@ -260,6 +288,8 @@ bytes without a count cap, or resets `m_newlines` other than at the start
 of a new request.
 
 ### TCP RST stops the accept loop (2018, HackerOne #363714)
+
+Category: `resource-exhaustion`.
 
 **Mechanism.** On error, `handle_accept` returned without calling
 `async_accept` again; a reset right after the handshake stopped the node
@@ -275,6 +305,8 @@ or write completion handler without re-registering it.
 Every node is exposed on P2P. A P2P bug needs no misconfiguration.
 
 ### `GET_OBJECTS` fills the send queue and sleeps a worker (2020, HackerOne #876530)
+
+Category: `resource-exhaustion`; also `p2p-levin`.
 
 **Mechanism.** A peer requested many 500-block batches. On a full send
 queue the worker slept about six seconds; filling every worker stalled the
@@ -292,6 +324,8 @@ terminates the connection on a full queue instead of parking a worker.
 wait on an `io_context` worker that depends on peer behaviour.
 
 ### Pending block queue filled past its limit (2024, HackerOne #2693786)
+
+Category: `resource-exhaustion`; also `chain-state`, `p2p-levin`.
 
 **Mechanism.** Sync skipped the block-queue size cap when the next block was
 near the tip, and queued blocks without checking they chained to what it
@@ -318,6 +352,8 @@ per-peer sync state into a structure shared across connections.
 
 ### Transactions from invalid blocks stay in the mempool (2024, HackerOne #2315026)
 
+Category: `txpool-relay`; also `resource-exhaustion`.
+
 **Mechanism.** Block transactions entered the pool as `relay_method::block`,
 for which `tx_memory_pool::add_tx` skips the fee, `MAX_TX_EXTRA_SIZE` and
 unlock-time rules and keeps a transaction whose input check fails, and
@@ -342,6 +378,8 @@ above the PoW check; or lets `prune` keep a new category forever.
 
 ### Inverted ternary in `peerlist_manager::filter` (2026, HackerOne #3547349)
 
+Category: `peer-management`.
+
 **Mechanism.** `filter(white, f)` selected the gray list when asked for the
 white list and the reverse. Host-level deduplication in
 `make_new_connection_from_peerlist` limited the impact.
@@ -356,6 +394,8 @@ test of both branches, or removes the host deduplication in
 
 ### RandomX seed for alternative chains (dev meeting 2019-09-08)
 
+Category: `pow-difficulty`; also `consensus-divergence`.
+
 Found on testnet before activation: an alt chain across a seed epoch
 boundary needs its own seed hash, and an attacker can build one. Today `Blockchain::handle_alternative_block`
 takes the seed from the alt chain when `alt_chain.front().height <= seedheight`
@@ -365,6 +405,8 @@ takes the seed from the alt chain when `alt_chain.front().height <= seedheight`
 chain's seed, or changes seed-height logic on one path only.
 
 ### Selfish mining by Qubic (2025)
+
+Category: `pow-difficulty`.
 
 Lee and Kim measured Qubic's campaign: about 22% of blocks, 28% in ten
 detected periods, with more orphans and longer forks. At the inferred
@@ -381,6 +423,8 @@ Ed25519 has cofactor 8. A valid key image `I` is in the prime-order
 subgroup; `I + T`, for a torsion point `T`, is different bytes.
 
 ### Torsioned key images allowed up to 8 spends per output (2017)
+
+Category: `crypto-correctness`; also `consensus-divergence`.
 
 **Mechanism.** Verifiers did not check the subgroup, so adding a torsion
 point gave a fresh key image: up to eight spends per output. Patched
@@ -402,6 +446,8 @@ or an equivalent check. A change to `crypto_ops::check_ring_signature`
 changes consensus for historical v1 transactions.
 
 ### Reserve proof accepted a torsion-shifted key image (2026, zkao)
+
+Category: `crypto-correctness`; also `wallet-boundary`.
 
 **Mechanism.** `wallet2::check_reserve_proof` verified a one-member ring
 signature per key image, then asked `/is_key_image_spent` about those bytes.
@@ -433,6 +479,8 @@ transactions or outputs is a leak.
 
 ### `find_and_save_rings` sent outgoing txids to the daemon (2025)
 
+Category: `privacy`; also `wallet-boundary`.
+
 **Mechanism.** `wallet2::find_and_save_rings` back-filled the ring database
 by fetching the wallet's outgoing transactions with `/gettransactions`,
 with no trusted-daemon check. `wallet2::load` called it whenever the cached
@@ -450,6 +498,8 @@ flags that default to "not done yet" decide what runs on the next load.
 
 ### Daemon that hides the real output (context for #506496)
 
+Category: `wallet-boundary`; also `privacy`.
+
 `wallet2::get_outs` throws "Daemon response did not include the requested
 real output" unless the answer carries the real output's key, mask and
 `unlocked` flag; `wallet2::tx_add_fake_output` drops decoys whose key or
@@ -460,6 +510,8 @@ the real member to the wallet's record.
 ## Decoy selection
 
 ### Decoys could never be exactly 10 blocks old (2023)
+
+Category: `privacy`; also `randomness`.
 
 **Mechanism.** The gamma picker excluded the last 10 blocks, so the newest
 decoy was 11 blocks old while the wallet spent its own 10-block-old outputs:
@@ -484,6 +536,8 @@ The attacker is another user or process on the same machine.
 
 ### Server impersonation of `monero-wallet-rpc` (2018, HackerOne #462442)
 
+Category: `unsafe-defaults`.
+
 **Mechanism.** HTTP digest authentication proves the client, not the server.
 A local user who bound the port first received the victim's client traffic
 and could answer it. **Fix today.** Optional TLS with pinned certificates:
@@ -494,6 +548,8 @@ and could answer it. **Fix today.** Optional TLS with pinned certificates:
 "localhost" as proof of the server's identity in a new client.
 
 ### Credentials file created without `O_EXCL` (2024, HackerOne #2425873)
+
+Category: `local-files`.
 
 **Mechanism.** `tools::private_file::create` opened
 `monero-wallet-rpc.<port>.login` with `O_RDONLY|O_CREAT` and no `O_EXCL`; a
@@ -510,6 +566,8 @@ directory, or with check-then-create.
 
 ### Password change accepted a mismatched confirmation (2020, HackerOne #803028)
 
+Category: `fail-open`.
+
 In monero-gui, a blank confirmation still changed the password, risking
 self-lockout. The CLI's `simple_wallet::change_password` prompts through
 `default_password_prompter(true)`, which verifies. **A PR reintroduces
@@ -517,6 +575,8 @@ this if it** adds a password-setting path that does not compare the
 confirmation before the irreversible change.
 
 ### Multisig behind an experimental gate (dev meetings 2022)
+
+Category: `unsafe-defaults`; also `counterparty-protocol`.
 
 Multisig signature and key-exchange weaknesses were fixed in 2022 (PRs
 #8149, #8220). With review incomplete, maintainers chose an opt-in setting.
@@ -535,6 +595,8 @@ shows what is signed. Host code is under `src/device/` and
 
 ### Device signed an `unlock_time` it never showed (2020, HackerOne #817245)
 
+Category: `counterparty-protocol`.
+
 **Mechanism.** Devices did not verify the transaction's `unlock_time`; host
 malware could lock approved funds for good. The fixes were device-side. A
 first Ledger patch had an integer overflow on large values (Ledger LSB-009).
@@ -544,6 +606,8 @@ prefix is streamed to the device (Ledger: `device_ledger::mlsag_prehash`),
 without a device change that displays or checks it.
 
 ### Ledger app returned its Keccak state, which contained both secret keys (2026, Ledger LSB-022)
+
+Category: `key-handling`; also `counterparty-protocol`.
 
 **Mechanism.** The app's `INS_GET_CHACHA8_PREKEY` handler permuted
 `a || b || 0x8c` and returned the 200-byte Keccak-f state, not a digest.
@@ -562,6 +626,8 @@ intermediate hash state or spend-key-derived value without on-device
 confirmation, or needs the device to export more than a final digest.
 
 ### Wallet API offline signing accepted hardware wallets (2026, zkao)
+
+Category: `counterparty-protocol`.
 
 **Mechanism.** `device_ledger::generate_output_ephemeral_keys` accepts the
 device's output key and amount key with length checks only; the comparisons
@@ -583,6 +649,8 @@ supported by HW wallet", "Command not supported by hardware wallet") and
 `key_on_device()` to list entry points.
 
 ### Trezor host trusts device responses (2026, zkao)
+
+Category: `counterparty-protocol`; also `key-handling`, `rpc-surface`.
 
 Both reports assume a compromised Trezor, which in Monero's model already
 holds the spend key; they show where the host does not cross-check.
@@ -627,6 +695,9 @@ disclosed bugs. The shapes apply to any consensus or P2P code:
 - Crypto ran before a cheap low-difficulty reject; unkeyed hashing of peer
   data let colliding keys crash tables (now keyed SipHash); an early
   `return` halted chain-wide depth updates.
+
+Categories: `consensus-divergence`, `serialization-compat`,
+`peer-management`, `pow-difficulty`, `resource-exhaustion`.
 
 **Ask of a monerod diff:** does it key a set on a non-unique id, sort by part
 of an identity, accept a non-canonical encoding, do arithmetic on a miner

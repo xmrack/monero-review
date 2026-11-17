@@ -1,0 +1,14 @@
+{
+  "id": "h05-rpc-ipv6-external-bind",
+  "split": "held-out",
+  "category": [
+    "unsafe-defaults",
+    "rpc-surface"
+  ],
+  "severity": "LOW",
+  "source": null,
+  "title": "rpc_args: let IPv6 binds through without --confirm-external-bind",
+  "body": "Many IPv6 addresses are not globally routable, and requiring the flag for them confuses users on IPv6-only hosts.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99019
+}

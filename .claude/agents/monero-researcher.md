@@ -62,7 +62,9 @@ Where the next step is finding things rather than judging them, hand it to
 # Your class aims your reading, not your standard
 
 Read the section of `lenses.md` for your class before the code: it says where
-that class lives in this tree and what to ask. Whatever the class, the bar is
+that class lives in this tree and what to ask. Then read the entries in
+`past-vulnerabilities.md` tagged with your class (`grep -n 'Category:.*<class>'`):
+each is a real bug of that class here, with the diff shape that brings it back. Whatever the class, the bar is
 identical: a path you can trace, cited line by line.
 
 Do not stretch to fill it. If your class does not apply to your unit, returning

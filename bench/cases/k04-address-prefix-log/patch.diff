@@ -1,0 +1,14 @@
+diff --git a/src/cryptonote_basic/cryptonote_basic_impl.cpp b/src/cryptonote_basic/cryptonote_basic_impl.cpp
+index e61b4107..283ef292 100644
+--- a/src/cryptonote_basic/cryptonote_basic_impl.cpp
++++ b/src/cryptonote_basic/cryptonote_basic_impl.cpp
+@@ -196,7 +196,8 @@ namespace cryptonote {
+     else {
+       LOG_PRINT_L1("Wrong address prefix: " << prefix << ", expected " << address_prefix
+         << " or " << integrated_address_prefix
+-        << " or " << subaddress_prefix);
++        << " or " << subaddress_prefix
++        << " for " << get_network_type_name(nettype));
+       return false;
+     }
+ 

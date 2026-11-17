@@ -1,0 +1,14 @@
+{
+  "id": "c10-reserve-proof-subgroup",
+  "split": "catalogued",
+  "category": [
+    "crypto-correctness",
+    "wallet-boundary"
+  ],
+  "severity": "HIGH",
+  "source": "Reserve proof accepted a torsion-shifted key image",
+  "title": "wallet2: simplify reserve proof key image validation",
+  "body": "The ring signature check below already binds the key image, so only the identity needs rejecting here.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99010
+}

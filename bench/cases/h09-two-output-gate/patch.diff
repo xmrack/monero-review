@@ -1,0 +1,26 @@
+diff --git a/src/cryptonote_core/blockchain.cpp b/src/cryptonote_core/blockchain.cpp
+index fe5c6ab3..8030d4e4 100644
+--- a/src/cryptonote_core/blockchain.cpp
++++ b/src/cryptonote_core/blockchain.cpp
+@@ -3275,16 +3275,13 @@ bool Blockchain::check_tx_inputs(transaction& tx,
+ 
+   const uint8_t hf_version = m_hardfork->get_current_version();
+ 
+-  if (hf_version >= HF_VERSION_MIN_2_OUTPUTS)
++  if (tx.version >= 2)
+   {
+-    if (tx.version >= 2)
++    if (tx.vout.size() < 2)
+     {
+-      if (tx.vout.size() < 2)
+-      {
+-        MERROR_VER("Tx " << get_transaction_hash(tx) << " has fewer than two outputs");
+-        tvc.m_too_few_outputs = true;
+-        return false;
+-      }
++      MERROR_VER("Tx " << get_transaction_hash(tx) << " has fewer than two outputs");
++      tvc.m_too_few_outputs = true;
++      return false;
+     }
+   }
+ 

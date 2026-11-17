@@ -8,6 +8,10 @@
 #   TESTS=1 ./review-local.sh 9876      # also build with ASan and run the tests
 #                                       # in an offline container (needs docker);
 #                                       # TESTS=core adds the consensus suite
+#   CASE=bench/cases/<id> ./review-local.sh 99001
+#                                       # review a seeded patch on its pinned
+#                                       # base instead of an upstream PR; see
+#                                       # bench/README.md
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 #
@@ -60,6 +64,14 @@ case "$TIER" in
 esac
 
 [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number" >&2; exit 1; }
+# A benchmark case: a patch and its metadata, reviewed on the case's base
+# commit as if it were an open pull request. Nothing is fetched about the
+# number, and nothing is published.
+CASE=${CASE:-}
+if [ -n "$CASE" ]; then
+  CASE=$(cd "$CASE" && pwd)
+  [ -f "$CASE/case.json" ] && [ -f "$CASE/patch.diff" ] || { echo "!! $CASE needs case.json and patch.diff" >&2; exit 1; }
+fi
 
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -92,7 +104,14 @@ fi
 # (353 files for a 2-file change, measured) instead of the PR. Fall back to
 # master only if the API is unreachable, and say so.
 # One unauthenticated request for everything this script reads about the PR.
-PR_META=$(curl -fsSL "https://api.github.com/repos/$UPSTREAM/pulls/$PR" 2>/dev/null || true)
+if [ -n "$CASE" ]; then
+  PR_META=$(python3 -I -c 'import json, sys; c = json.load(open(sys.argv[1]))
+print(json.dumps({"title": c["title"], "body": c["body"], "state": "open", "merged": False,
+                  "user": {"login": "contributor"}, "author_association": "CONTRIBUTOR",
+                  "base": {"ref": "master"}}))' "$CASE/case.json")
+else
+  PR_META=$(curl -fsSL "https://api.github.com/repos/$UPSTREAM/pulls/$PR" 2>/dev/null || true)
+fi
 BASE=""
 if command -v jq >/dev/null 2>&1; then
   BASE=$(printf '%s' "$PR_META" | jq -r '.base.ref // empty' 2>/dev/null) || BASE=""
@@ -107,10 +126,22 @@ echo "==> fetching PR $PR (base: $BASE)"
 # checked out, and a prior run of this same PR (or a same-named branch left
 # over from anything else) leaves that branch checked out.
 git -C "$CACHE" checkout --quiet --detach
-git -C "$CACHE" fetch --filter=blob:none --quiet origin \
-  "+refs/heads/$BASE:refs/remotes/origin/base" \
-  "+refs/pull/$PR/head:refs/heads/pr-$PR"
-git -C "$CACHE" checkout --quiet --force "pr-$PR"
+if [ -n "$CASE" ]; then
+  CASE_BASE=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["base"])' "$CASE/case.json")
+  git -C "$CACHE" fetch --filter=blob:none --quiet origin "$CASE_BASE"
+  git -C "$CACHE" update-ref refs/remotes/origin/base "$CASE_BASE"
+  git -C "$CACHE" checkout --quiet --force -B "pr-$PR" "$CASE_BASE"
+  git -C "$CACHE" apply --index "$CASE/patch.diff"
+  python3 -I -c 'import json, sys; c = json.load(open(sys.argv[1])); print(c["title"] + "\n\n" + c["body"])' "$CASE/case.json" \
+    | GIT_AUTHOR_NAME=contributor GIT_AUTHOR_EMAIL=contributor@users.noreply.github.com \
+      GIT_COMMITTER_NAME=contributor GIT_COMMITTER_EMAIL=contributor@users.noreply.github.com \
+      git -C "$CACHE" commit --quiet --no-verify -F -
+else
+  git -C "$CACHE" fetch --filter=blob:none --quiet origin \
+    "+refs/heads/$BASE:refs/remotes/origin/base" \
+    "+refs/pull/$PR/head:refs/heads/pr-$PR"
+  git -C "$CACHE" checkout --quiet --force "pr-$PR"
+fi
 # A merged pull request's findings are read again on master, which may have
 # fixed them since.
 PR_STATE=$(printf '%s' "$PR_META" \
@@ -139,7 +170,7 @@ fi
 MERGE_REF=""; BEHIND=""; RELEASE_TAG=""
 if [ "$PR_STATE" != "merged" ]; then
   git -C "$CACHE" update-ref -d refs/remotes/origin/merge 2>/dev/null || true
-  if git -C "$CACHE" fetch --filter=blob:none --quiet origin \
+  if [ -z "$CASE" ] && git -C "$CACHE" fetch --filter=blob:none --quiet origin \
        "+refs/pull/$PR/merge:refs/remotes/origin/merge" 2>/dev/null; then
     MERGE_REF=origin/merge
   fi
@@ -270,7 +301,9 @@ done
   echo "fine; a reviewer raising something does not make it real."
   echo
   echo "----- BEGIN THIRD-PARTY TEXT -----"
-  if command -v jq >/dev/null 2>&1; then
+  if [ -n "$CASE" ]; then
+    echo "(no review comments or CI yet)"
+  elif command -v jq >/dev/null 2>&1; then
     # Every page when gh is available (curl is one page), then the newest
     # entries, with any cut declared, as in the workflow.
     fetch_all() {
@@ -354,7 +387,14 @@ done
   echo "rebase' -- do not spend turns re-discovering that git cannot."
   echo
   echo "UNTRUSTED: commit messages and diffs are author-supplied."
-  if command -v gh >/dev/null 2>&1; then
+  if [ -n "$CASE" ]; then
+    echo
+    echo "----- BEGIN AUTHOR-SUPPLIED TEXT -----"
+    echo
+    git -C "$CACHE" log -1 --format='## %H  %s' HEAD
+    git -C "$CACHE" show --format= HEAD | sed -n '1,400p' |
+      sed 's/-\{3,\} *\(BEGIN\|END\) [A-Z -]*TEXT *-\{3,\}/[marker stripped]/g'
+  elif command -v gh >/dev/null 2>&1; then
     list=$(mktemp)
     gh api --paginate "repos/$UPSTREAM/pulls/$PR/commits?per_page=100" \
       --jq '.[] | "\(.sha) \(.commit.message | split("\n")[0])"' \
@@ -639,9 +679,13 @@ rm -f "$SUBFILES"
 git -C "$CACHE" diff -z --numstat origin/base...HEAD \
   | python3 -I "$HERE/scripts/numstat.py" > "$CACHE/PR_NUMSTAT.txt"
 cat "$CACHE/RUST_FILES.txt" >> "$CACHE/PR_NUMSTAT.txt" 2>/dev/null || true
-GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
-  python3 -I "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
-  > "$CACHE/PR_PRIOR.json" 2>/dev/null || echo '[]' > "$CACHE/PR_PRIOR.json"
+if [ -n "$CASE" ]; then
+  echo '[]' > "$CACHE/PR_PRIOR.json"
+else
+  GH_TOKEN="${GH_TOKEN:-$(gh auth token 2>/dev/null || true)}" \
+    python3 -I "$HERE/scripts/prior_findings.py" "${REVIEW_REPO:-xmrack/monero-review}" "$PR" "$SHA" \
+    > "$CACHE/PR_PRIOR.json" 2>/dev/null || echo '[]' > "$CACHE/PR_PRIOR.json"
+fi
 
 # One model on both tiers -- deep buys more agents, not a better reader. EFFORT
 # was empty for deep while the unnamed default was Opus 5's `high`, which kept
@@ -675,6 +719,10 @@ EFFORT_ARG=()
 # older ones refuse Opus 5.5 outright. Best-effort, because a package-managed
 # install may not let `claude update` touch it; the version is printed either
 # way so the run shows which CLI did it.
+if [ -n "$CASE" ] && [ -n "${DRY_RUN:-}" ]; then
+  echo "==> DRY_RUN: case prepared in $CACHE; not reviewing"
+  exit 0
+fi
 claude update >/dev/null 2>&1 || echo "!! 'claude update' failed; reviewing with the installed CLI" >&2
 echo "==> Claude Code $(claude --version 2>/dev/null | awk '{print $1}')"
 
@@ -886,6 +934,23 @@ mkdir -p "$HERE/reviews"
 OUT="$HERE/reviews/pr-$PR-$SHA.md"
 cp "$CACHE/review.md" "$OUT"
 echo "==> $OUT"
+
+# A benchmark case is scored, not disclosed: keep the report, the execution
+# log and the workflow journals, which carry each candidate's category.
+if [ -n "$CASE" ]; then
+  if [ -n "${BENCH_OUT:-}" ]; then
+    mkdir -p "$BENCH_OUT"
+    cp "$OUT" "$BENCH_OUT/review.md"
+    cp "$EXEC" "$BENCH_OUT/exec.jsonl"
+    n=0
+    for j in $HOME/.claude/projects/*/${SESSION_ID:-no-session}/subagents/workflows/*/journal.jsonl; do
+      [ -f "$j" ] || continue
+      n=$((n + 1)); cp "$j" "$BENCH_OUT/journal-$n.jsonl"
+    done
+    echo "==> $BENCH_OUT"
+  fi
+  exit 0
+fi
 
 # Nothing leaves this machine from here, but a local review is easy to paste
 # somewhere public by hand. Say so when CI would have filed it privately, by

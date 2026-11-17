@@ -1,0 +1,13 @@
+{
+  "id": "c12-private-file-excl",
+  "split": "catalogued",
+  "category": [
+    "local-files"
+  ],
+  "severity": "MEDIUM",
+  "source": "Credentials file created without `O_EXCL`",
+  "title": "util: drop O_EXCL in drop_and_recreate",
+  "body": "The file was just removed, so O_EXCL cannot fail for a reason the caller can act on; it only makes startup fail on some network filesystems.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99012
+}

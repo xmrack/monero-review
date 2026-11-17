@@ -1,0 +1,14 @@
+{
+  "id": "c07-get-objects-before-handshake",
+  "split": "catalogued",
+  "category": [
+    "resource-exhaustion",
+    "p2p-levin"
+  ],
+  "severity": "HIGH",
+  "source": "`GET_OBJECTS` fills the send queue and sleeps a worker",
+  "title": "protocol: serve object requests that race the handshake",
+  "body": "A peer that sends `REQUEST_GET_OBJECTS` immediately after its handshake request is sometimes processed before the handshake completes and gets dropped. Serve the request instead of dropping the connection.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99007
+}

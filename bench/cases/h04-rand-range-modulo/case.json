@@ -1,0 +1,13 @@
+{
+  "id": "h04-rand-range-modulo",
+  "split": "held-out",
+  "category": [
+    "randomness"
+  ],
+  "severity": "LOW",
+  "source": null,
+  "title": "crypto: compute rand_range without std::uniform_int_distribution",
+  "body": "libstdc++ and libc++ implement `uniform_int_distribution` differently, which makes test vectors platform dependent. Reduce a random word into the range directly.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99018
+}
