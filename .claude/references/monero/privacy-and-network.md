@@ -391,8 +391,13 @@ for public and private zones.
   `sent_addresses` stops repeats on a connection.
 - **Receiving.** `handle_remote_peerlist` rejects more than
   `P2P_MAX_PEERS_IN_HANDSHAKE` as spam and entries from another zone.
-  `sanitize_peerlist` drops loopback, local, zero-IP and port-equals-RPC-port
-  entries and zeroes `last_seen`; `merge_peerlist` adds the rest to gray. This
+  `sanitize_peerlist` drops loopback and local entries, IPv6 entries that are
+  IPv4-mapped or unspecified (`is_forbidden_ipv6_address`), IPv4 entries with a
+  zero IP or a port equal to the RPC port (those two checks are IPv4-only), and
+  entries whose nonzero `pruning_seed` lies outside
+  `make_pruning_seed(1..2^CRYPTONOTE_PRUNING_LOG_STRIPES)`; it zeroes
+  `last_seen` (`node_server::sanitize_peerlist` in `src/p2p/net_node.inl`).
+  `merge_peerlist` adds the rest to gray. This
   runs for timed-sync responses from inbound peers too.
 - **Bans.** `add_host_fail` blocks after `P2P_IP_FAILS_BEFORE_BLOCK` failures
   for `P2P_IP_BLOCKTIME`; also `block_host`, `block_subnet`, `--ban-list`,
