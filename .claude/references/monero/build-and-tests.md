@@ -272,7 +272,14 @@ script names hyphenate where some source files use underscores, e.g.
   `src/fcmp_pp/fcmp_pp_crypto.cpp`; the `cncrypto` ctest exercises only its
   `point_to_wei_x_y` path (`mul8_is_identity_vartime` is tested in
   `tests/unit_tests/crypto.cpp`).
-- `tests/fuzz/levin.cpp` is largely fenced off behind `#if 0`.
+- `tests/fuzz/levin.cpp`: only the gtest-style fixture classes and a
+  corpus-writing snippet sit behind `#if 0`. The fuzz entry point is live: the
+  body between `BEGIN_SIMPLE_FUZZER()` and `END_SIMPLE_FUZZER()` builds an
+  `async_protocol_handler` over a stub connection and feeds the whole input to
+  `conn->m_protocol_handler.handle_recv(buf, len);`, outside any `#if 0`
+  block. That drives levin header parsing and dispatch to the stub `invoke`
+  and `notify` handlers, so treat the levin framing in
+  `levin_protocol_handler_async.h` as fuzzed.
 - `BEGIN_SIMPLE_FUZZER` expands to two completely different things:
   `LLVMFuzzerTestOneInput` under OSS-Fuzz, and a `SimpleFuzzer::run(filename)`
   member otherwise.
