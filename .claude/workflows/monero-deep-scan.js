@@ -41,7 +41,7 @@ export const meta = {
 // adjudicators (cheap, and the only thing standing between an observation
 // somebody wrote down and nobody reading it), and a counted panel.
 
-// Kept in step with specs/finding-spec.md, which the agents read. Changing one
+// Kept in step with .claude/specs/finding-spec.md, which the agents read. Changing one
 // without the other makes the agents fail schema validation.
 //
 // Five of these were added after a review of what the fleet was NOT finding.
@@ -531,7 +531,7 @@ const MERGE_SCHEMA = {
 const a = (args && typeof args === 'object') ? args : {}
 const ROOT = a.root
 const PR = a.pr
-const CHANGED = Array.isArray(a.changedFiles) ? a.changedFiles.filter(Boolean) : []
+const CHANGED = Array.isArray(a.changedFiles) ? a.changedFiles.filter((f) => f && !String(f).startsWith('#')) : []
 // Anything that is not exactly 'standard' is the deep profile. Defaulting the
 // unrecognised value to the HEAVIER shape is deliberate: a typo in a dispatch
 // should cost money, not coverage.
@@ -734,7 +734,7 @@ const CONTEXT = [
   'wire-facing serializer is macro-generated and has no text form.',
   'What audits, papers and past incidents found: audits-crypto.md,',
   'audits-fcmp-carrot.md, past-vulnerabilities.md, privacy-and-network.md.',
-  'The candidate standard: .claude/skills/monero-deep-review/specs/finding-spec.md',
+  'The candidate standard: .claude/specs/finding-spec.md',
   '',
   'Callers: rtool callers <fn> prints cscope (src+contrib, then tests) AND every',
   'git grep -w match; rtool def <symbol> finds a C++ or Rust definition. A hit is',
@@ -1809,8 +1809,8 @@ if (!candidates.length) {
       'Nothing was proposed. Read the REPORT SPEC, then the house style at',
       '.claude/references/writing.md, then write review.md as a no-findings report.',
       'The Result line reads "No findings" and says what the change reaches, or that',
-      'it reaches nothing. Summary, Not covered and Checked and clear are the whole',
-      'report and they carry it: on this outcome the summary is the most valuable',
+      'it reaches nothing. Summary, Not covered and Checked and clear carry the',
+      'weight of the report: on this outcome the summary is the most valuable',
       'section in the file, because it is what lets a maintainer stop reading.',
       'Coverage is the table, plus a labelled line ONLY for each thing that actually',
       'happened: every area and its weakness classes in the table, then a line for every',
@@ -2706,9 +2706,9 @@ return {
     'Never split it back out and never publish a site as a finding of its own -- it is',
     'already inside that entry.',
     '',
-    'A RESCUED FINDING (one carrying `rescued`) was rejected by a majority and then',
+    'A RESCUED FINDING (one carrying `rescued`) was rejected ' + (BOUNDED ? 'one to one' : 'by a majority') + ' and then',
     'restored on re-look. It gets a **Panel split.** line above **Defect.**: the real',
-    'split from its vote record, what the two rejections relied on, and the line the',
+    'split from its vote record, what the ' + (BOUNDED ? 'rejection' : 'two rejections') + ' relied on, and the line the',
     'advocate showed they were wrong about. That is what the old `low` confidence was',
     'standing in for.',
     '',

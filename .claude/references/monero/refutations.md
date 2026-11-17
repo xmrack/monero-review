@@ -200,7 +200,7 @@ feeds it), it holds at LOW. Staged FCMP++ code, and anything only a future hard
 fork switches on, is rated on the path it will have once live. "Not
 consensus-reachable today" tells a maintainer when the bug starts to matter. It
 does not make the bug go away. See the finding standard in
-`.claude/skills/monero-deep-review/specs/finding-spec.md`.
+`.claude/specs/finding-spec.md`.
 
 FCMP++ is not scheduled on master: there is no FCMP++ `HF_VERSION_*`, no
 `RCTType` for it, and `git grep -n fcmp_pp -- src ':!src/fcmp_pp'` finds only
