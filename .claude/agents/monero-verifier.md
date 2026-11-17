@@ -63,7 +63,7 @@ Three specialists take REACHABILITY's slot for the categories where "can an
 attacker reach it" is the wrong question:
 
 **DIVERGENCE** (consensus-divergence, fork-gating, chain-state, db-transaction,
-serialization-compat). Would two honest nodes reach different verdicts on the
+serialization-compat, pow-difficulty, fee-and-weight). Would two honest nodes reach different verdicts on the
 same block or transaction? Compare `origin/base` with the head, either side of
 the fork height, CURRENT against IDEAL version, pruned against full, and nodes
 that saw different reorgs or pool contents. For state, DB and format defects,
@@ -72,7 +72,7 @@ restart, or an upgrade that reads data the old version wrote. Name the input tha
 check that is pool policy (`!kept_by_block`) is not consensus. The honest
 refutation is in `refutations.md`, "The divergent path does not ship".
 
-**SPEC** (crypto-correctness, counterparty-protocol). Compare the code with the construction it
+**SPEC** (crypto-correctness, counterparty-protocol, randomness). Compare the code with the construction it
 implements: the paper or spec, monero-oxide under `rust-deps/`, the other side
 of the FFI, the test vectors. Check scalar reduction, point validity and
 subgroup, identity and zero cases, transcript binding, batch-verification

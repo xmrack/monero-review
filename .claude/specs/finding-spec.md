@@ -156,11 +156,13 @@ None of this applies to `snippet`, which is copied exactly, whatever its style.
 `wire-deserialization`, `serialization-compat`, `p2p-levin`, `rpc-surface`,
 `crypto-correctness`, `key-handling`, `side-channel`, `counterparty-protocol`,
 `privacy`, `memory-safety`, `integer-overflow`, `concurrency`, `resource-exhaustion`,
-`wallet-boundary`, `supply-chain`, `prompt-injection`.
+`wallet-boundary`, `supply-chain`, `prompt-injection`, `txpool-relay`,
+`pow-difficulty`, `fee-and-weight`, `peer-management`, `fail-open`, `randomness`,
+`name-resolution`, `address-parsing`, `local-files`, `unsafe-defaults`.
 
 Name the defect, not the attack or its outcome, so two researchers who agree
 on the defect end up in the same group. Where each class lives in the tree is
-in `.claude/references/monero/lenses.md`. Eight are easy to file wrongly:
+in `.claude/references/monero/lenses.md`. These are easy to file wrongly:
 
 | Category | It is this when |
 | --- | --- |
@@ -173,6 +175,16 @@ in `.claude/references/monero/lenses.md`. Eight are easy to file wrongly:
 | `side-channel` | a branch, loop bound, table index or memory access depends on a secret (a key, a blinding factor, a nonce, a multisig share), so an observer who measures time, cache or power learns it. A secret that reaches a log or an RPC response is `key-handling` |
 | `counterparty-protocol` | a multisig co-signer, a cold-signing partner or a hardware device sends something that makes the wallet do the wrong thing: reuse a nonce, sign what it did not display, reveal a share |
 | `wallet-boundary` | a daemon's response corrupts, crashes or misleads the wallet that trusted it |
+| `txpool-relay` | the pool admits, keeps, evicts or relays what it should not, or drops what it should keep: a double spend tracked in the pool but not against the chain, a stem transaction fluffed early or leaked to a non-stem peer. Raw cost per request is `resource-exhaustion` |
+| `pow-difficulty` | difficulty, timestamps, the PoW hash or its RandomX seed, the miner transaction or block reward, or the merge-mining tag is computed or checked wrongly |
+| `fee-and-weight` | a fee, transaction weight, block weight, penalty or long-term median is computed differently from the rule, or a wallet's estimate differs from what the daemon enforces |
+| `peer-management` | the peer list, ban list, anchor or seed connections, or connection limits let an attacker fill, poison or evict them, or dodge a ban. A malformed message is `p2p-levin` |
+| `fail-open` | a failure path accepts: a swallowed exception, an ignored return value, a `catch (...)` that returns true, a parse failure that leaves a default treated as valid |
+| `randomness` | a random value that must be unpredictable or unbiased is not: a weak source, a fixed or reused seed, modulo bias, decoy selection (`gamma_picker`) that differs from the distribution it claims |
+| `name-resolution` | DNS answers are trusted beyond what DNSSEC proved: OpenAlias, DNS checkpoints, update checks, seed hostnames |
+| `address-parsing` | an address, integrated address, payment ID or `monero:` URI parses to something other than what the user saw, or across network types |
+| `local-files` | a wallet, key, cache or data-directory file is written non-atomically, with loose permissions, through a symlink, or to a path built from untrusted input |
+| `unsafe-defaults` | a default or option exposes more than it says: a bind address, an unrestricted RPC, SSL off, a daemon treated as trusted, a check skipped unless a flag is passed |
 
 A defect that fits two of these belongs under the one a maintainer would
 assign it to, and if that is genuinely ambiguous, the more specific row.

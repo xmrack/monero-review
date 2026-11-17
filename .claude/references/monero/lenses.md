@@ -264,6 +264,111 @@ whether a build step fetches or runs something new, and whether a CI change
 widens what untrusted pull requests can do with the project's secrets.
 
 
+## txpool-relay
+
+Look at `tx_memory_pool::add_tx` and its eviction, `have_tx_keyimges_as_spent`,
+the `relay_method` states, and Dandelion++ in `levin_notify.cpp` (stem
+routing, the embargo timer, `CRYPTONOTE_DANDELIONPP_*`).
+
+Ask whether the pool can hold two transactions spending one key image, keep a
+transaction the chain has made invalid, or be pushed to evict honest ones.
+Ask whether a stem transaction can reach a peer that is not the stem, or be
+fluffed or answered early in a way that marks its origin.
+
+## pow-difficulty
+
+Look at `difficulty.cpp`, `Blockchain::get_difficulty_for_next_block`,
+`check_block_timestamp`, `get_block_longhash`, `rx-slow-hash.c` and the seed
+height, `validate_miner_transaction`, `get_block_reward`, `miner.cpp` and
+`merge_mining.cpp`.
+
+Ask whether a miner can choose timestamps or a seed that moves the
+difficulty, claim more reward than the rule allows, or produce a block one
+node accepts and another rejects. Check the window, the cut and the 128-bit
+arithmetic.
+
+## fee-and-weight
+
+Look at `Blockchain::check_fee`, `get_dynamic_base_fee`, `check_block_weight`,
+the long-term weight median, `get_transaction_weight` and the bulletproof
+clawback, and the wallet's fee estimate in `wallet2`.
+
+Ask whether the weight the daemon charges matches the bytes and verification
+cost, whether the median can be pushed by an attacker cheaply, and whether a
+wallet builds a transaction the pool rejects or that stands out by its fee.
+
+## peer-management
+
+Look at `peerlist_manager` (white, gray and anchor lists),
+`block_host` and `is_host_blocked`, `is_remote_host_allowed`,
+`get_seed_nodes`, and connection limits in `net_node.inl`.
+
+Ask whether one attacker can fill the lists or every outgoing slot, avoid a
+ban (a different port, IPv6 neighbours, a subnet), or get honest peers banned.
+That is an eclipse: the node then sees only the attacker's chain and pool.
+
+## fail-open
+
+Look anywhere a check returns: `catch (...)`, `try { ... } catch` around
+verification, `bool` returns that callers drop, `expect<>` and
+`boost::optional` read without a test, `CHECK_AND_ASSERT_*` on the wrong
+value.
+
+Ask what happens on the error path. A verifier that throws, or a parser that
+fails and leaves a default, must reject. Accepting is the defect, whatever
+class the accepted input belongs to.
+
+## randomness
+
+Look at `src/crypto/random.c`, `generate_random_bytes_thread_safe`,
+`crypto::rand` and `rand_idx`, the wallet's `gamma_picker` and output
+selection, and Rust RNG use in `rust-deps/`.
+
+Ask whether the source is the CSPRNG, whether a seed is fixed, reused or
+derived from public data, and whether a range reduction is biased. For decoy
+selection, compare the distribution with the one the wallet claims and the
+one other wallets use: a difference marks the wallet's outputs.
+
+## name-resolution
+
+Look at `dns_utils.cpp` (`dnssec_available`, `dnssec_valid`), OpenAlias in
+`get_account_address_from_str_or_url`, `load_checkpoints_from_dns`,
+`check_updates`, and seed hostnames.
+
+Ask what is trusted when DNSSEC is absent, bogus or unchecked, and whether
+the user is asked before an unverified answer is used. A resolver on the path
+is the attacker.
+
+## address-parsing
+
+Look at `base58.cpp`, `get_account_address_from_str`, integrated addresses
+and payment IDs, `wallet2::parse_uri`, and the Carrot address encoding.
+
+Ask whether two strings parse to one address, one string to two, a checksum
+can be skipped, a network type is accepted for another, or a URI field the
+user did not see changes the amount or recipient.
+
+## local-files
+
+Look at `wallet2::store_to` and `load_keys`, `file_io_utils`
+(`save_string_to_file`), `create_directories_if_necessary`, and data-dir and
+log paths.
+
+Ask whether a crash mid-write loses the keys file, whether a file is created
+world-readable, whether a symlink or a path from RPC input redirects a write,
+and whether a temp file holds a secret.
+
+## unsafe-defaults
+
+Look at `rpc_args.cpp` (`confirm_external_bind`, SSL options),
+`command_line_args.h`, `wallet_args.cpp`, restricted RPC, and the wallet's
+trusted-daemon inference.
+
+Ask whether the default exposes something the user did not turn on: an
+unrestricted RPC on a public address, SSL off, a remote daemon treated as
+trusted, a safety check that needs a flag.
+
+
 ## Parallel implementations
 
 Monero does many things in two or three places. A guard added to one copy is
