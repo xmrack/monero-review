@@ -283,6 +283,17 @@ variable name is fixed, so two in one scope is a redefinition error.
   most one handler runs at a time; across connections they run in parallel on
   the shared worker threads, and a handler on one connection can act on others
   (relay, `drop_connection`, `for_each_connection`).
+  Queued callbacks also go through the second strand:
+  `connection<T>::request_callback` (`contrib/epee/include/net/abstract_tcp_server2.inl`)
+  posts to `connection_basic::strand_` while holding `self`, so a callback
+  serialises with `handle_recv`. `on_connection_close` runs from
+  `~async_protocol_handler`, which calls `m_config.del_connection(this)`, and
+  `async_protocol_handler_config::del_connection` calls
+  `m_pcommands_handler->on_connection_close` (both in
+  `contrib/epee/include/net/levin_protocol_handler_async.h`). So it runs only
+  after every queued handler and callback has dropped its `shared_from_this`
+  reference: per-connection cleanup in `on_connection_close` cannot be
+  followed by a handler or callback on that connection.
 - **Dandelion++** (`src/cryptonote_protocol/levin_notify.cpp`): per-zone
   state (`zone::map`, `fluffing`, `flush_callbacks`, and the per-connection
   `fluff_txs` and `flush_time` in `zone::contexts`) is **strand-confined and
