@@ -391,9 +391,16 @@ for public and private zones.
   `sent_addresses` stops repeats on a connection.
 - **Receiving.** `handle_remote_peerlist` rejects more than
   `P2P_MAX_PEERS_IN_HANDSHAKE` as spam and entries from another zone.
-  `sanitize_peerlist` drops loopback, local, zero-IP and port-equals-RPC-port
-  entries and zeroes `last_seen`; `merge_peerlist` adds the rest to gray. This
-  runs for timed-sync responses from inbound peers too.
+  `sanitize_peerlist` drops loopback and local entries, IPv4-mapped and
+  unspecified IPv6 (`is_forbidden_ipv6_address`), entries whose nonzero
+  pruning seed is out of range (`make_pruning_seed` check), and, for IPv4
+  entries only (`ipv4_network_address`), zero-IP and port-equals-RPC-port
+  ones; it zeroes `last_seen`. `merge_peerlist` then takes a filter from
+  `handle_remote_peerlist` that rejects forbidden IPv6, recently failed
+  (`is_addr_recently_failed`) and disallowed (`is_remote_host_allowed`)
+  hosts before the rest reach gray (`src/p2p/net_node.inl`,
+  `node_server::sanitize_peerlist` and `node_server::handle_remote_peerlist`).
+  This runs for timed-sync responses from inbound peers too.
 - **Bans.** `add_host_fail` blocks after `P2P_IP_FAILS_BEFORE_BLOCK` failures
   for `P2P_IP_BLOCKTIME`; also `block_host`, `block_subnet`, `--ban-list`,
   `--enable-dns-blocklist` and unrestricted `set_bans`. After a 2026 DNS
