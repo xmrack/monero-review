@@ -391,8 +391,14 @@ for public and private zones.
   `sent_addresses` stops repeats on a connection.
 - **Receiving.** `handle_remote_peerlist` rejects more than
   `P2P_MAX_PEERS_IN_HANDSHAKE` as spam and entries from another zone.
-  `sanitize_peerlist` drops loopback, local, zero-IP and port-equals-RPC-port
-  entries and zeroes `last_seen`; `merge_peerlist` adds the rest to gray. This
+  `sanitize_peerlist` (`node_server`, `src/p2p/net_node.inl`) drops loopback
+  and local entries, IPv4 entries with a zero IP or a port equal to their RPC
+  port (both checks are IPv4-only), and entries with a nonzero
+  `pruning_seed` out of range; it zeroes `last_seen` on the rest. For IPv6,
+  "local" means link-local only (`ipv6_network_address::is_local` in
+  `contrib/epee/src/net_utils_base.cpp` returns `m_address.is_link_local()`),
+  so unique-local, site-local and multicast addresses pass;
+  `merge_peerlist` adds the rest to gray. This
   runs for timed-sync responses from inbound peers too.
 - **Bans.** `add_host_fail` blocks after `P2P_IP_FAILS_BEFORE_BLOCK` failures
   for `P2P_IP_BLOCKTIME`; also `block_host`, `block_subnet`, `--ban-list`,
