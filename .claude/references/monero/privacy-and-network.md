@@ -49,6 +49,13 @@ topology: `levin_notify.cpp`, `handle_timed_sync`, `handle_handshake`.
   recall from shared `last_seen` timestamps. Master zeroes them when sending
   (`get_peerlist_head` with `anonymize`) and receiving (`sanitize_peerlist`);
   Kopyciok et al. saw 288 IPs in one AS still sending placeholder values.
+  That covers P2P only: the restricted RPC `get_public_nodes` returns the
+  exact white- and gray-list `last_seen` of entries with an RPC port, so a
+  timestamp channel to unauthenticated observers remains
+  (`src/rpc/core_rpc_server.cpp`, `core_rpc_server::on_get_public_nodes` and
+  `on_get_peer_list`'s `entry.last_seen`; `struct public_node` serialises
+  `last_seen` in `core_rpc_server_commands_defs.h`; `/get_public_nodes` is
+  mapped without a restriction check in `core_rpc_server.h`).
 - Gao et al. (2025) inferred neighbours without timestamps, from how often an
   address recurs in a peer's lists: precision 68.73% to 79.35% on one week of
   data and 73.00% to 82.99% on three. They describe sharing 250 entries from
@@ -380,6 +387,13 @@ for public and private zones.
 - **Candidate filtering.** `make_new_connection_from_peerlist` keeps one entry
   per host, shuffles, keeps one per IPv4 /24 or IPv6 /32, and skips subnets
   already connected; if nothing remains it retries without the subnet filter.
+  The survivors are then re-sorted by `last_seen`, newest first ("Step 3: Put
+  back into order according to 'last_seen'"); for the white list only the
+  first 20 are kept (`const size_t limit = use_white_list ? 20 : ...`), and
+  `get_random_index_with_fixed_probability` heavily favours the front. So
+  white-list `last_seen` recency drives outbound selection, and any change to
+  when `last_seen` is refreshed changes it (`src/p2p/net_node.inl`,
+  `node_server::make_new_connection_from_peerlist`).
 - **Churn.** `update_sync_search` runs every 101 s. When outbound slots are
   full and fewer than `P2P_DEFAULT_SYNC_SEARCH_CONNECTIONS_COUNT` peers are
   syncing, it drops one synced non-anchor outbound peer, in every zone.
