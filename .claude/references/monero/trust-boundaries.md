@@ -530,8 +530,15 @@ signed hashes.
 - **Seed nodes.** A fresh node looks up DNS seeds. Answers are thrown away
   only when DNSSEC is available and fails to validate; an unsigned answer is
   accepted. So a resolver or on-path attacker can supply the first peers of a
-  new node, which helps an eclipse attack. Seed lookups are skipped behind
-  `--proxy` unless `--proxy-allow-dns-leaks` is set.
+  new node, which helps an eclipse attack. Behind `--proxy` without
+  `--proxy-allow-dns-leaks`, `node_server::init` (`src/p2p/net_node.inl`)
+  skips the DNS seed list and also turns off the DNS blocklist
+  (`m_enable_dns_blocklist &= proxy_dns_leaks_allowed` in the proxy branch).
+  Only the seed list is gated, though: hostnames given to `--add-peer`,
+  `--add-exclusive-node`, `--add-priority-node` and `--seed-node` go through
+  `parse_peers_and_add_to_container` and `append_net_address`, which resolve
+  them with `ip::tcp::resolver::resolve` (the system resolver) whatever the
+  proxy setting.
 - **TXT records** (`load_txt_records_from_dns`: DNSSEC-valid, at least two,
   majority agreement) feed update checks (`--check-updates`, default
   `notify`), DNS checkpoints and the DNS blocklist (`--enable-dns-blocklist`,
