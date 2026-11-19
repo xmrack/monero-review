@@ -109,7 +109,6 @@ const ALL_ANGLES = ['REACHABILITY', 'IMPACT', 'GUARD']
 const SPECIALIST = {
   'consensus-divergence': 'DIVERGENCE', 'fork-gating': 'DIVERGENCE', 'chain-state': 'DIVERGENCE',
   'db-transaction': 'DIVERGENCE', 'serialization-compat': 'DIVERGENCE',
-  'pow-difficulty': 'DIVERGENCE', 'fee-and-weight': 'DIVERGENCE',
   'crypto-correctness': 'SPEC', 'counterparty-protocol': 'SPEC', randomness: 'SPEC',
   privacy: 'OBSERVER', 'side-channel': 'OBSERVER',
 }
@@ -596,7 +595,8 @@ const FLOOR_BY_PATH = [
   [/^src\/(rpc|daemon)\/|^src\/wallet\/wallet_rpc|^contrib\/epee\/(include|src)\/net\/http/, ['rpc-surface']],
   [/^src\/(wallet|simplewallet|carrot_impl)\//, ['wallet-boundary']],
   [/^src\/cryptonote_core\/tx_pool|^src\/cryptonote_protocol\/levin_notify/, ['txpool-relay']],
-  [/^src\/cryptonote_basic\/(difficulty|miner|merge_mining)|^src\/crypto\/rx-slow-hash|^external\/randomx\//, ['pow-difficulty']],
+  [/^src\/cryptonote_basic\/(difficulty|miner|merge_mining|cryptonote_basic_impl)|^src\/cryptonote_core\/blockchain\.cpp$|^src\/crypto\/rx-slow-hash|^external\/randomx\//, ['pow-difficulty']],
+  [/^src\/cryptonote_core\/blockchain\.cpp$|^src\/cryptonote_basic\/cryptonote_format_utils/, ['fee-and-weight']],
   [/^src\/p2p\/net_(node|peerlist)/, ['peer-management']],
   [/^src\/crypto\/(random|crypto\.)/, ['randomness']],
   [/^src\/common\/(dns_utils|updates)|^src\/checkpoints\//, ['name-resolution']],
