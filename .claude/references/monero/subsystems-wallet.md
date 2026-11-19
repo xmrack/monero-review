@@ -172,6 +172,16 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   - `get_num_rct_outputs` (`get_output_histogram`) passes raw
     `resp_t.status` to `error::get_histogram_error`, which keeps it out of
     `what()`; it appears only in `to_string()`, which `throw_wallet_ex` logs.
+    `wallet2::get_num_rct_outputs` has no caller in `src`, `contrib` or
+    `tests` (`git grep -n get_num_rct_outputs -- src tests contrib` finds
+    only the definition and its declaration in `wallet2.h`), so today that
+    raw status reaches nobody.
+  - `to_string()` is not only logged: `WalletImpl::createTransactionMultDest`
+    and `WalletImpl::createSweepUnmixableTransaction`
+    (`src/wallet/api/wallet.cpp`) catch `wallet_rpc_error` and call
+    `setStatusError(tr("RPC error: ") + e.to_string())`, which shows the
+    wallet_api user the full `to_string()`, request field included
+    (`grep -n 'e.to_string()' src/wallet/api/wallet.cpp`).
   - The `get_transaction_pool_hashes.bin` and `get_txpool_backlog` sites
     pass no status at all (`error::get_tx_pool_error` carries none).
 
