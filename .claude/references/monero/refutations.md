@@ -184,6 +184,21 @@ difference between paths is only a consensus break if both paths run on real
 nodes. Establish which are built and used in production before assigning
 severity. A divergence on an architecture or build option nobody ships is a LOW.
 
+## A cheaper path already forces the same verification
+
+A block-validation failure path that skips `add_block_as_invalid` lets a peer
+resend the same PoW-valid block, which looks like a resource-exhaustion lever.
+But each resend costs the peer a mined block, and a drop with a fail score.
+Relaying an invalid transaction already forces the same proof verification
+with no PoW at all: `handle_notify_new_transactions` in
+`src/cryptonote_protocol/cryptonote_protocol_handler.inl` answers a failed
+transaction ("Tx verification failed, dropping connection") with
+`drop_connection(context, false, false)` and adds no fail score. So a missing
+invalid-block cache entry on a proof-failure path is hardening, not a
+resource-exhaustion finding. Re-read that handler on the head you are
+reviewing before citing this; if the transaction path gains a fail score or a
+cache, the comparison changes.
+
 ## The construction already constrains it
 
 In proof systems, an operation that looks wrong in isolation is often
