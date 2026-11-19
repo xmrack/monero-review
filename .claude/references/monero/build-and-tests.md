@@ -208,8 +208,11 @@ C++ binaries. A change to one of those is not exercised by CI's test step.
 `tests/unit_tests/fcmp_pp.cpp` (proof verification from the fixed vectors
 `tests/data/fcmp_pp_verify_inputs_*in.bin`), the `fcmp_pp` cases in
 `tests/unit_tests/crypto.cpp`, `tests/performance_tests/fcmp_pp.h`, and the
-`cncrypto` vectors below; no fuzz target exercises `src/fcmp_pp`, and the
-DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
+`cncrypto` vectors below. One fuzz target links `fcmp_pp`:
+`tests/fuzz/fcmp-pp-point.cpp`, built as `fcmp-pp-point_fuzz_tests`
+(`git grep -n 'fcmp-pp-point_fuzz_tests' -- tests/fuzz/CMakeLists.txt`),
+property-checks torsion clearing, Ed25519-to-Weierstrass conversion, batch
+inversion and the Selene scalar FFI. The DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
 (`git grep -il 'fcmp\|curve_trees' -- tests`).
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
@@ -227,10 +230,14 @@ built and still register their CTest entries `hash-target` and
 `tests/fuzz/` is the project's own statement of what it treats as
 attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`, `cold-outputs`,
-`cold-transaction`, `http-client`, `levin`, `load_from_binary`,
-`load_from_json`, `multisig_info`, `multisig_kex`, `multisig_tx`,
-`network_address`, `parse_url`, `signature`, `transaction`,
-`tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
+`cold-transaction`, `fcmp-pp-point`, `http-client`, `levin`,
+`load_from_binary`, `load_from_json`, `multisig_info`, `multisig_kex`,
+`multisig_tx`, `network_address`, `parse_url`, `signature`, `transaction`,
+`tx-extra`, `utf8`, plus the `fuzz_rpc/` group and the OSS-Fuzz-only
+`wallet-proof-uri` target, which sits under `if(OSSFUZZ)` in
+`tests/fuzz/CMakeLists.txt` (`git ls-files tests/fuzz`;
+`git grep -n 'monero_add_minimal_executable' -- tests/fuzz/CMakeLists.txt`).
+Read `tests/fuzz/` rather than
 this list: it is the kind of thing a pull request adds to.
 
 Two readings: a PR touching a surface with an existing target is touching
