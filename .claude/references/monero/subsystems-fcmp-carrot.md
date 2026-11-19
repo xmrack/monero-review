@@ -240,9 +240,13 @@ differ from the one the proof binds.
   `rct::batchVerifyFcmpPpProofs` and `fcmp_pp::verify` (`src/fcmp_pp/verify.cpp`)
   with test callers only.
 - `make_input_verification_id(txid, tree_root, n_tree_layers)` marks a verified
-  transaction; a matching ID skips re-verification. `tx_pool`'s
-  `expect_invalid_tx_inputs` uses it to stop relaying transactions a reorg has
-  invalidated.
+  transaction; a matching ID skips re-verification. There is no
+  `expect_invalid_tx_inputs`. `tx_memory_pool` keeps known-bad IDs in
+  `m_invalid_input_verification_ids`, filled by `tx_memory_pool::add_tx` on
+  its `kept_by_block` failure path and by
+  `tx_memory_pool::is_transaction_ready_to_go`;
+  `Blockchain::check_tx_inputs` reads it to skip re-verifying inputs already
+  found invalid (`git grep -n m_invalid_input_verification_ids -- src/cryptonote_core`).
 - Cost grows with inputs and layers. Caps: 128 inputs,
   `FCMP_PLUS_PLUS_MAX_TX_WEIGHT` (178063). Fee follows weight, which assumes 7
   layers.
