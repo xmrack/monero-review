@@ -165,7 +165,7 @@ runners, different assertion vocabularies and different build gates.
 | `unit_tests` | the only large gtest binary (count: `grep -hcE '^\s*TEST(_F)?\(' tests/unit_tests/*.cpp`) |
 | `core_tests` | the chain-generator harness — one active test per `GENERATE_AND_PLAY(` line in `chaingen_main.cpp` |
 | `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries (`functional_tests`, i.e. `transactions_flow_test`, and `cpu_power_test`) |
-| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp`) + 4 OSS-Fuzz-only RPC/ZMQ ones under `if(OSSFUZZ)` |
+| `fuzz` | file-driven targets from `tests/fuzz/*.cpp`, plus OSS-Fuzz-only ones under `if(OSSFUZZ)`: the RPC/ZMQ targets and also `wallet-proof-uri_fuzz_tests`, a wallet harness — so not every `tests/fuzz/*.cpp` builds outside OSS-Fuzz. Check which: `grep -n 'if(OSSFUZZ)\|endif\|monero_add_minimal_executable' tests/fuzz/CMakeLists.txt` |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
 | `difficulty`, `block_weight` | diff C++ output against a **Python reference implementation** |
