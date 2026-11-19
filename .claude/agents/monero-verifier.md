@@ -63,7 +63,7 @@ Three specialists take REACHABILITY's slot for the categories where "can an
 attacker reach it" is the wrong question:
 
 **DIVERGENCE** (consensus-divergence, fork-gating, chain-state, db-transaction,
-serialization-compat, pow-difficulty, fee-and-weight). Would two honest nodes reach different verdicts on the
+serialization-compat). Would two honest nodes reach different verdicts on the
 same block or transaction? Compare `origin/base` with the head, either side of
 the fork height, CURRENT against IDEAL version, pruned against full, and nodes
 that saw different reorgs or pool contents. For state, DB and format defects,
