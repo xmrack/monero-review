@@ -165,7 +165,7 @@ runners, different assertion vocabularies and different build gates.
 | `unit_tests` | the only large gtest binary (count: `grep -hcE '^\s*TEST(_F)?\(' tests/unit_tests/*.cpp`) |
 | `core_tests` | the chain-generator harness — one active test per `GENERATE_AND_PLAY(` line in `chaingen_main.cpp` |
 | `functional_tests` | the Python RPC tests in `DEFAULT_TESTS` (`functional_tests_rpc.py`) driving `N_MONERODS` `monerod` + `N_WALLETS` `monero-wallet-rpc` in regtest, plus two C++ binaries (`functional_tests`, i.e. `transactions_flow_test`, and `cpu_power_test`) |
-| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp`) + 4 OSS-Fuzz-only RPC/ZMQ ones under `if(OSSFUZZ)` |
+| `fuzz` | file-driven targets (one per `tests/fuzz/*.cpp` besides `fuzzer.cpp` and `wallet-proof-uri.cpp`) + OSS-Fuzz-only ones under `if(OSSFUZZ)`: the RPC/ZMQ group and `wallet-proof-uri_fuzz_tests`, which is not RPC (`git grep -n 'OSSFUZZ\|endif\|_fuzz_tests' -- tests/fuzz/CMakeLists.txt`) |
 | `performance_tests` | a benchmark binary, **no CTest entry** |
 | `hash`, `crypto` | replay text vector files |
 | `difficulty`, `block_weight` | diff C++ output against a **Python reference implementation** |
@@ -208,8 +208,10 @@ C++ binaries. A change to one of those is not exercised by CI's test step.
 `tests/unit_tests/fcmp_pp.cpp` (proof verification from the fixed vectors
 `tests/data/fcmp_pp_verify_inputs_*in.bin`), the `fcmp_pp` cases in
 `tests/unit_tests/crypto.cpp`, `tests/performance_tests/fcmp_pp.h`, and the
-`cncrypto` vectors below; no fuzz target exercises `src/fcmp_pp`, and the
-DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
+`cncrypto` vectors below. One fuzz target touches `src/fcmp_pp`:
+`fcmp-pp-point_fuzz_tests` (`tests/fuzz/fcmp-pp-point.cpp`) links `fcmp_pp`
+and includes `fcmp_pp/fcmp_pp_crypto.h` and `fcmp_pp/tower_cycle.h`
+(`git grep -n fcmp-pp-point -- tests/fuzz/CMakeLists.txt`). The DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
 (`git grep -il 'fcmp\|curve_trees' -- tests`).
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
@@ -227,11 +229,14 @@ built and still register their CTest entries `hash-target` and
 `tests/fuzz/` is the project's own statement of what it treats as
 attacker-reachable: `base58`, `block`, `bulletproof`, `bulletproof-plus`,
 `clsag`, `clsag_cout`, `clsag_message`, `clsag_pubs`, `cold-outputs`,
-`cold-transaction`, `http-client`, `levin`, `load_from_binary`,
-`load_from_json`, `multisig_info`, `multisig_kex`, `multisig_tx`,
-`network_address`, `parse_url`, `signature`, `transaction`,
-`tx-extra`, `utf8`, plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
-this list: it is the kind of thing a pull request adds to.
+`cold-transaction`, `fcmp-pp-point`, `http-client`, `levin`,
+`load_from_binary`, `load_from_json`, `multisig_info`, `multisig_kex`,
+`multisig_tx`, `network_address`, `parse_url`, `signature`, `transaction`,
+`tx-extra`, `utf8`, `wallet-cache`, `wallet-proof-uri` (built only under
+`if(OSSFUZZ)`), plus the `fuzz_rpc/` group. Read `tests/fuzz/` rather than
+this list: it is the kind of thing a pull request adds to
+(`git ls-files 'tests/fuzz/*.cpp'`;
+`git grep -n monero_add_minimal_executable -- tests/fuzz/CMakeLists.txt`).
 
 Two readings: a PR touching a surface with an existing target is touching
 something known to be reachable, and a PR that **weakens** a harness deserves
