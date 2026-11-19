@@ -1,0 +1,40 @@
+diff --git a/src/wallet/wallet2.cpp b/src/wallet/wallet2.cpp
+index e6f702ed..dfb63b1f 100644
+--- a/src/wallet/wallet2.cpp
++++ b/src/wallet/wallet2.cpp
+@@ -2473,7 +2473,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+   size_t pk_index = 0;
+   std::vector<tx_scan_info_t> tx_scan_info(tx.vout.size());
+   std::deque<bool> output_found(tx.vout.size(), false);
+-  uint64_t total_received_1 = 0;
++  uint64_t total_received_from_outs = 0;
+   while (!tx.vout.empty())
+   {
+     std::vector<size_t> outs;
+@@ -2761,7 +2761,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+ 	    if (!ignore_callbacks && 0 != m_callback)
+ 	      m_callback->on_money_received(height, txid, tx, td.m_amount, 0, td.m_subaddr_index, payment_id, spends_one_of_ours(tx), td.m_tx.unlock_time);
+           }
+-          total_received_1 += amount;
++          total_received_from_outs += amount;
+           notify = true;
+         }
+ 	else if (m_transfers[kit->second].m_spent || m_transfers[kit->second].amount() >= tx_scan_info[o].amount)
+@@ -2846,7 +2846,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+ 	    if (!ignore_callbacks && 0 != m_callback)
+ 	      m_callback->on_money_received(height, txid, tx, td.m_amount, burnt, td.m_subaddr_index, payment_id, spends_one_of_ours(tx), td.m_tx.unlock_time);
+           }
+-          total_received_1 += extra_amount;
++          total_received_from_outs += extra_amount;
+           notify = true;
+         }
+       }
+@@ -3038,7 +3038,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+     uint64_t total_received_2 = sub_change;
+     for (const auto& i : tx_money_got_in_outs)
+       total_received_2 += i.second;
+-    if (total_received_1 != total_received_2)
++    if (total_received_from_outs != total_received_2)
+     {
+       const el::Level level = el::Level::Warning;
+       MCLOG_RED(level, "global", "**********************************************************************");

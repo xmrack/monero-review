@@ -1,0 +1,22 @@
+diff --git a/src/common/dns_utils.cpp b/src/common/dns_utils.cpp
+index c0f3d7cf..a5317bfc 100644
+--- a/src/common/dns_utils.cpp
++++ b/src/common/dns_utils.cpp
+@@ -475,15 +475,10 @@ bool load_txt_records_from_dns(std::vector<std::string> &good_records, const std
+   do
+   {
+     const std::string &url = dns_urls[cur_index];
+-    if (!avail[cur_index])
++    if (!avail[cur_index] && !valid[cur_index])
+     {
+       records[cur_index].clear();
+-      LOG_PRINT_L2("DNSSEC not available for hostname: " << url << ", skipping.");
+-    }
+-    if (!valid[cur_index])
+-    {
+-      records[cur_index].clear();
+-      LOG_PRINT_L2("DNSSEC validation failed for hostname: " << url << ", skipping.");
++      LOG_PRINT_L2("DNSSEC not available or not valid for hostname: " << url << ", skipping.");
+     }
+ 
+     cur_index++;

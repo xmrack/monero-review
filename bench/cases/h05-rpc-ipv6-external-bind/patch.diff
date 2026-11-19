@@ -1,0 +1,21 @@
+diff --git a/src/rpc/rpc_args.cpp b/src/rpc/rpc_args.cpp
+index 8f0ca29a..70e809c9 100644
+--- a/src/rpc/rpc_args.cpp
++++ b/src/rpc/rpc_args.cpp
+@@ -186,16 +186,6 @@ namespace cryptonote
+         LOG_ERROR(tr("Invalid IP address given for --") << arg.rpc_bind_ipv6_address.name);
+         return boost::none;
+       }
+-
+-      if (!parsed_ip.is_loopback() && !command_line::get_arg(vm, arg.confirm_external_bind))
+-      {
+-        LOG_ERROR(
+-          "--" << arg.rpc_bind_ipv6_address.name <<
+-          tr(" permits inbound unencrypted external connections. Consider SSH tunnel or SSL proxy instead. Override with --") <<
+-          arg.confirm_external_bind.name
+-        );
+-        return boost::none;
+-      }
+     }
+     if (!config.restricted_bind_ip.empty())
+     {

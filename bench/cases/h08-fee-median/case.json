@@ -1,0 +1,13 @@
+{
+  "id": "h08-fee-median",
+  "split": "held-out",
+  "category": [
+    "fee-and-weight"
+  ],
+  "severity": "LOW",
+  "source": null,
+  "title": "blockchain: base the minimum fee on the larger of the two medians",
+  "body": "Matches the fee to the block size the network is actually producing when the short-term median is above the long-term one.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99022
+}

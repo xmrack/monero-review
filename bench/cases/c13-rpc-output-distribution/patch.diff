@@ -1,0 +1,17 @@
+diff --git a/src/rpc/core_rpc_server.cpp b/src/rpc/core_rpc_server.cpp
+index dc2cc781..c58fcd82 100644
+--- a/src/rpc/core_rpc_server.cpp
++++ b/src/rpc/core_rpc_server.cpp
+@@ -2930,12 +2930,6 @@ namespace cryptonote
+     RPC_TRACKER(get_output_distribution);
+ 
+     const bool restricted = m_restricted && ctx;
+-    if (restricted && req.amounts != std::vector<uint64_t>(1, 0))
+-    {
+-      error_resp.code = CORE_RPC_ERROR_CODE_RESTRICTED;
+-      error_resp.message = "Restricted RPC can only get output distribution for rct outputs. Use your own node.";
+-      return false;
+-    }
+ 
+     try
+     {

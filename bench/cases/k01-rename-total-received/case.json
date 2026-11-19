@@ -1,0 +1,11 @@
+{
+  "id": "k01-rename-total-received",
+  "split": "control",
+  "category": [],
+  "severity": null,
+  "source": null,
+  "title": "wallet2: rename total_received_1 in process_new_transaction",
+  "body": "Names the running total after what it counts.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99024
+}

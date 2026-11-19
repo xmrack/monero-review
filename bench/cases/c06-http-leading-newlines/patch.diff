@@ -1,0 +1,18 @@
+diff --git a/contrib/epee/include/net/http_protocol_handler.inl b/contrib/epee/include/net/http_protocol_handler.inl
+index 8c997b5e..7d01c9a1 100644
+--- a/contrib/epee/include/net/http_protocol_handler.inl
++++ b/contrib/epee/include/net/http_protocol_handler.inl
+@@ -311,13 +311,6 @@ namespace net_utils
+ 				{
+           //some times it could be that before query line cold be few line breaks
+           //so we have to be calm without panic with asserts
+-					m_newlines += std::string::npos == ndel ? m_cache.size() : ndel;
+-					if (m_newlines > HTTP_MAX_STARTING_NEWLINES)
+-					{
+-						LOG_ERROR("simple_http_connection_handler::handle_buff_out: Too many starting newlines");
+-						m_state = http_state_error;
+-						return false;
+-					}
+ 					m_cache.erase(0, ndel);
+ 					break;
+ 				}

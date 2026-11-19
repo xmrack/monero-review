@@ -1,0 +1,13 @@
+diff --git a/src/cryptonote_core/cryptonote_core.cpp b/src/cryptonote_core/cryptonote_core.cpp
+index fb7b7ab4..7fefce37 100644
+--- a/src/cryptonote_core/cryptonote_core.cpp
++++ b/src/cryptonote_core/cryptonote_core.cpp
+@@ -1064,8 +1064,6 @@ namespace cryptonote
+       CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
+       if (rct::ki2rct(tokey_in.k_image) == rct::identity())
+         return false;
+-      if (!(rct::scalarmultKey(rct::ki2rct(tokey_in.k_image), rct::curveOrder()) == rct::identity()))
+-        return false;
+     }
+     return true;
+   }

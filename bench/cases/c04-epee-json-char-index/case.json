@@ -1,0 +1,13 @@
+{
+  "id": "c04-epee-json-char-index",
+  "split": "catalogued",
+  "category": [
+    "memory-safety"
+  ],
+  "severity": "MEDIUM",
+  "source": "Signed `char` as an array index in the JSON parser",
+  "title": "epee: use int for the hex lookup index in match_string2",
+  "body": "Matches the integer type used by the other lookups in the parser.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99004
+}

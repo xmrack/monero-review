@@ -1,0 +1,13 @@
+{
+  "id": "c02-wallet-coinbase-decode",
+  "split": "catalogued",
+  "category": [
+    "wallet-boundary"
+  ],
+  "severity": "HIGH",
+  "source": "Wallet decoded amounts from RingCT data in coinbase transactions",
+  "title": "wallet2: decode RingCT amounts for v2 coinbase outputs",
+  "body": "A v2 coinbase output with a zero clear amount is currently skipped as invalid. Decode it from the RingCT data like any other output so such outputs are not dropped.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99002
+}

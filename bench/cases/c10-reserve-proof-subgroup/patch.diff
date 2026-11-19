@@ -1,0 +1,13 @@
+diff --git a/src/wallet/wallet2.cpp b/src/wallet/wallet2.cpp
+index e6f702ed..5c0cf2e3 100644
+--- a/src/wallet/wallet2.cpp
++++ b/src/wallet/wallet2.cpp
+@@ -13370,7 +13370,7 @@ bool wallet2::check_reserve_proof(const cryptonote::account_public_address &addr
+   {
+     THROW_WALLET_EXCEPTION_IF(!seen_key_images.insert(proof.key_image).second, error::wallet_internal_error, "Duplicate key image in reserve proof");
+     THROW_WALLET_EXCEPTION_IF(!seen_outputs.emplace(proof.txid, proof.index_in_tx).second, error::wallet_internal_error, "Duplicate output in reserve proof");
+-    THROW_WALLET_EXCEPTION_IF(rct::ki2rct(proof.key_image) == rct::identity() || !rct::isInMainSubgroup(rct::ki2rct(proof.key_image)),
++    THROW_WALLET_EXCEPTION_IF(rct::ki2rct(proof.key_image) == rct::identity(),
+       error::wallet_internal_error, "Invalid key image in reserve proof");
+   }
+ 

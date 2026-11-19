@@ -1,0 +1,13 @@
+diff --git a/contrib/epee/src/parserse_base_utils.cpp b/contrib/epee/src/parserse_base_utils.cpp
+index 102cc1fc..a1e1e2f1 100644
+--- a/contrib/epee/src/parserse_base_utils.cpp
++++ b/contrib/epee/src/parserse_base_utils.cpp
+@@ -146,7 +146,7 @@ namespace misc_utils
+                   uint32_t v = 0;
+                   for (int i = 0; i < 4; ++i)
+                   {
+-                    const unsigned char tmp = isx[(unsigned char)*++it];
++                    const unsigned char tmp = isx[(int)*++it];
+                     CHECK_AND_ASSERT_THROW_MES(tmp != 0xff, "Bad Unicode encoding");
+                     v = v << 4 | tmp;
+                   }

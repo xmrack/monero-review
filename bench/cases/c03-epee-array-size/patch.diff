@@ -1,0 +1,12 @@
+diff --git a/contrib/epee/include/storages/portable_storage_from_bin.h b/contrib/epee/include/storages/portable_storage_from_bin.h
+index e64d0ebd..4707e5e3 100644
+--- a/contrib/epee/include/storages/portable_storage_from_bin.h
++++ b/contrib/epee/include/storages/portable_storage_from_bin.h
+@@ -187,7 +187,6 @@ namespace epee
+       //for pod types
+       array_entry_t<type_name> sa;
+       size_t size = read_varint();
+-      CHECK_AND_ASSERT_THROW_MES(size <= m_count / ps_min_bytes<type_name>::strict, "Size sanity check failed");
+       if (std::is_same<type_name, section>())
+       {
+         CHECK_AND_ASSERT_THROW_MES(size <= max_objects - m_objects, "Too many objects");

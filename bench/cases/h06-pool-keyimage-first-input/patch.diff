@@ -1,0 +1,14 @@
+diff --git a/src/cryptonote_core/tx_pool.cpp b/src/cryptonote_core/tx_pool.cpp
+index 11922559..173eee68 100644
+--- a/src/cryptonote_core/tx_pool.cpp
++++ b/src/cryptonote_core/tx_pool.cpp
+@@ -1362,8 +1362,7 @@ namespace cryptonote
+       if (in.type() != typeid(txin_to_key))
+         continue;
+       const auto &tokey_in = boost::get<txin_to_key>(in);
+-      if(have_tx_keyimg_as_spent(tokey_in.k_image, txid))
+-         return true;
++      return have_tx_keyimg_as_spent(tokey_in.k_image, txid);
+     }
+     return false;
+   }

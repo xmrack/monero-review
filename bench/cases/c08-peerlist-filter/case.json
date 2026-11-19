@@ -1,0 +1,13 @@
+{
+  "id": "c08-peerlist-filter",
+  "split": "catalogued",
+  "category": [
+    "peer-management"
+  ],
+  "severity": "LOW",
+  "source": "Inverted ternary in `peerlist_manager::filter`",
+  "title": "p2p: reorder index selection in peerlist_manager::filter",
+  "body": "Style only.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99008
+}

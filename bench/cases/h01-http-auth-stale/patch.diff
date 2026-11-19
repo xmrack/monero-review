@@ -1,0 +1,17 @@
+diff --git a/contrib/epee/src/http_auth.cpp b/contrib/epee/src/http_auth.cpp
+index e44373cc..f0822a38 100644
+--- a/contrib/epee/src/http_auth.cpp
++++ b/contrib/epee/src/http_auth.cpp
+@@ -795,11 +795,8 @@ namespace epee
+           switch (auth_message::verify(request.m_http_method_str, request.m_URI, auth->second, *user, disable_md5))
+           {
+           case auth_message::kPass:
+-            return boost::none;
+-
+           case auth_message::kStale:
+-            is_stale = true;
+-            break;
++            return boost::none;
+ 
+           default:
+           case auth_message::kFail:

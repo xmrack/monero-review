@@ -1,0 +1,11 @@
+{
+  "id": "k04-address-prefix-log",
+  "split": "control",
+  "category": [],
+  "severity": null,
+  "source": null,
+  "title": "cryptonote: name the network in the wrong-prefix log line",
+  "body": "Users pasting a testnet address into a mainnet wallet get a prefix number they cannot interpret. Say which network was expected.",
+  "base": "ef78ff3d7496653f91e2ae870514352f753e3a07",
+  "number": 99027
+}

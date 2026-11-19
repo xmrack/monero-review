@@ -1,0 +1,13 @@
+diff --git a/src/cryptonote_core/blockchain.cpp b/src/cryptonote_core/blockchain.cpp
+index fe5c6ab3..52c1ddc7 100644
+--- a/src/cryptonote_core/blockchain.cpp
++++ b/src/cryptonote_core/blockchain.cpp
+@@ -3779,7 +3779,7 @@ bool Blockchain::check_block_timestamp(std::vector<uint64_t>& timestamps, const
+   if (median_ts_out)
+     *median_ts_out = median_ts;
+ 
+-  if(b.timestamp < median_ts)
++  if(b.timestamp <= median_ts)
+   {
+     MERROR_VER("Timestamp of block with id: " << get_block_hash(b) << ", " << b.timestamp << ", less than median of last " << BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW << " blocks, " << median_ts);
+     return false;

@@ -1,0 +1,13 @@
+diff --git a/src/common/util.cpp b/src/common/util.cpp
+index d2887f02..1689dd5d 100644
+--- a/src/common/util.cpp
++++ b/src/common/util.cpp
+@@ -247,7 +247,7 @@ namespace tools
+ #ifdef WIN32
+     return create(filename);
+ #else
+-    return create(filename, O_EXCL);
++    return create(filename);
+ #endif
+   }
+ 

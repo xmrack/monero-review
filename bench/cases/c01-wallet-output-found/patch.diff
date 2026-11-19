@@ -1,0 +1,17 @@
+diff --git a/src/wallet/wallet2.cpp b/src/wallet/wallet2.cpp
+index e6f702ed..095f6313 100644
+--- a/src/wallet/wallet2.cpp
++++ b/src/wallet/wallet2.cpp
+@@ -2472,11 +2472,11 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
+   // Don't try to extract tx public key if tx has no outputs
+   size_t pk_index = 0;
+   std::vector<tx_scan_info_t> tx_scan_info(tx.vout.size());
+-  std::deque<bool> output_found(tx.vout.size(), false);
+   uint64_t total_received_1 = 0;
+   while (!tx.vout.empty())
+   {
+     std::vector<size_t> outs;
++    std::deque<bool> output_found(tx.vout.size(), false);
+     // if tx.vout is not empty, we loop through all tx pubkeys
+ 
+     tx_extra_pub_key pub_key_field;
