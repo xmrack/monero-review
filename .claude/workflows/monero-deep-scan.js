@@ -60,6 +60,8 @@ const CATEGORIES = [
   'crypto-correctness', 'key-handling', 'side-channel', 'counterparty-protocol', 'privacy',
   'memory-safety', 'integer-overflow', 'concurrency', 'resource-exhaustion',
   'wallet-boundary', 'supply-chain', 'prompt-injection',
+  'txpool-relay', 'pow-difficulty', 'fee-and-weight', 'peer-management', 'fail-open',
+  'randomness', 'name-resolution', 'address-parsing', 'local-files', 'unsafe-defaults',
 ]
 const SEVERITIES = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']   // worst first
 const PRIVACY_TEXT = /de-?anonymi[sz]|\b(?:un)?link(?:ab|ag)|\b(?:un)?traceab|anonymity set|\bdecoys?\b|\bring members?\b|\bview[\s-]+tags?\b|\b(?:links|linked|linking)\b|\breal (?:spend|input|output)\b|\b(?:sender|recipient|receiver|payer|payee)'s (?:\w+ ){0,2}(?:change|address|identity|amount|outputs?|enotes?|secret|keys?|balance)\b|which (?:one|output|address|wallet) (?:sent|received|is)/i
@@ -107,7 +109,8 @@ const ALL_ANGLES = ['REACHABILITY', 'IMPACT', 'GUARD']
 const SPECIALIST = {
   'consensus-divergence': 'DIVERGENCE', 'fork-gating': 'DIVERGENCE', 'chain-state': 'DIVERGENCE',
   'db-transaction': 'DIVERGENCE', 'serialization-compat': 'DIVERGENCE',
-  'crypto-correctness': 'SPEC', 'counterparty-protocol': 'SPEC',
+  'pow-difficulty': 'DIVERGENCE', 'fee-and-weight': 'DIVERGENCE',
+  'crypto-correctness': 'SPEC', 'counterparty-protocol': 'SPEC', randomness: 'SPEC',
   privacy: 'OBSERVER', 'side-channel': 'OBSERVER',
 }
 
@@ -592,6 +595,14 @@ const FLOOR_BY_PATH = [
   [/^src\/serialization\/|^contrib\/epee\/(include|src)\/(serialization|storages|byte_slice|span)/, ['wire-deserialization']],
   [/^src\/(rpc|daemon)\/|^src\/wallet\/wallet_rpc|^contrib\/epee\/(include|src)\/net\/http/, ['rpc-surface']],
   [/^src\/(wallet|simplewallet|carrot_impl)\//, ['wallet-boundary']],
+  [/^src\/cryptonote_core\/tx_pool|^src\/cryptonote_protocol\/levin_notify/, ['txpool-relay']],
+  [/^src\/cryptonote_basic\/(difficulty|miner|merge_mining)|^src\/crypto\/rx-slow-hash|^external\/randomx\//, ['pow-difficulty']],
+  [/^src\/p2p\/net_(node|peerlist)/, ['peer-management']],
+  [/^src\/crypto\/(random|crypto\.)/, ['randomness']],
+  [/^src\/common\/(dns_utils|updates)|^src\/checkpoints\//, ['name-resolution']],
+  [/^src\/common\/base58|^src\/cryptonote_basic\/cryptonote_basic_impl/, ['address-parsing']],
+  [/^src\/common\/util\.|^contrib\/epee\/(include|src)\/file_io_utils/, ['local-files']],
+  [/^src\/rpc\/rpc_args|^src\/daemon\/command_line_args|^src\/wallet\/wallet_args/, ['unsafe-defaults']],
 ]
 function lensFloor(paths) {
   const ps = paths || []
@@ -775,8 +786,10 @@ const mapped = await agent(
    'source, and by path: crypto-correctness (crypto, ringct, fcmp_pp, carrot, device),',
    'consensus-divergence (consensus paths and consensus tests), p2p-levin and',
    'wire-deserialization (p2p, protocol, serialization), rpc-surface (rpc, daemon),',
-   'wallet-boundary (wallet) and supply-chain (build files, Cargo, CI, submodule',
-   'pins). Choose the classes the unit needs beyond those.',
+   'wallet-boundary (wallet), supply-chain (build files, Cargo, CI, submodule',
+   'pins), and the narrower classes lenses.md names by file (tx pool, PoW,',
+   'peer list, RNG, DNS, address parsing, file I/O, option defaults).',
+   'Choose the classes the unit needs beyond those.',
    'Never exclude production source, a build file, a dependency pin or a consensus',
    'test: this run puts any such exclusion back into a unit.',
    '',
