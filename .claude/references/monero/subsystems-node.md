@@ -428,8 +428,17 @@ and an atomic counter.
 `prune_worker` only ever deletes from `m_txs_prunable` and
 `m_txs_prunable_tip`; v1 transactions are never pruned and tip blocks
 (`CRYPTONOTE_PRUNING_TIP_BLOCKS` = 5500) are never pruned. Pruned block sync
-(`--sync-pruned-blocks`) starts at `HF_VERSION_DYNAMIC_FEE` (the RingCT fork),
-and `get_pruned_transaction_weight` (`cryptonote_format_utils.cpp`)
+(`--sync-pruned-blocks`) asks for pruned data only when every condition in
+`t_cryptonote_protocol_handler::should_ask_for_pruned_data`
+(`cryptonote_protocol_handler.inl`) holds: the node itself is pruned
+(non-zero `m_core.get_blockchain_pruning_seed()`), the range starts at or
+above the `HF_VERSION_DYNAMIC_FEE` (RingCT fork) height and lies inside the
+compiled hash-of-hashes area (`m_core.is_within_compiled_block_hash_area`),
+every block has a compiled weight (`m_core.has_block_weights`), and the
+range avoids the node's own stripe. `Blockchain::has_block_weights`
+(`blockchain.cpp`) returns false past `m_blocks_hash_check.size()`, so above
+the compiled area sync always fetches full data. Separately,
+`get_pruned_transaction_weight` (`cryptonote_format_utils.cpp`)
 reconstructs weight for every type from `RCTTypeFull` to
 `RCTTypeBulletproofPlus`, Borromean included.
 
