@@ -73,7 +73,16 @@ the mixin block in `Blockchain::check_tx_inputs`.
 - The pseudo-out is the re-randomized commitment `C~`. The balance check still
   runs in C++ (`rct::verRctSemanticsSimple`).
 - The signed message (`get_pre_mlsag_hash`) covers the prefix hash and
-  `rctSigBase` only. Not the range proof, `reference_block` or `n_tree_layers`.
+  `rctSigBase` only. Not the range proof, `reference_block` or `n_tree_layers`
+  (`get_pre_mlsag_hash` in `src/ringct/rctSigs.cpp`, the `goto done` branch
+  for `RCTTypeFcmpPlusPlus`).
+- The pseudo-outs (`p.pseudoOuts`, the `C~` values) are outside the signed
+  message too: `rctSigBase::serialize_rctsig_base` (`rctTypes.h`) writes
+  `pseudoOuts` only `if (type == RCTTypeSimple)`. Each `C~` is bound only
+  through its own SA/L transcript (`Input::transcript` in
+  `rust-deps/monero-oxide/monero-oxide/ringct/fcmp++/src/lib.rs`). The doc
+  comment on `FcmpPlusPlus::verify` in the same file says the signable
+  transaction hash must also bind the pseudo-outs.
 
 **Key image generator (branch).** `crypto::derive_key_image_generator(pub,
 biased, I)` chooses the hash-to-point by **output type**:
