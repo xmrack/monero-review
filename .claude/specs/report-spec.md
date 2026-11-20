@@ -50,9 +50,10 @@ standard and `profile=deep ... angles=3` at deep.
 <With no findings, the single line `None.` and nothing else under this heading.>
 <With two or more findings, this table first. With one, skip it: the finding is already its own summary.>
 
-| id | sev | what is wrong | where | the fix |
-| --- | --- | --- | --- | --- |
-| F1 | MEDIUM | <≤10 words> | `file.cpp:123` | <≤10 words> |
+| id | sev | pre-existing | what is wrong | where | the fix |
+| --- | --- | :---: | --- | --- | --- |
+| F1 | MEDIUM | ☐ | <≤10 words> | `file.cpp:123` | <≤10 words> |
+<`pre-existing` is `☑` when the finding's `provenance` is `pre-existing`, and `☐` otherwise, `newly-reachable` included.>
 
 ### [SEVERITY] Short title
 
