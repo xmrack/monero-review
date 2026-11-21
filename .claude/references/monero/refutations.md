@@ -452,6 +452,26 @@ entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
 
+## Whoever writes the data directory already steers monerod's writes
+
+A symlink planted in the daemon's data directory is not a new attacker
+capability. An account that can write that directory already makes monerod
+follow symlinks there:
+
+- the peerlist save, `peerlist_storage::store` in
+  `src/p2p/net_peerlist.cpp`, opens its file with `std::ios::trunc`, so it
+  truncates and rewrites whatever `p2pstate.bin` points at
+  (`grep -n 'ios::trunc' src/p2p/net_peerlist.cpp`);
+- LMDB opens `lmdb/lock.mdb` read-write without `O_NOFOLLOW`, in the lock-file
+  open in `external/db_drivers/liblmdb/mdb.c`
+  (`grep -n 'O_RDWR' external/db_drivers/liblmdb/mdb.c`).
+
+So a new helper that follows a symlink in the data directory to chmod or
+re-DACL its target gives that account nothing it did not have. The attacker in
+such a finding has to be somebody who cannot write the data directory; name
+them. Re-run both greps on the head you are reviewing: a change that makes
+those opens refuse symlinks removes the precedent this refutation rests on.
+
 ---
 
 None of this means "do not report". It means the report must name the guard you
