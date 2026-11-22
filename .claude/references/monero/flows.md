@@ -231,9 +231,18 @@ value); process → ZMQ subscribers and `--block-notify` (step 11, fired
     (`kept_by_block`) the cheap checks are skipped, and a tx whose
     inputs fail is still inserted with `m_verifivation_impossible`.
 12. **`levin::notify::send_txs`** — `src/cryptonote_protocol/levin_notify.cpp`,
-    via `relay_transactions` → `node_server::send_txs`. A zone with noise
-    enabled (Tor/I2P) sends fixed-size fragmented covert messages; otherwise
-    the public zone uses Dandelion++ stem or fluff by epoch.
+    via `relay_transactions` → `node_server::send_txs`. Three cases. A zone
+    with noise enabled (Tor/I2P) sends fixed-size fragmented covert
+    messages. The public zone uses Dandelion++ stem or fluff by epoch. A
+    Tor/I2P zone with noise disabled (`--tx-proxy <net>,<proxy>,<max>,disable_noise`,
+    parsed via `arg_tx_proxy` in `src/p2p/net_node.cpp`) skips Dandelion++:
+    in `notify::send_txs` the stem/forward/local case takes the
+    `[[fallthrough]]` to `case relay_method::fluff` when
+    `zone_->nzone != public_`, and `fluff_notify::run` then sends only to
+    outbound connections (`zone->nzone == epee::net_utils::zone::public_ || !context.m_is_income`).
+    `on_transactions_relayed` keeps the original `relay_method`
+    (local/forward/stem) rather than recording fluff, so such a tx stays out
+    of `relay_category::broadcasted`.
 13. **`tx_memory_pool::get_block_template_backlog`**, called from
     `Blockchain::create_block_template`, which pops the last selected tx and
     retries if `construct_miner_tx` fails. Walks
