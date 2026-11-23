@@ -123,6 +123,7 @@ on:
 
 env:
   UPSTREAM: monero-project/monero
+  DISABLE_AUTOUPDATER: "1"
   # Python imports only from the standard library and the scripts' own paths,
   # never from the working directory or user site-packages.
   PYTHONSAFEPATH: "1"
@@ -739,6 +740,9 @@ jobs:
     permissions:
       contents: read
       issues: write
+    defaults:
+      run:
+        shell: /usr/bin/bash --noprofile --norc -eo pipefail {0}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -1338,10 +1342,12 @@ jobs:
 
       # The skill lives in this repo, not in Monero. Graft it onto the checkout.
       - name: Add the review skill
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: .harness
-          persist-credentials: false
+        run: |
+          set -euo pipefail
+          rm -rf .harness
+          git init -q .harness
+          git -C .harness fetch -q --depth 1 "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_SHA"
+          git -C .harness -c advice.detachedHead=false checkout -q FETCH_HEAD
       # `cp -r src dst` copies INTO dst when dst already exists. Upstream has
       # no .claude/ today, but if it ever ships one this would land the skill at
       # .claude/.claude, where it does not load -- and the review would still
@@ -1864,12 +1870,22 @@ jobs:
           # the disclosure gate among them.
           work=$(dirname "$RUNNER_TEMP")
           settings="$RUNNER_TEMP/claude-sandbox.json"
+          extra=()
+          while IFS= read -r d; do
+            case "$GITHUB_WORKSPACE/" in "$d"/*) continue ;; esac
+            case /tmp/ in "$d"/*) continue ;; esac
+            extra+=("$d")
+          done < <(/usr/bin/bash "$RUNNER_TEMP/harness-scripts/fingerprint.sh" dirs)
+          [ -d /opt/hostedtoolcache ] && extra+=(/opt/hostedtoolcache)
           python3 -I -c 'import json, sys; print(json.dumps({"sandbox": {"filesystem": {"denyWrite": sys.argv[1:]}}}))' \
             "$work/_actions" "$work/_tool" "$RUNNER_TEMP" "$HOME/.config" "$HOME/.local" "$HOME/bin" "$HOME/.claude" "$GITHUB_WORKSPACE/.claude" \
             "$HOME/.zshenv" "$HOME/.zprofile" "$HOME/.zlogin" "$HOME/.zlogout" "$HOME/.bash_login" "$HOME/.bash_logout" \
-            > "$settings"
+            "${extra[@]}" > "$settings"
           chmod a-w "$settings"
           echo "CLAUDE_SANDBOX_SETTINGS=$settings" >> "$GITHUB_ENV"
+
+      - name: Fingerprint what later steps run
+        run: /usr/bin/bash "$RUNNER_TEMP/harness-scripts/fingerprint.sh" snap "$RUNNER_TEMP/exec.fp"
 
       - run: echo "T0=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -2013,6 +2029,12 @@ jobs:
             --disallowedTools "$DISALLOWED_TOOLS" \
             --output-format stream-json --verbose \
             < /dev/null > "$out" || rc=$?
+          if ! /usr/bin/bash "$RUNNER_TEMP/harness-scripts/fingerprint.sh" check "$RUNNER_TEMP/exec.fp"; then
+            touch "$RUNNER_TEMP/tampered"
+            rm -f review.md
+            echo "::error::a file outside the workspace changed during the review; nothing is published"
+            exit 1
+          fi
           python3 -I - "$out" <<'PY' || flagged=$?
           import json, sys
           last = None
@@ -2076,6 +2098,7 @@ jobs:
         env:
           SRC: ${{ steps.claude.outputs.execution_file }}
         run: |
+          [ ! -e "$RUNNER_TEMP/tampered" ] || exit 1
           if [ -n "${SRC:-}" ] && [ -f "$SRC" ]; then
             python3 -I - "$SRC" exec-pass1.json <<'PY'
           import json, sys
@@ -2145,27 +2168,6 @@ jobs:
       # verdict, disclosure.py routes the review private (`no-verdict`):
       # nothing else checks whether the pull request is a critical fix. No
       # annotation says so, because that would name the route.
-      # WHAT THE DISCLOSURE REPOSITORY ALREADY HOLDS. Every open private
-      # issue's pull request number and CRITICAL or HIGH findings, so a
-      # review that repeats an embargoed defect goes private even when this
-      # run rated it lower or worded it differently. See previously-private
-      # in scripts/disclosure.py. Prints nothing: the list, its size and
-      # whether the read worked would all name private work. A failed read
-      # writes `{"ok": false}`, which routes private.
-      - name: Read the disclosure repository
-        if: always()
-        timeout-minutes: 5
-        env:
-          GH_TOKEN: ${{ secrets.DISCLOSURE_TOKEN }}
-        run: |
-          set -uo pipefail
-          mkdir -p "$RUNNER_TEMP/private-state"
-          chmod 700 "$RUNNER_TEMP/private-state"
-          out="$RUNNER_TEMP/private-state/private.json"
-          python3 -I "$RUNNER_TEMP"/harness-scripts/private_findings.py "$DISCLOSURE_REPO" \
-            > "$out" 2>/dev/null || echo '{"ok": false}' > "$out"
-          exit 0
-
       - name: Ask the disclosure gate
         if: always()
         timeout-minutes: 50
@@ -2175,6 +2177,14 @@ jobs:
           CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
         run: |
           set -uo pipefail
+          tampered() {
+            touch "$RUNNER_TEMP/tampered"
+            rm -rf "$RUNNER_TEMP/private-state" review.md exec-pass1.json
+            echo "::error::a file outside the workspace changed during the review; nothing is published"
+            exit 1
+          }
+          [ ! -e "$RUNNER_TEMP/tampered" ] || tampered
+          /usr/bin/bash "$RUNNER_TEMP/harness-scripts/fingerprint.sh" check "$RUNNER_TEMP/exec.fp" || tampered
           mkdir -p "$RUNNER_TEMP/private-state"
           chmod 700 "$RUNNER_TEMP/private-state"
           rm -f "$RUNNER_TEMP/private-state/verdict.json"
@@ -2214,6 +2224,7 @@ jobs:
                 --disallowedTools "Write,Edit,$DISALLOWED_TOOLS" \
                 --output-format json \
                 < /dev/null > "$RUNNER_TEMP/private-state/gate.json" 2>/dev/null || true
+              /usr/bin/bash "$RUNNER_TEMP/harness-scripts/fingerprint.sh" check "$RUNNER_TEMP/exec.fp" || tampered
               python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("result") or "")' \
                 "$RUNNER_TEMP/private-state/gate.json" > "$RUNNER_TEMP/private-state/verdict.json" 2>/dev/null || true
               # An answer, usable or not, is final: ask again only when the
@@ -2226,6 +2237,35 @@ jobs:
           fi
           rm -f review.md
           [ -f "$RUNNER_TEMP/private-state/review.md" ] && cp "$RUNNER_TEMP/private-state/review.md" review.md
+          exit 0
+
+      # WHAT THE DISCLOSURE REPOSITORY ALREADY HOLDS. Every open private
+      # issue's pull request number and CRITICAL or HIGH findings, so a
+      # review that repeats an embargoed defect goes private even when this
+      # run rated it lower or worded it differently. See previously-private
+      # in scripts/disclosure.py. Prints nothing: the list, its size and
+      # whether the read worked would all name private work. A failed read
+      # writes `{"ok": false}`, which routes private.
+      - name: Read the disclosure repository
+        if: always()
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ secrets.DISCLOSURE_TOKEN }}
+        run: |
+          set -uo pipefail
+          tampered() {
+            touch "$RUNNER_TEMP/tampered"
+            rm -rf "$RUNNER_TEMP/private-state" review.md exec-pass1.json
+            echo "::error::a file outside the workspace changed during the review; nothing is published"
+            exit 1
+          }
+          [ ! -e "$RUNNER_TEMP/tampered" ] || tampered
+          /usr/bin/bash "$RUNNER_TEMP/harness-scripts/fingerprint.sh" check "$RUNNER_TEMP/exec.fp" || tampered
+          mkdir -p "$RUNNER_TEMP/private-state"
+          chmod 700 "$RUNNER_TEMP/private-state"
+          out="$RUNNER_TEMP/private-state/private.json"
+          python3 -I "$RUNNER_TEMP"/harness-scripts/private_findings.py "$DISCLOSURE_REPO" \
+            > "$out" 2>/dev/null || echo '{"ok": false}' > "$out"
           exit 0
 
       # PUBLIC OR PRIVATE, decided once, here, before any later step can put
@@ -2355,6 +2395,7 @@ jobs:
           JOURNAL: /home/runner/.claude/projects/*/*/subagents/workflows/*/journal.jsonl
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          [ ! -e "$RUNNER_TEMP/tampered" ] || exit 1
           # always() means this runs even if the harness checkout never happened
           [ -f "$RUNNER_TEMP"/harness-scripts/telemetry.py ] || exit 0
           python3 -I "$RUNNER_TEMP"/harness-scripts/telemetry.py
@@ -2801,24 +2842,6 @@ jobs:
       # pushes later a recount would answer a different question. Second and
       # last line of the footer block, under the same rule as the telemetry
       # line above it.
-      # AFTER the verification gate, and conditional on it. These corrections
-      # rewrite `.claude/references/monero/`, which the propose job below calls
-      # this pipeline's own supply chain. They used to be uploaded before the
-      # gate ran, so a review judged NOT VERIFIED -- a stamp that did not add
-      # up, a fleet that never dispatched -- still fed corrections into a job
-      # that opens a pull request against this repository. A review too
-      # untrustworthy to publish is too untrustworthy to teach the reviewer.
-      #
-      # Not gated on the route, so it runs the same way on both. A private
-      # review's file was deleted by `Collect proposed reference
-      # corrections`, and the upload finds nothing, exactly as it does for a
-      # public review that proposed nothing.
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && steps.verified.outputs.state == 'fleet'
-        with:
-          name: updates-${{ matrix.pr }}
-          path: ${{ runner.temp }}/updates/workflow-updates.json
-          if-no-files-found: ignore
 
       - name: Queue depth
         if: always()
@@ -2892,6 +2915,7 @@ jobs:
           OAUTH_CANARY: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         run: |
           set -euo pipefail
+          [ ! -e "$RUNNER_TEMP/tampered" ] || exit 1
           # HEAD_SHA is unset if the fetch step never ran; always() gets us here
           # anyway, and -u would abort with a confusing error.
           SHA=${HEAD_SHA:-unknown}
@@ -3264,6 +3288,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          [ ! -e "$RUNNER_TEMP/tampered" ] || export PATH=/usr/bin:/bin
           started=${T0:-0}
           elapsed=0
           [ "$started" = "0" ] || elapsed=$(( $(date +%s) - started ))
@@ -3412,8 +3437,43 @@ jobs:
           rm -f "$out/transcript.tar.gz"
           rm -rf "$GNUPGHOME"
 
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - name: Remove plaintext before uploading
+        id: wipe
         if: always()
+        run: |
+          set -u
+          if [ -f "$RUNNER_TEMP/exec.fp" ]; then
+            find /tmp /var/tmp /dev/shm -mindepth 1 -maxdepth 1 -user "$(id -u)" ! -type s -newer "$RUNNER_TEMP/exec.fp" \
+              -exec rm -rf {} + 2>/dev/null || true
+          fi
+          chmod -R u+w "$RUNNER_TEMP" 2>/dev/null || true
+          find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 ! -name '_*' ! -name transcript ! -name updates \
+            -exec rm -rf {} + 2>/dev/null || true
+          rm -rf "$HOME/.claude" "$HOME/.claude.json" 2>/dev/null || true
+          find . -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+          [ ! -e review.md ] && [ ! -e "$RUNNER_TEMP/private-state" ] || { echo "::error::plaintext left on disk"; exit 1; }
+
+      # AFTER the verification gate, and conditional on it. These corrections
+      # rewrite `.claude/references/monero/`, which the propose job below calls
+      # this pipeline's own supply chain. They used to be uploaded before the
+      # gate ran, so a review judged NOT VERIFIED -- a stamp that did not add
+      # up, a fleet that never dispatched -- still fed corrections into a job
+      # that opens a pull request against this repository. A review too
+      # untrustworthy to publish is too untrustworthy to teach the reviewer.
+      #
+      # Not gated on the route, so it runs the same way on both. A private
+      # review's file was deleted by `Collect proposed reference
+      # corrections`, and the upload finds nothing, exactly as it does for a
+      # public review that proposed nothing.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.verified.outputs.state == 'fleet' && steps.wipe.outcome == 'success'
+        with:
+          name: updates-${{ matrix.pr }}
+          path: ${{ runner.temp }}/updates/workflow-updates.json
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.wipe.outcome == 'success'
         with:
           name: transcript-${{ matrix.pr }}
           path: ${{ runner.temp }}/transcript/transcript.tar.gz.gpg
