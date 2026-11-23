@@ -52,8 +52,8 @@ standard and `profile=deep ... angles=3` at deep.
 
 | id | sev | pre-existing | what is wrong | where | the fix |
 | --- | --- | :---: | --- | --- | --- |
-| F1 | MEDIUM | ☐ | <≤10 words> | `file.cpp:123` | <≤10 words> |
-<`pre-existing` is `☑` when the finding's `provenance` is `pre-existing`, and `☐` otherwise, `newly-reachable` included.>
+| F1 | MEDIUM | ✅ | <≤10 words> | `file.cpp:123` | <≤10 words> |
+<`pre-existing` is `✅` when the finding's `provenance` is `pre-existing`, and empty otherwise, `newly-reachable` included.>
 
 ### [SEVERITY] Short title
 
