@@ -202,7 +202,7 @@ rating. In short:
   crediting funds that do not exist. A consensus proof (range proof, CLSAG or
   MLSAG, FCMP++ membership or SA/L) that accepts a forgery is CRITICAL.
 - **HIGH**: harm to individual nodes or users from a position anyone can take.
-  A remote crash or OOM of one node; a relayed transaction or block cheap to
+  A remote crash, permanent hang or OOM of one node; a relayed transaction or block cheap to
   make and expensive to verify; a non-supply consensus rule everyone fails to
   enforce alike; a malicious daemon crashing a wallet,
   making it overspend, or learning which outputs are its own; a privacy break
@@ -211,7 +211,7 @@ rating. In short:
   theft or key disclosure by a co-signer, cold-signing partner or device host;
   control of a wallet by someone not given it.
 - **MEDIUM**: needs a significant position (on-path, DNS, a miner below 50%),
-  or the effect is limited: a slowdown without a crash, a forged
+  or the effect is limited: a slowdown that ends on its own, a forged
   out-of-band wallet proof accepted (`check_tx_proof`, `check_spend_proof`,
   `check_reserve_proof`, a message signature), a privacy leak to an observer
   in one place at one time that is not protocol-level, a HIGH effect that needs
@@ -245,6 +245,21 @@ Rate the path the code actually creates, not a deployment you are imagining.
 Resource exhaustion counts: a node a peer can crash, stall, or make do
 unbounded work is a real finding, and a validation rule an attacker can make
 expensive can reach CRITICAL if it splits the chain.
+
+**A permanent hang is a crash.** A thread that never returns, through an
+endless loop, a deadlock or a wait nothing ends, rates as a crash of the node
+when the node needs that thread to network, sync, handle blocks or
+transactions, or shut down. It does not matter that other threads
+still answer; the node has lost that work until someone restarts it. The
+slowdown row is for work that is slow and then finishes.
+
+**Rate undefined behaviour by what the shipped build does.** Linux and
+Windows releases are built with GCC at `-O2` or `-O3` (the release flags in
+the top-level `CMakeLists.txt`), which assumes signed overflow and other
+undefined behaviour never happen: a loop that depends on one can run forever,
+and a check that depends on one can be deleted. Rate the worst outcome that
+build can produce, and never lower a rating because the effect "depends on
+the compiler".
 
 **Rate what the evidence supports, not what gets attention.** The panel rates
 independently and its answer is published, in either direction. Neither

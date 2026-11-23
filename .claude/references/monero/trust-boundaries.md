@@ -627,8 +627,9 @@ take.
   short of the CRITICAL rows.
 - A miner below 50% hashrate exploiting reorg depth, timestamps or block
   withholding.
-- Resource exhaustion that slows a node down but does not crash it (the VRP
-  pays less for "DoS's which do not crash a node remotely").
+- Resource exhaustion that slows a node down and then ends, without a crash
+  or a permanent hang (the VRP pays less for "DoS's which do not crash a node
+  remotely"). A thread the node needs that never returns is a hang, HIGH.
 - An out-of-band wallet proof check that accepts a forged proof:
   `wallet2::check_tx_proof`, `check_spend_proof`, `check_reserve_proof`,
   `check_tx_key` or a message signature (`wallet2::verify`). A consensus
@@ -712,7 +713,7 @@ modifiers above decide the final rating.
 | Protocol-level privacy break, from any observer position | HIGH at least, never lowered by position, configuration or user action |
 | Co-signer, cold-signing partner or device/host: theft or key disclosure | HIGH |
 | On-path network, DNS, or miner below 50% | MEDIUM |
-| Slowdown without a crash; forged wallet proof (tx, spend, reserve, message) accepted; observer-position privacy leak that is not protocol-level | MEDIUM |
+| Slowdown that ends on its own (no crash, no permanent hang); forged wallet proof (tx, spend, reserve, message) accepted; observer-position privacy leak that is not protocol-level | MEDIUM |
 | Cross-site or unattended reach to the default-unrestricted daemon | its effect, one tier lower for the visit; NOT the row below |
 | Unrestricted-RPC-only reached by a client the operator pointed there, or test-only | LOW, usually not reportable |
 | More than 50% of hashrate | LOW (out of the VRP's scope) |
