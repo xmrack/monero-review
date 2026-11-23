@@ -225,7 +225,12 @@ CRITICAL. A product of two peer-controlled counts is the usual shape.
 ## concurrency
 
 Look at `m_blockchain_lock` and the pool lock, the `CRITICAL_REGION_*`
-macros, and anything shared with the P2P threads or the RPC server.
+macros, and anything shared with the P2P threads or the RPC server. In
+`src/wallet/api/`, also look at the wallet API's own refresh thread:
+`WalletImpl::refreshThreadFunc` calls `doRefresh`, which mutates `wallet2`
+under `m_refreshMutex2`, while API methods called from the client thread read
+and write the same `wallet2` object. Ask which of them take that lock (`grep -n 'm_refreshMutex2' src/wallet/api/wallet.cpp src/wallet/api/wallet.h`;
+read `WalletImpl::doRefresh` and `WalletImpl::store`).
 
 Ask what lock protects each read and write, and whether two locks are taken in
 different orders on different paths. `errors-and-concurrency.md` lists the

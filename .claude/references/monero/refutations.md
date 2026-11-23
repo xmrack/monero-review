@@ -23,6 +23,14 @@ This is the most common way a genuine memory-safety *primitive* turns out to
 have no reachable path. The primitive being real is not the finding; reaching
 it is.
 
+One instance worth knowing: the `tx_source_entry` serializer
+(`BEGIN_SERIALIZE_OBJECT` in `src/cryptonote_core/cryptonote_tx_utils.h`)
+rejects `real_output >= outputs.size()` during deserialization. So code that
+indexes `construction_data.sources[i].outputs[real_output]` on a deserialized
+tx set or pending tx cannot read out of bounds through that index. Re-read the
+`real_output` check in the serializer on the head you are reviewing before
+citing it.
+
 ## Proof-dimension bugs in RingCT and Bulletproofs+
 
 Indexing and buffer-sizing bugs in `src/ringct/` verification are frequently
