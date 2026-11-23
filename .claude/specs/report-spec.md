@@ -366,12 +366,14 @@ numbers accurately matters more than the report reading well.
 # Some reviews must not be published in public
 
 After you finish, the disclosure gate reads this report, the diff and
-`origin/base`, and routes the review to a private repository for one of two
+`origin/base`, and routes the review to a private repository for one of three
 reasons only:
 
 - a `CRITICAL` or `HIGH` finding whose defect is in code that is already live:
   `origin/base`, a release, or a merged pull request;
-- the pull request patches a `CRITICAL` vulnerability in live code.
+- the pull request patches a `CRITICAL` vulnerability in live code;
+- a finding, at any severity, repeats one the private repository already
+  holds under embargo.
 
 Nothing else sends a review private. Write the report as usual. A privacy or
 funds bug goes private only when rated `CRITICAL` or `HIGH` and live, so rate

@@ -130,15 +130,19 @@ env:
   # WHERE A SECURITY-SENSITIVE REVIEW GOES INSTEAD OF HERE. This repository is
   # public, and so is every run log, step summary and artifact it produces. A
   # review goes to this private repository, and leaves nothing readable here,
-  # when scripts/disclosure.py routes it private, for one of two reasons: a
-  # CRITICAL or HIGH finding in code that is already live, or a pull request
+  # when scripts/disclosure.py routes it private, for one of three reasons: a
+  # CRITICAL or HIGH finding in code that is already live, a pull request
   # that patches a CRITICAL vulnerability in live code, which a public review
-  # would point attackers at before the release ships. A separate model pass,
-  # `Ask the disclosure gate`, decides both, and the private issue names the
-  # exact finding or change behind each reason.
+  # would point attackers at before the release ships, or a finding this
+  # repository already holds in an open issue, at any severity. A separate
+  # model pass, `Ask the disclosure gate`, decides the first two;
+  # scripts/disclosure.py decides the third, and never shows the gate what
+  # this repository holds. The private issue names the exact finding or
+  # change behind each reason.
   #
   # Needs the DISCLOSURE_TOKEN secret: a fine-grained token with Issues
-  # read/write on this repository only. Without it nothing is reviewed at all
+  # read/write on this repository only. Reviews read it too, to find findings
+  # already reported here. Without it nothing is reviewed at all
   # -- `select` refuses -- because a review that has to go private and cannot
   # would otherwise have nowhere safe to go.
   DISCLOSURE_REPO: xmrack/monero-review-disclosure
@@ -2141,6 +2145,27 @@ jobs:
       # verdict, disclosure.py routes the review private (`no-verdict`):
       # nothing else checks whether the pull request is a critical fix. No
       # annotation says so, because that would name the route.
+      # WHAT THE DISCLOSURE REPOSITORY ALREADY HOLDS. Every open private
+      # issue's pull request number and CRITICAL or HIGH findings, so a
+      # review that repeats an embargoed defect goes private even when this
+      # run rated it lower or worded it differently. See previously-private
+      # in scripts/disclosure.py. Prints nothing: the list, its size and
+      # whether the read worked would all name private work. A failed read
+      # writes `{"ok": false}`, which routes private.
+      - name: Read the disclosure repository
+        if: always()
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ secrets.DISCLOSURE_TOKEN }}
+        run: |
+          set -uo pipefail
+          mkdir -p "$RUNNER_TEMP/private-state"
+          chmod 700 "$RUNNER_TEMP/private-state"
+          out="$RUNNER_TEMP/private-state/private.json"
+          python3 -I "$RUNNER_TEMP"/harness-scripts/private_findings.py "$DISCLOSURE_REPO" \
+            > "$out" 2>/dev/null || echo '{"ok": false}' > "$out"
+          exit 0
+
       - name: Ask the disclosure gate
         if: always()
         timeout-minutes: 50
@@ -2166,6 +2191,10 @@ jobs:
             [ "$d" = "$HOME" ] || rm -rf "$d/.claude" 2>/dev/null || true
           done
           cp -r "$RUNNER_TEMP/harness-claude" .claude 2>/dev/null && chmod -R u+w .claude || true
+          # The gate's git tools can write files (`git log --output=`): put the
+          # report back afterwards.
+          rm -f "$RUNNER_TEMP/private-state/review.md"
+          [ -f review.md ] && cp review.md "$RUNNER_TEMP/private-state/review.md"
           if [ -s review.md ] && [ -f "$gate" ] && [ -n "${CLAUDE_CLI:-}" ] && [ -d .claude ]; then
             prompt=$(cat "$gate"; echo; python3 -I "$RUNNER_TEMP"/harness-scripts/disclosure.py --severe review.md \
               | sed 's/^/- /'; echo "(end of list)")
@@ -2195,6 +2224,8 @@ jobs:
                 --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md && break
             done
           fi
+          rm -f review.md
+          [ -f "$RUNNER_TEMP/private-state/review.md" ] && cp "$RUNNER_TEMP/private-state/review.md" review.md
           exit 0
 
       # PUBLIC OR PRIVATE, decided once, here, before any later step can put
@@ -2222,8 +2253,9 @@ jobs:
           chmod 700 "$RUNNER_TEMP/private-state"
           if [ -f "$RUNNER_TEMP"/harness-scripts/disclosure.py ]; then
             python3 -I "$RUNNER_TEMP"/harness-scripts/disclosure.py \
-              --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md \
-              > "$RUNNER_TEMP/private-state/route"
+              --verdict "$RUNNER_TEMP/private-state/verdict.json" \
+              --private "$RUNNER_TEMP/private-state/private.json" --pr "${{ matrix.pr }}" \
+              review.md > "$RUNNER_TEMP/private-state/route"
           else
             printf 'route=private\nreason=unrouted\n' > "$RUNNER_TEMP/private-state/route"
           fi
@@ -3086,7 +3118,8 @@ jobs:
               echo "> Filed privately. Do not repost, summarise or link this outside the disclosure process."
               echo
               python3 -I "$RUNNER_TEMP"/harness-scripts/disclosure.py --summary \
-                --verdict "$RUNNER_TEMP/private-state/verdict.json" review.md
+                --verdict "$RUNNER_TEMP/private-state/verdict.json" \
+                --private "$RUNNER_TEMP/private-state/private.json" --pr "${{ matrix.pr }}" review.md
               echo
               python3 -I "$RUNNER_TEMP"/harness-scripts/disclosure.py --strip review.md
             } > "$RUNNER_TEMP/private-state/body.md" || fail publish-failed

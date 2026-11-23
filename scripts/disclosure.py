@@ -2,10 +2,10 @@
 """Decide where a review is published: this public repository, or the private
 disclosure repository.
 
-    python3 scripts/disclosure.py [--verdict verdict.json] [review.md]   # decide
+    python3 scripts/disclosure.py [--verdict verdict.json] [--private private.json --pr N] [review.md]
     python3 scripts/disclosure.py --severe review.md     # findings the gate must judge
     python3 scripts/disclosure.py --strip review.md      # body for the issue
-    python3 scripts/disclosure.py --summary [--verdict verdict.json] review.md
+    python3 scripts/disclosure.py --summary [--verdict verdict.json] [--private private.json --pr N] review.md
     python3 scripts/disclosure.py --check --verdict verdict.json review.md
 
 Deciding prints two lines and nothing else:
@@ -35,7 +35,7 @@ public log. This repository is public, and so are its run logs, step
 summaries and artifacts. The workflow writes it to a file outside the
 workspace, and each consumer reads that file inside its own `run:`.
 
-A review goes private for one of two reasons, and nothing else:
+A review goes private for one of three reasons, and nothing else:
 
   live-code     a CRITICAL or HIGH finding whose defect is in code that is
                 already live: the base branch, a release, or a merged pull
@@ -43,6 +43,13 @@ A review goes private for one of two reasons, and nothing else:
   critical-fix  the pull request patches a CRITICAL vulnerability in the
                 code that is live now. A public review of the patch points at
                 the hole before the release ships.
+  previously-private
+                the private disclosure repository (--private, from
+                private_findings.py) has an open review of this pull request,
+                or an open CRITICAL or HIGH finding that a finding in this
+                report matches at ANY severity, refuted and fixed ones
+                included. A later run can rate an embargoed defect lower or
+                word it differently; publishing it ends the embargo.
 
 THE GATE DECIDES. scripts/disclosure_gate.md is a separate model pass that
 runs after the review, reads the report, the diff and the base branch, and
@@ -55,6 +62,9 @@ read as no verdict.
 
 THE GATE CANNOT OVERRULE THE REPORT. These are private whatever it says:
 
+  - a previously-private match by pull request number, title or locator,
+    or a private list that could not be read (`private-unchecked`). The
+    gate never sees the private findings;
   - a surviving CRITICAL or HIGH finding the report itself calls
     pre-existing (`not introduced by this pull request`, or `Where it came
     from.` opening on "Pre-existing");
@@ -291,6 +301,99 @@ def same_finding(title):
     return " ".join(title.split()).casefold()
 
 
+STOP = frozenset("a an and are as at be by can for from in into is it its of on or "
+                 "that the this to via when which with without".split())
+
+
+def words(title):
+    return {w for w in re.findall(r"[a-z0-9_]+", same_finding(title)) if w not in STOP}
+
+
+def place(where):
+    """(path without line, symbol) from a locator, or None without a symbol."""
+    parts = re.findall(r"`([^`\n]+)`", where or "")
+    if len(parts) < 2:
+        return None
+    path = re.sub(r":[0-9][0-9,-]*$", "", parts[0].strip())
+    symbol = parts[1].strip().split("(")[0].strip()
+    return (path, symbol) if path and len(symbol) > 3 else None
+
+
+def all_findings(text):
+    """(heading, block) for every finding heading at any severity, refuted
+    and fixed-on-master entries included: their text is published too."""
+    found = []
+    for match in HEADING.finditer(text):
+        end = BLOCK_END.search(text, match.end())
+        found.append((heading_title(match.group(0)),
+                      text[match.end():end.start() if end else len(text)]))
+    return found
+
+
+def read_private(path):
+    """The private issues, or None when the list could not be read."""
+    if not path:
+        return None
+    try:
+        with open(path, errors="replace") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("ok") is not True \
+            or not isinstance(data.get("issues"), list):
+        return None
+    return data["issues"]
+
+
+def same_defect(head, block, prior):
+    if same_finding(head) == same_finding(prior.get("title") or ""):
+        return True
+    mine, theirs = place(locator(block)), place(prior.get("where") or "")
+    if mine and theirs and mine[0] == theirs[0]:
+        # The same symbol, however qualified: `impl::reset` is `a::impl::reset`.
+        short, full = sorted((mine[1], theirs[1]), key=len)
+        if full == short or full.endswith("::" + short):
+            return True
+    a, b = words(head), words(prior.get("title") or "")
+    return len(a) >= 4 and len(b) >= 4 and len(a & b) / len(a | b) >= 0.6
+
+
+def private_reasons(text, path, pr):
+    """previously-private: what in this report the disclosure repository
+    already holds under embargo."""
+    if path is None:
+        return []
+    issues = read_private(path)
+    if issues is None:
+        return [reason("private-unchecked", "the pull request", "",
+                       "The disclosure repository could not be read, so nothing checked "
+                       "whether a finding here is under embargo.")]
+    found = []
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        # Not an unverified report: those are filed on both routes, and one
+        # would send every later review of the pull request private.
+        if pr and str(issue.get("pr") or "") == str(pr) and not issue.get("unverified"):
+            found.append(reason("previously-private", "the pull request", "",
+                                f"Disclosure issue #{issue.get('issue')} reviews this pull "
+                                "request and is still open."))
+    for head, block in all_findings(text):
+        for issue in issues:
+            if not isinstance(issue, dict):
+                continue
+            for prior in issue.get("findings") or []:
+                if not isinstance(prior, dict) or \
+                        str(prior.get("severity") or "").upper() not in ("CRITICAL", "HIGH"):
+                    continue
+                if same_defect(head, block, prior):
+                    found.append(reason("previously-private", head, locator(block),
+                                        f"Matches \"{prior.get('title')}\" in disclosure "
+                                        f"issue #{issue.get('issue')}, still open."))
+    return found
+
+
+
 def read_verdict(path):
     if not path:
         return None
@@ -309,10 +412,10 @@ def read_verdict(path):
         return None
 
 
-def reasons_for(text, verdict, expected=False):
+def reasons_for(text, verdict, expected=False, private=None, pr=""):
     """Every private reason, floor first, each finding once. `expected`:
     the gate was asked, so a missing or unusable verdict is a failure."""
-    found = floor_reasons(text)
+    found = private_reasons(text, private, pr) + floor_reasons(text)
     if any(m == "unknown" for m in markers(text)):
         found.append(reason("unknown", "a disclosure marker", "",
                             "The marker's reason is not one this script knows."))
@@ -342,8 +445,8 @@ def reasons_for(text, verdict, expected=False):
     return unique, gate is not None
 
 
-def route(text, verdict=None, expected=False):
-    found, _ = reasons_for(text, verdict, expected)
+def route(text, verdict=None, expected=False, private=None, pr=""):
+    found, _ = reasons_for(text, verdict, expected, private, pr)
     if found:
         return "private", found[0]["rule"]
     return "public", ""
@@ -352,17 +455,19 @@ def route(text, verdict=None, expected=False):
 WHY = {
     "live-code": "A CRITICAL or HIGH finding is in code that is already live.",
     "critical-fix": "The pull request patches a CRITICAL vulnerability in live code.",
+    "previously-private": "The disclosure repository already holds this under embargo.",
+    "private-unchecked": "The disclosure repository could not be read. Routed private by default.",
     "no-verdict": "The disclosure gate failed. Routed private by default.",
     "unknown": "A disclosure marker with a reason this script does not know. Routed private by default.",
 }
 
 
-def summary(text, verdict=None, expected=False):
+def summary(text, verdict=None, expected=False, private=None, pr=""):
     """Every reason the report is private, with the exact finding or change
     that met it."""
     if not text.strip():
         return "**Why this is private**: the report is empty.\n"
-    found, gated = reasons_for(text, verdict, expected)
+    found, gated = reasons_for(text, verdict, expected, private, pr)
     lines = ["**Why this is private**", ""]
     for rule in WHY:
         items = [i for i in found if i["rule"] == rule]
@@ -394,6 +499,16 @@ def main():
         i = args.index("--verdict")
         verdict_path = args[i + 1] if i + 1 < len(args) else None
         del args[i:i + 2]
+    private_path, pr = None, ""
+    if "--private" in args:
+        i = args.index("--private")
+        # An empty path still counts as asked: it reads as unchecked.
+        private_path = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
+    if "--pr" in args:
+        i = args.index("--pr")
+        pr = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
     if args[:1] == ["--strip"]:
         path = args[1] if len(args) > 1 else "review.md"
         with open(path, errors="replace") as fh:
@@ -419,7 +534,7 @@ def main():
         try:
             with open(path, errors="replace") as fh:
                 sys.stdout.write(summary(fh.read(), read_verdict(verdict_path),
-                                         verdict_path is not None))
+                                         verdict_path is not None, private_path, pr))
         except Exception:  # noqa: BLE001 -- the summary must not block filing
             sys.stdout.write("**Why this is private**: the report could not be read.\n")
         return
@@ -436,7 +551,7 @@ def main():
         else:
             try:
                 where, why = route(text, read_verdict(verdict_path),
-                                   verdict_path is not None)
+                                   verdict_path is not None, private_path, pr)
             except Exception:  # noqa: BLE001 -- any parsing failure fails closed
                 where, why = "private", "unreadable"
     print(f"route={where}")
