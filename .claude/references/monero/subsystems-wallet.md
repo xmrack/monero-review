@@ -242,7 +242,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
 - **MyMonero / light-wallet support is gone.** `light_wallet` appears zero
   times in `wallet2.{h,cpp}`; older write-ups describing it no longer apply.
 - `wallet2` is **not internally thread-safe.** Its only per-instance mutex,
-  `m_daemon_rpc_mutex`, serialises the HTTP client and `NodeRPCProxy`; of
+  `m_daemon_rpc_mutex`, serialises the HTTP client: it covers the HTTP
+  request inside each `NodeRPCProxy` method and the
+  `m_node_rpc_proxy.invalidate()` call in `wallet2::check_connection`
+  (`src/wallet/wallet2.cpp`), but not the proxy's cache writes after the
+  request returns (`src/wallet/node_rpc_proxy.cpp`:
+  `NodeRPCProxy::get_rpc_version`, where the `m_daemon_hard_forks`
+  clear/push_back follows the closed lock block); of
   the wallet state it guards only `m_pool_info_query_time`
   (`reset_pool_info_query_time`, `pull_blocks`, `update_pool_state`). The
   static `default_daemon_address_lock` guards only the process-wide default
