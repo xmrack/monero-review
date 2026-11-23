@@ -15,6 +15,16 @@ runner_root() {
   return 1
 }
 
+runner_trees() {
+  local root e
+  root=$(runner_root)
+  [ -d "$root" ] || { echo "fingerprint: $root is not a directory" >&2; return 1; }
+  printf '%s\n' "$root"
+  for e in "$root"/*; do
+    if [ -L "$e" ] && [ -d "$e" ]; then readlink -f "$e"; fi
+  done
+}
+
 path_dirs() {
   local d
   printf '%s\n' "$SAVED_PATH" | tr ':' '\n' | while IFS= read -r d; do
@@ -23,12 +33,13 @@ path_dirs() {
 }
 
 print() {
-  local root
-  root=$(runner_root)
-  [ -d "$root" ] || { echo "fingerprint: $root is not a directory" >&2; return 1; }
-  find "$root" -xdev -path "$root/_diag" -prune -o -type f \
-    \( -perm /111 -o -name '*.so' -o -name '*.so.*' -o -name '*.dll' -o -name '*.js' -o -name '*.cjs' -o -name '*.mjs' \) \
-    -printf '%p\t%i\t%s\t%C@\n' 2>/dev/null || true
+  local trees t
+  trees=$(runner_trees)
+  while IFS= read -r t; do
+    find "$t" -xdev -path "$t/_diag" -prune -o -type f \
+      \( -perm /111 -o -name '*.so' -o -name '*.so.*' -o -name '*.dll' -o -name '*.js' -o -name '*.cjs' -o -name '*.mjs' \) \
+      -printf '%p\t%i\t%s\t%C@\n' 2>/dev/null || true
+  done <<< "$trees"
   path_dirs | while IFS= read -r d; do
     if [ -w "$d" ]; then
       find -L "$d" -maxdepth 1 -mindepth 1 -printf '%p\t%i\t%s\t%C@\n' 2>/dev/null || true
@@ -52,7 +63,7 @@ case "${1:-}" in
     fi
     ;;
   dirs)
-    runner_root
+    runner_trees
     path_dirs
     ;;
   *)
