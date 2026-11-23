@@ -255,8 +255,10 @@ layers (`-2`), mismatched key-image count (`-3`) and
 `proof_len != fcmp_pp_proof_size(n_inputs, n_tree_layers)` (`-4`), then
 decodes key images with `read_G`. It does **not** check
 `n_inputs <= FCMP_PLUS_PLUS_MAX_INPUTS` or
-`n_tree_layers <= FCMP_PLUS_PLUS_MAX_LAYERS` (its doc comment leaves that to
-the caller); in C++ only `fcmp_pp::membership_proof_len` asserts those caps.
+`n_tree_layers <= FCMP_PLUS_PLUS_MAX_LAYERS`, or that the root's curve matches
+the layer count's parity; a mismatch panics later in `fcmp_pp_verify`
+(`Fcmp::verify` in monero-oxide), which aborts (`panic = "abort"`). Its doc
+comment leaves all three to the caller; in C++ only `fcmp_pp::membership_proof_len` asserts those caps.
 `fcmp_pp_verify` batch-verifies with `OsRng` weights. The tree-hashing
 `int` exports return `-1` for a null out-pointer and `-2` for a Rust-side
 failure; `tower_cycle.cpp` calls them. Input pointers

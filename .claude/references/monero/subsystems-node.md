@@ -107,8 +107,12 @@ rejects a comma-listed value whose entries disagree.
 
 **Traps.** The connection filter (`is_remote_host_allowed`) and connection
 limit (`is_host_limit`) are virtuals called from
-`connection<T>::start_internal` (`abstract_tcp_server2.inl`) before any bytes
-are read; the daemon implements both in `node_server`. The RPC server's limit
+`connection<T>::start_internal` (`abstract_tcp_server2.inl`) before
+`handle_recv` sees any bytes; the limit applies only to inbound
+(`is_income`). The I2P SAM inbound handler (a lambda in
+`node_server::handle_command_line`) receives bytes before `start_internal`
+and runs both checks itself; `start_internal` then checks again. The daemon
+implements both in `node_server`. The RPC server's limit
 is `http_server_impl_base::is_host_limit`; it has no filter of its own —
 `core_rpc_server::init` installs the `node_server`
 (`set_connection_filter(&m_p2p)`). Any HTTP 500 sets `m_want_close`
@@ -581,7 +585,9 @@ template on the payload handler; `net_node.inl` is emitted from
 `src/rpc/instantiations.cpp`.
 
 **Zones.** Public / Tor / I2P, each with its own `boosted_tcp_server`,
-peerlist, peer id and connect function. **All non-public zones borrow the
+peerlist, peer id and connect function. Only the public zone's peer id is
+random (`node_server::init_config`); Tor and I2P keep the constant 1 from the
+`m_peer_id(1)` initialiser in `net_node.h`. **All non-public zones borrow the
 public zone's `io_context`.** On non-public zones only `COMMAND_HANDSHAKE`,
 `COMMAND_TIMED_SYNC` and `NOTIFY_NEW_TRANSACTIONS` are allowed
 (`is_filtered_command`).
@@ -615,8 +621,11 @@ order the code takes them (`add_host_fail` → `block_host`;
 - **Most of `peerlist_manager` lives in the header**, not the `.cpp`.
 - `get_peerlist` exists three times with three different meanings, one of
   which *appends*.
-- `m_network_zones.at(zone)` throws; `m_network_zones[zone]` **inserts**, and
-  inserting after configuration invalidates held references.
+- `m_network_zones.at(zone)` throws; `m_network_zones[zone]` **inserts**. It
+  is a `std::map`, so held references survive (see the comment above it in
+  `net_node.h`), but an insert after configuration is an unsynchronised write
+  and creates a zone with no `m_connect` (`network_zone()` sets it to
+  `nullptr`).
 - **Ping connections are real connections** that must not be counted;
   `is_ping` marks them.
 - `get_random_index_with_fixed_probability` is deliberately **not uniform** —
@@ -629,7 +638,9 @@ order the code takes them (`add_host_fail` → `block_host`;
 - `i2p_address::store` writes port **1**, not 0, for compatibility.
 - In `src/net/parse.cpp`, `get_network_address` returns
   `net::error::unsupported_address` for anything hostname-shaped, and callers
-  treat that specific error as "try DNS".
+  treat that specific error as "try DNS". `get_tcp_endpoint` returns the same
+  error for a valid `.onion` or `.i2p` address, so such a caller must refuse
+  those names itself, as `socks::endpoint::get` does.
 
 ---
 
@@ -709,8 +720,8 @@ downloader, a libunbound DNSSEC wrapper, the MoneroPulse update check, base58,
 varints, `expect<T>`, a password prompt, and `boost::program_options` wrappers.
 
 **`tools::threadpool`** has two process-wide singletons —
-`getInstanceForCompute()` (hardware concurrency) and `getInstanceForIO()` (8
-threads). Two things to internalise: `submit` **runs a non-leaf task inline on
+`getInstanceForCompute()` (sized from `tools::get_max_concurrency()`, which
+`--max-concurrency` can lower) and `getInstanceForIO()` (8 threads). Two things to internalise: `submit` **runs a non-leaf task inline on
 the caller** when depth > 0 or every thread is busy with work still queued
 (`threadpool::submit`, `src/common/threadpool.cpp`); a leaf task is always
 queued, at the front (`queue.push_front`). And `waiter::wait()` **drains

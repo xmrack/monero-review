@@ -334,6 +334,14 @@ non-nested transaction spins forever. Both existing resize paths
 (`BlockchainLMDB::do_resize` and `lmdb_resized`) contain `throw0` calls in that
 window.
 
+**Waiting for `m_blockchain_lock` inside an LMDB read transaction can
+deadlock.** `Blockchain::prepare_handle_incoming_blocks` holds the lock and
+calls `batch_start`, whose resize waits for every read transaction to end.
+The shape to look for is a `for_blocks_range` or `for_all_*` callback (the
+read transaction stays open across it) that calls a `Blockchain` method taking
+the lock. Nested reads on one thread are safe: `mdb_txn_safe` skips the gate
+when `num_active_txns_per_thread != 0`.
+
 **`block_rtxn_start()` silently returns the write transaction** when called on
 the writer thread with a write transaction open (batch or `block_wtxn`), so
 reads on that thread see uncommitted data.
