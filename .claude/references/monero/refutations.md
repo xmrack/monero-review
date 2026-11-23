@@ -23,6 +23,12 @@ This is the most common way a genuine memory-safety *primitive* turns out to
 have no reachable path. The primitive being real is not the finding; reaching
 it is.
 
+It does not hold for Boost archives (`portable_binary_iarchive`,
+`binary_iarchive`), used by the wallet cache's legacy fallbacks: their vector,
+deque and list loaders size from a count read from the stream with no
+remaining-bytes check. The p2pstate file's `load_peers`
+(`net_peerlist.cpp`) does `elems.reserve(size)` the same way.
+
 ## Proof-dimension bugs in RingCT and Bulletproofs+
 
 Indexing and buffer-sizing bugs in `src/ringct/` verification are frequently
@@ -242,11 +248,15 @@ silently. One constructor that skips the check therefore halts tree growth
 for every output in that call, and the other torsion classes go into the
 tree unnoticed.
 
-On master the only constructor is `cryptonote::to_output_pair`
+On master the only explicit constructor is `cryptonote::to_output_pair`
 (`cryptonote_format_utils.cpp`), for a `txout_to_carrot_v1` output, and
 `check_output_types` rejects that type at every hard-fork version, so no
 untrusted point reaches the skip there (check with
-`git grep -n CarrotOutputPairV1`; the FCMP++ branch adds more). Two limits:
+`git grep -n CarrotOutputPairV1`; the FCMP++ branch adds more). The binary
+deserializer builds one too (`VARIANT_TAG(binary_archive,
+fcmp_pp::CarrotOutputPairV1, 0x71)` in `fcmp_pp_serialization.h`), today only
+from the database's `locked_outputs` rows; a new `parse_binary` of an
+`OutputPair` or `UnifiedOutput` from outside is a constructor too. Two limits:
 
 - **It expires when a constructor appears.** Code that wraps outputs in a
   `CarrotOutputPairV1` must first check BOTH the output pubkey and the
@@ -451,6 +461,20 @@ unchanged, so routing those sites through it changes nothing. Re-check these
 entry points on the head you are reviewing (`grep -rn 'import_key_images'
 src/simplewallet src/wallet`); a new one that sets `check_spent` without a
 trusted daemon reopens this.
+
+## A watch-only or hardware wallet never starts multisig
+
+Watch-only and Trezor wallets hold a null spend key, and Ledger hands the
+wallet an all-zero view key (`device_ledger::get_secret_keys`). Trezor's is
+null only while the keys are decrypted and outside `WITH_TREZOR_DEBUGGING`
+builds; every current caller is unattended or unlocks first.
+`wallet2::get_uninitialized_multisig_account` passes both keys to
+`multisig::get_multisig_blinded_secret_key` (`src/multisig/multisig.cpp`),
+which throws on `crypto::null_skey`, so multisig setup fails for all three
+before any key-exchange message exists, whatever guards the front ends
+(simplewallet, wallet RPC, `src/wallet/api/`) apply. A new path to a multisig
+account that skips that function, or an attended caller that does not unlock
+the keys, reopens this.
 
 ---
 

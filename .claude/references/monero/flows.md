@@ -32,7 +32,11 @@ attacker-exposed sequence in the daemon.
    (`handle_trafic_exact`) and timeout (`start_timer`) accounting happen in
    the `on_read` lambda inside `start_read`; `handle_read` only sets
    `m_state.socket.handle_read` and posts `handle_recv` to
-   `connection_basic::strand_`.
+   `connection_basic::strand_`. The `initial_data` branch of
+   `connection<T>::start_internal` (I2P SAM, inbound accepts and outbound
+   `sam_connect`) copies those bytes into
+   the read buffer and calls `handle_read` directly, so they skip that
+   accounting.
 2. **`async_protocol_handler::handle_recv`** — `contrib/epee/include/net/levin_protocol_handler_async.h`.
    Appends to a per-connection cache and runs a head/body state machine.
    Cumulative buffered bytes are bounded by `m_max_packet_size`, which is
@@ -544,8 +548,12 @@ reaches disk only through `store_config`, and `Blockchain::deinit` joins
    validation point in the flow. Unsolicited response, response past the
    expected height, empty id list, more than `BLOCKS_IDS_SYNCHRONIZING_MAX_COUNT`
    (25000) ids, inconsistent start/total heights, duplicates, a first hash we
-   do not know, a known main-chain hash at the wrong height: each drops the
-   peer. **The size cap is checked before `reserve()`.**
+   do not know, a later known main-chain hash not at `start_height + i`: each
+   drops the peer. **The size cap is checked before `reserve()`.** **A known
+   first id's height is not checked**: when it is already in the main or alt
+   chain nothing compares it with `start_height`; only an unknown first id must
+   be queued at `start_height` (`if (i == 0)` in `handle_response_chain_entry`).
+   Code that trusts `start_height` must recheck it.
 4. **`Blockchain::prevalidate_block_hashes`** — checks against the compiled-in
    hash-of-hashes (one per `HASH_OF_HASHES_STEP` = 512 blocks). **Beyond the
    compiled table it returns "all fine" unconditionally.** It is not a general

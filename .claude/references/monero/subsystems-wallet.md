@@ -54,7 +54,9 @@ chacha20 key; the cache file is monero binary serialization under
 `derive_cache_key(keys_key, config::HASH_KEY_WALLET_CACHE)` — deliberately not
 the same key. Both are written to a temporary file and moved into place with
 `tools::replace_file` (`store_keys_file_data`; `store_to` when saving to the
-current file), so persistence is atomic. **Neither is authenticated**: chacha20
+current file), so saving to the current file is atomic. Saving to a new path
+is not: `store_to` writes the cache straight to the target and removes the old
+keys file before the cache is written. **Neither is authenticated**: chacha20
 with a random IV and no MAC; on parse failure the load paths fall back
 through legacy schemes (chacha8, and for the cache a key derived directly from
 the secret keys). Tampering is detected only by the deserializer
@@ -197,6 +199,11 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
   info and tx keys. Seeds go through `write_secret` straight to the stdout
   descriptor, and `set_log_command_arguments(false)` keeps command arguments
   out of debug logs. A new secret printed with `success_msg_writer` is logged.
+  `monero-wallet-cli` writes no log at the default level (`wallet_args::main`
+  calls `mlog_set_categories("")` when `--log-level` is unset and
+  `log_to_console` is false, overriding `MONERO_LOGS`), so for the CLI that
+  needs `--log-level` or `set_log`;
+  `monero-wallet-rpc` passes `log_to_console = true` and logs by default.
 - **`wallet2::sign` throws** unless the key for the requested address and
   `signature_type` derives to that address's public key, so a watch-only
   wallet cannot produce an unverifiable spend-key signature.

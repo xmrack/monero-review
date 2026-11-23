@@ -215,7 +215,9 @@ The daemon decides more than block contents. It chooses the **decoys**
 height, and the transactions behind proofs (`check_tx_proof`,
 `check_spend_proof`, `check_reserve_proof` fetch them). It also sees the IP,
 the timing and the transactions the wallet submits. Ask of each value the
-wallet takes: what does it do if the node lies?
+wallet takes: what does it do if the node lies? Fetched transactions are not
+all authenticated by hash: for a pruned v1 entry, `get_pruned_tx`
+(`wallet2.cpp`, "for v1, we trust the daemon") takes the hash from the reply.
 
 The threat model that matters: a user runs a GUI wallet or `wallet-rpc` against
 a public remote node. Anything the node can say that corrupts wallet memory,
@@ -332,7 +334,10 @@ decrypts with ChaCha20 (no MAC) and tries `binary_archive` (types in
 `src/wallet/wallet2_basic/`) then older `boost::archive` schemes; if all of
 those fail it parses the raw file as an **unencrypted**
 `portable_binary_iarchive`, then `binary_iarchive`. The post-load index
-checks against `m_transfers` are in the same function.
+checks against `m_transfers` are in the same function. The Boost fallbacks
+size containers from the stream's count with no remaining-bytes check
+(`t.reserve(count)` in `boost/serialization/vector.hpp`), unlike
+`binary_archive`.
 
 Other blobs that arrive from outside and are parsed or believed:
 `import_key_images`, `import_outputs_from_str`, `import_multisig`, `parse_uri`,
@@ -527,6 +532,11 @@ signed hashes.
 `src/common/dns_utils.cpp`, `src/common/updates.cpp`, `node_server::get_dns_seed_nodes`,
 `core::check_updates`, `core_rpc_server::on_get_public_nodes`
 
+- **Operator hostnames are always resolved.** `append_net_address`
+  (`net_node.inl`) resolves hostnames given to `--add-peer`,
+  `--add-priority-node`, `--add-exclusive-node` and `--seed-node` with the
+  system resolver whatever `--proxy-allow-dns-leaks` says; only the automatic
+  lookups below are gated.
 - **Seed nodes.** A fresh node looks up DNS seeds. Answers are thrown away
   only when DNSSEC is available and fails to validate; an unsigned answer is
   accepted. So a resolver or on-path attacker can supply the first peers of a

@@ -138,7 +138,9 @@ header or reads `get_tree_root_at_blk_idx` outside `db_lmdb.cpp`.
   custom-timelocked (`is_custom_timelocked`).
 - `get_last_locked_block_index` turns old time-based `unlock_time` values into
   heights with fixed mainnet v15 constants (`hf_v15_time`, `hf_v15_height`).
-  These are consensus constants now.
+  These are consensus constants now. Master's
+  `get_last_locked_block_index_for_tree` uses a different timestamp
+  (`HF_V16_TIMESTAMP`) with the same height; see above.
 - An output that cannot become a leaf is **skipped, not rejected**.
   `CurveTrees::outputs_to_leaves` catches any throw from `output_to_tuple` (bad
   encoding, or `O` or `C` equal to identity after torsion clearing) and leaves
