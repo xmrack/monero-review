@@ -335,7 +335,15 @@ removes ring statistics but not fee, shape, `tx_extra` or network leaks.
   timed sync and `NOTIFY_NEW_TRANSACTIONS` off the public zone.
   `handle_handshake` checks for self-connection only on the public zone, so a
   clearnet peer cannot test a Tor peer id. `get_local_node_data` advertises
-  `my_port` and `rpc_port` only where the zone can ping back.
+  `my_port` and `rpc_port` only where the zone can ping back. Only the public
+  zone advertises `P2P_SUPPORT_FLAGS`: the `network_zone` constructor in
+  `src/p2p/net_node.h` sets `m_config.m_support_flags = 0; // only set in public zone`,
+  `node_server::handle_command_line` (`src/p2p/net_node.inl`) sets
+  `public_zone.m_config.m_support_flags = P2P_SUPPORT_FLAGS`, and
+  `get_local_node_data` copies `zone.m_config.m_support_flags` into
+  `node_data.support_flags`. Tor and I2P peers therefore see no support flags
+  in the handshake, and flag-negotiated features such as fluffy blocks never
+  activate over anonymity zones.
 
 ### What a PR could break
 
