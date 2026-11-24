@@ -158,6 +158,14 @@ one or two callers that both check the precondition. Use the symbol index
 (`cscope -d -L3 <fn>`) to enumerate callers rather than assuming, then read each
 one. A helper with no external caller is not remotely reachable.
 
+The wallet's transaction builder is one such earlier check.
+`transfer_details::get_public_key` (`src/wallet/wallet2_basic/wallet2_types.h`)
+throws `wallet_internal_error` when `m_internal_output_index` is not below
+`m_tx.vout.size()`, so `wallet2` cannot build a transaction that selects such
+a transfer. A Wallet API (`src/wallet/api/`) helper whose only failure is that
+out-of-range index therefore cannot fail on a pending transaction `wallet2` has
+just built.
+
 ## The type is wide enough
 
 Before claiming integer overflow, check the actual types involved, including
