@@ -229,6 +229,13 @@ differ from the one the proof binds.
   neither `FCMP_PLUS_PLUS_MAX_INPUTS` nor `FCMP_PLUS_PLUS_MAX_LAYERS`.
 - It dereferences the tree-root pointer unchecked;
   `collect_fcmp_pp_tx_verify_input` checks the root is not null.
+- It does not check that the `TreeRoot` variant (`C1` Selene, `C2` Helios)
+  matches the parity of `n_tree_layers`; its doc comment says "The caller is
+  expected to ensure the tree root is on the correct layer". On a mismatch
+  monero-oxide's `Fcmp::verify` panics, which aborts under `panic = "abort"`
+  (`rg -n 'claimed root is on a distinct layer' rust-deps/monero-oxide/crypto/fcmps/src/lib.rs`).
+  Only `CurveTrees::get_tree_root_from_bytes` (`src/fcmp_pp/curve_trees.cpp`)
+  pairs root and parity, so every caller must build the root through it.
 - Both Cargo profiles set `panic = "abort"` and `overflow-checks = true`. A
   panic or overflow reachable from a relayed transaction aborts every node it
   reaches. Look for `unwrap`, `expect`, indexing and length arithmetic.
