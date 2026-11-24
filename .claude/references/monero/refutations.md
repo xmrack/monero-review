@@ -23,6 +23,14 @@ This is the most common way a genuine memory-safety *primitive* turns out to
 have no reachable path. The primitive being real is not the finding; reaching
 it is.
 
+One instance: `tx_source_entry`'s `BEGIN_SERIALIZE_OBJECT`
+(`src/cryptonote_core/cryptonote_tx_utils.h`) fails the read with
+`if (real_output >= outputs.size())`, so every `pending_tx` or
+`tx_construction_data` that came through `binary_archive` already has each
+source's `real_output` in range, and `outputs[real_output]` on a deserialized
+ptx cannot read out of bounds. A source entry built or modified in memory
+after the read gets no such check.
+
 It does not hold for Boost archives (`portable_binary_iarchive`,
 `binary_iarchive`), used by the wallet cache's legacy fallbacks: their vector,
 deque and list loaders size from a count read from the stream with no
