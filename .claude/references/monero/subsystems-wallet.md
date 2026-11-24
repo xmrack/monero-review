@@ -178,7 +178,13 @@ ECDH-decrypted `(amount, mask)` reopens the Pedersen commitment.
     pass no status at all (`error::get_tx_pool_error` carries none).
 
   Outside `wallet2.cpp`, `src/wallet/node_rpc_proxy.cpp` returns raw
-  `res.status` as its error string. Find candidates with
+  `res.status` as its error string, and `src/simplewallet/simplewallet.cpp`
+  passes raw daemon status to the user: its anonymous-namespace
+  `interpret_rpc_response` returns `status` unchanged for anything other
+  than OK or BUSY, and `fail_msg_writer` prints it. Its callers include the
+  background-mining setup path; list them with
+  `grep -n 'interpret_rpc_response' src/simplewallet/simplewallet.cpp`.
+  Find candidates with
   `grep -n 'THROW_ON_RPC_RESPONSE_ERROR' src/wallet/wallet2.cpp | grep -v get_rpc_status`;
   a new site that copies one of these inherits the leak.
 
