@@ -339,6 +339,13 @@ size containers from the stream's count with no remaining-bytes check
 (`t.reserve(count)` in `boost/serialization/vector.hpp`), unlike
 `binary_archive`.
 
+The MMS state file (`<wallet>.mms`) is another on-disk blob parsed on wallet
+load. It is ChaCha20 with no MAC, inside an unencrypted `file_data` wrapper.
+`wallet2::load` calls `m_message_store.read_from_file` inside a try/catch
+that swallows parse failures, and `message_store::read_from_file`
+(`src/wallet/message_store.cpp`) parses directly into `*this`, so a file
+that fails part-way leaves a partially deserialized `message_store` in use.
+
 Other blobs that arrive from outside and are parsed or believed:
 `import_key_images`, `import_outputs_from_str`, `import_multisig`, `parse_uri`,
 and the proof checkers (`check_tx_proof`, `check_spend_proof`,
