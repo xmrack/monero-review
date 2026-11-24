@@ -232,15 +232,22 @@ Two readings: a PR touching a surface with an existing target is touching
 something known to be reachable, and a PR that **weakens** a harness deserves
 a note even though it ships nothing.
 
-A new fuzz target is inert unless it is added in **three** places: a
-`monero_add_minimal_executable` in `tests/fuzz/CMakeLists.txt`, a seed corpus
-under `tests/data/fuzz/<name>/`, and the type list in
-`contrib/fuzz_testing/fuzz.sh`. (That script's `case` list omits `tx-extra`
-despite its seeds; compare it against `ls tests/data/fuzz/`. Target, corpus and
-script names hyphenate where some source files use underscores, e.g.
-`load-from-binary` from `load_from_binary.cpp`.) Targets inside the
-`if(OSSFUZZ)` block are built only for OSS-Fuzz, so a `fuzz.sh` entry does
-nothing for them.
+A new fuzz target is built once it has a `monero_add_minimal_executable` in
+`tests/fuzz/CMakeLists.txt`. A seed corpus under `tests/data/fuzz/<name>/` and
+an entry in the type list of `contrib/fuzz_testing/fuzz.sh` are optional
+extras, not conditions: `fuzz.sh` only drives **local** `afl-fuzz` runs (it
+calls `afl-fuzz` on `build/fuzz/tests/fuzz/${type}_fuzz_tests`), while
+OSS-Fuzz builds the `*_fuzz_tests` targets through its own build script
+outside this tree. Several existing targets — `wallet-scan`, `wallet-cache`,
+`wallet-proof-uri`, `fcmp-pp-point` — have neither a `fuzz.sh` entry nor a
+seed directory and are still built; compare the script's `case` list with
+`grep -n monero_add_minimal_executable tests/fuzz/CMakeLists.txt` and
+`ls tests/data/fuzz/`. A target missing from `fuzz.sh` is absent from the
+local AFL runner, not inert. (That script's `case` list also omits `tx-extra`
+despite its seeds. Target, corpus and script names hyphenate where some
+source files use underscores, e.g. `load-from-binary` from
+`load_from_binary.cpp`.) Targets inside the `if(OSSFUZZ)` block are built
+only for OSS-Fuzz, so a `fuzz.sh` entry does nothing for them.
 
 ## Traps in the test tree
 
