@@ -153,9 +153,23 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   `make_pool_supplement_from_block_entry`
   (`src/cryptonote_protocol/block_entry_utils.h`), which passes
   `require_eof=true`.
-- Varints must be **canonical**: `tools::read_varint` returns
-  `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
-  and `EVARINT_OVERFLOW` (-1) above the target width.
+- Varints are only **partly canonical**: `tools::read_varint`
+  (`src/common/varint.h`) returns `EVARINT_REPRESENT` (-2) for a `0x00`
+  continuation byte at a non-zero shift and `EVARINT_OVERFLOW` (-1) above the
+  target width, but **truncation at end of input is accepted**. If the last
+  byte has the continuation bit set and ends the input, the
+  `if (first == last)` branch returns the count of bytes read with the partial value, and
+  `binary_archive<false>::serialize_uvarint`
+  (`src/serialization/binary_archive.h`) only checks
+  `good_ &= (1 <= tools::read_varint(...))`, so the archive stays good. A
+  block blob whose final `tx_hashes` count is `0x80` (or a run of `0x80`
+  bytes) instead of `0x00` therefore parses as zero `tx_hashes` with the same
+  block id as the canonical encoding. Accepting such blobs is safe only
+  because block ids and stored block blobs are re-serialized:
+  `Blockchain::handle_block_to_main_chain`
+  (`src/cryptonote_core/blockchain.cpp`) calls `block_to_blob(bl)` before
+  `m_db->add_block`. A change that hashes, stores or relays the received
+  bytes instead of the re-serialized blob loses that protection.
 - Every read-side allocation bound is keyed on
   `binary_archive<false>::remaining_bytes()`, and there are only a handful:
   `container.h` (element count ≤ bytes left, then
