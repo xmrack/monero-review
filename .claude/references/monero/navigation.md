@@ -51,7 +51,15 @@ readtags -t tags <symbol>          # where a symbol is DEFINED — better than c
 cscope -d -L3 <function>           # functions calling this function
 cscope -d -f tests.out -L3 <fn>    # callers in tests/, a separate database
 rtool callers <function>           # both databases plus every git grep -w match
+rtool reach <function> [path]      # call graph of master: entrypoints, paths, resolved callers
+rtool path <from> <to>             # one shortest call path in that graph
 ```
+
+The call graph (`callgraph.json`, summarised per changed function in
+`PR_REACH.md`) comes from the compiler, so it sees calls cscope cannot:
+inside macro arguments, through virtual functions, templates and registered
+callbacks. It is of upstream master in one Linux build: a call the pull
+request adds is not in it, and a missing path proves nothing.
 
 A hit is reliable. **A miss is not.** cscope does not see a call written
 inside a macro argument, and most guards here are exactly that:

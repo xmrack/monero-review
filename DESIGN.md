@@ -121,6 +121,33 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
 - Severity is re-rated by the panel in both directions, so neither inflating
   nor lowballing works.
 
+## Call graph
+
+- The graph is of upstream master, never of the pull request. A graph of the
+  head would mean building the pull request's code with the review's
+  credentials nearby, or an hour of runner time per review in the offline
+  tests job. Master is built once a day by a job that holds nothing.
+- Calls a pull request adds are therefore missing, so every prompt says the
+  same thing: a path is a lead, and no path proves nothing. The panel's
+  reachability angle refutes; a graph that could refute would turn a gap in
+  the graph into a dismissed finding.
+- Changed functions are matched to the graph by file and name. Head, base and
+  master line numbers all differ.
+- Trailmark alone resolves about one call site in eight in this tree: it does
+  not bind member, virtual or template calls. The edges come from GCC's
+  `-fcallgraph-info`, which sees calls inside macros and after template
+  instantiation, and from libclang for virtual calls, callbacks and lambdas.
+- Trailmark has one node per template and GCC one per instantiation. Merged
+  naively, the levin and HTTP servers shared `connection<T>` and every P2P
+  handler reached the RPC dispatchers. Instantiation-specific callees are
+  moved to the caller that instantiated the template, and the gate fails a
+  graph in which either server reaches the other's frame parser.
+- Dispatch through one object is not tracked: the daemon and wallet RPC
+  servers share an HTTP handler instantiation, so each appears to reach the
+  other's handlers. `PR_REACH.md` says so.
+- Paths through connection teardown or the miner thread are marked
+  conditional, because a finding that needs one is weaker than its hop count.
+
 ## House style
 
 - ASD-STE100 Part 2 (the approved dictionary) is not used: it is built for

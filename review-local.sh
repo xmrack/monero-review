@@ -191,7 +191,8 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # trusted, and the names this script itself writes and reads.
 # As in CI: case-insensitive, any file type, and symlinks.
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt" \
-  "$CACHE/PR_CALLERS.md" "$CACHE/PR_TESTS.md" "$CACHE/PR_COMMITS.md" "$CACHE/PR_SUBMODULES.md" "$CACHE/exec.json"
+  "$CACHE/PR_CALLERS.md" "$CACHE/PR_REACH.md" "$CACHE/PR_TESTS.md" "$CACHE/PR_COMMITS.md" "$CACHE/PR_SUBMODULES.md" \
+  "$CACHE/exec.json" "$CACHE/callgraph.json"
 # The checkout is reused across pull requests: a previous PR's submodule
 # patches read as this one's would be wrong context with nothing to reveal it.
 rm -rf "$CACHE/submodule-base" "$CACHE/submodule-diffs"
@@ -585,6 +586,21 @@ bash "$HERE/scripts/ref_drift.sh" "$CACHE" >> "$CACHE/TOOLING.md" || true
 # slow it down.
 bash "$HERE/scripts/build_index.sh" "$CACHE"
 python3 -I "$HERE/scripts/callers.py" "$CACHE" origin/base > "$CACHE/PR_CALLERS.md"
+
+# The call graph of master that the callgraph workflow builds. Without one,
+# PR_REACH.md says so. Fetch the newest with
+#   gh run download -R xmrack/monero-review -n callgraph -D ~/.cache/monero-review/callgraph \
+#     "$(gh run list -R xmrack/monero-review -w callgraph.yml -s success -L 1 --json databaseId -q '.[0].databaseId')"
+# or build one with callgraph/run.sh. CALLGRAPH names another file.
+CALLGRAPH=${CALLGRAPH:-$HOME/.cache/monero-review/callgraph/callgraph.json}
+if [ -f "$CALLGRAPH" ]; then
+  cp "$CALLGRAPH" "$CACHE/callgraph.json"
+  GRAPH_NOTE="call graph of master $(jq -r '.commit[:12]' "$CACHE/callgraph.json") in callgraph.json (use rtool reach, not cat)"
+else
+  GRAPH_NOTE="no call graph in this run: rtool reach and rtool path print nothing"
+fi
+PR_BASE_REF="$BASE" python3 -I "$HERE/scripts/reach.py" pr "$CACHE" origin/base > "$CACHE/PR_REACH.md"
+printf '\nrtool reach and rtool path read it. Call graph: %s.\n' "$GRAPH_NOTE" >> "$CACHE/TOOLING.md"
 
 # rtool on PATH for the review, alone in a directory outside the checkout so
 # the model can run it and not rewrite it.
