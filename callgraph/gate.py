@@ -66,9 +66,16 @@ for root, bad in ((r"^daemonize::t_rpc::run$", LEVIN), (r"wallet_rpc_server::run
     check(bool(R) and not (reach(R) & set(ids(bad))), f"{root} does not reach {bad}")
 disp = set(ids(r"(handle_recv|handle_invoke_map|handle_http_request_map)$"))
 leaks = sorted({L[e] for e, t, _ in g["entrypoints"] if t != "trusted_internal" and e not in disp
-                and reach([e]) & disp and not L[e].endswith("::handle_handshake")})
+                and reach([e]) & disp and not L[e].endswith(("::handle_handshake", "::handle_http_request"))})
 check(not leaks, f"no handler entrypoint reaches a dispatcher {leaks[:5]}")
 sink = set(ids(r"Blockchain::check_tx_inputs$"))
 n = sum(1 for e, t, _ in g["entrypoints"] if t == "untrusted_external" and reach([e]) & sink)
 check(n >= 10, f"untrusted entrypoints reaching Blockchain::check_tx_inputs {n} >= 10")
+cut = {tuple(x) for x in g.get("untrusted_cut", [])}
+check(any(re.search(r"COMMAND_RPC_SETBANS::request_t::_?load$", L[b]) for _, b in cut)
+      and any(L[b].endswith("core_rpc_server::on_set_bans") for _, b in cut),
+      "untrusted paths skip the parser and handler of a method restricted mode refuses")
+semi = {L[e] for e, t, _ in g["entrypoints"] if t == "semi_trusted_external"}
+check({"cryptonote::core_rpc_server::handle_http_request", "tools::wallet_rpc_server::handle_http_request"} <= semi,
+      "the RPC dispatchers are semi-trusted entrypoints")
 sys.exit(1 if fails else 0)

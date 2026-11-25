@@ -26,14 +26,14 @@ log "trailmark"
 rm -rf "$WORK/tree" && mkdir -p "$WORK/tree/.trailmark"
 cp -a "$SRC/src" "$WORK/tree/src" && cp -a "$SRC/contrib/epee" "$WORK/tree/epee"
 find "$WORK/tree" -name '*.inl' -exec sh -c 'mv "$1" "$1.hpp"' _ {} \;
-$PY -I "$HERE/gen_entrypoints.py" "$SRC" > "$WORK/tree/.trailmark/entrypoints.toml"
+$PY -I "$HERE/gen_entrypoints.py" "$SRC" "$WORK/refused.json" > "$WORK/tree/.trailmark/entrypoints.toml"
 $PY -I "$HERE/snapshot.py" "$WORK/tree" "$WORK/trailmark.json" 2> "$OUT/trailmark.log"
 
 log "merge"
 $PY -I "$HERE/merge.py" "$SRC" "$WORK/build" "$WORK/tree" "$WORK/clang" "$WORK/trailmark.json" \
   "$WORK/merged.json" "$WORK/report" > "$OUT/merge.log"
 $PY -I "$HERE/export.py" "$WORK/merged.json" "$(git -C "$SRC" rev-parse HEAD)" \
-  "$WORK/report/compiler_pairs.json" > "$OUT/callgraph.json"
+  "$WORK/report/compiler_pairs.json" "$WORK/refused.json" > "$OUT/callgraph.json"
 
 log "gate"
 $PY -I "$HERE/gate.py" "$OUT/callgraph.json" | tee "$OUT/gate.log"

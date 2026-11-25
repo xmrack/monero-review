@@ -1,5 +1,5 @@
 # Compact call graph from the merged trailmark snapshot, readable with the standard library.
-# usage: export.py <merged snapshot> <monero commit> [compiler_pairs.json] > callgraph.json
+# usage: export.py <merged snapshot> <monero commit> [compiler_pairs.json [refused.json]] > callgraph.json
 import collections, json, os, re, sys, time
 
 ORDER = ["gcc", "gcc_instantiation", "gcc_instantiation_kept", "gcc_bridged", "trailmark", "virtual",
@@ -8,6 +8,7 @@ ORDER = ["gcc", "gcc_instantiation", "gcc_instantiation_kept", "gcc_bridged", "t
 snap, commit = sys.argv[1:3]
 # merge.py does not add a compiler edge trailmark already has; its origin still wins here.
 pairs = json.load(open(sys.argv[3])) if len(sys.argv) > 3 else []
+refused = json.load(open(sys.argv[4])) if len(sys.argv) > 4 else {"handlers": [], "commands": []}
 s = json.load(open(snap)); G = s["graph"]; root = G["root_path"].rstrip("/")
 
 def path(p):
@@ -58,13 +59,28 @@ eps = {idx[i]: [idx[i], v.get("trust_level", ""), v.get("description", "")]
 # refresh, which feeds what it pulled to the block and transaction parsers, take its reply.
 REQUEST = re.compile(r"^(epee::net_utils|tools::wallet2)::invoke_http_(json|bin|json_rpc)$")
 req = {k for i, k in idx.items() if REQUEST.match(label(i, G["nodes"][i]))}
-callers = {a for (a, b) in best if b in req and a not in req and nodes[a][2].startswith("src/wallet/")}
+callers = {a for (a, b) in best if b in req and a not in req
+           and nodes[a][2].startswith(("src/wallet/", "src/simplewallet/"))}
 callers |= {k for i, k in idx.items() if label(i, G["nodes"][i]) == "tools::wallet2::refresh"}
 for k in callers:
     eps.setdefault(k, [k, "untrusted_external", "daemon reply to the wallet (remote node)"])
+# The RPC dispatchers parse every request before its handler runs: the code they run
+# for the wallet, or for a method restricted mode refuses, is semi-trusted.
+lab = {k: label(i, G["nodes"][i]) for i, k in idx.items()}
+for k, l in lab.items():
+    if l == "tools::wallet_rpc_server::handle_http_request":
+        eps.setdefault(k, [k, "semi_trusted_external", "wallet RPC"])
+    if l == "cryptonote::core_rpc_server::handle_http_request":
+        eps.setdefault(k, [k, "semi_trusted_external", "daemon RPC dispatcher, unrestricted mode"])
+# Untrusted paths do not take these: restricted mode refuses the method before it parses
+# the request.
+refuse = re.compile(r"(^|::)(" + "|".join(map(re.escape, refused["commands"] or ["$^"])) + r")::"
+                    r"|::core_rpc_server::(" + "|".join(map(re.escape, refused["handlers"] or ["$^"])) + r")$")
+rpc_map = {k for k, l in lab.items() if l == "cryptonote::core_rpc_server::handle_http_request_map"}
+cut = sorted([a, b] for (a, b) in best if a in rpc_map and refuse.search(lab[b]))
 eps = sorted(eps.values())
 json.dump({"format": "monero-review-callgraph/1", "commit": commit,
            "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "origins": ORDER, "nodes": nodes,
            "edges": sorted([a, b, ORDER.index(o)] for (a, b), o in best.items()),
-           "entrypoints": eps}, sys.stdout, separators=(",", ":"))
+           "entrypoints": eps, "untrusted_cut": cut}, sys.stdout, separators=(",", ":"))

@@ -53,7 +53,9 @@ HOW = """How to read this:
   are real, but a finding that rests on one must say so.
 - The daemon and wallet RPC servers share one HTTP parser. Untrusted paths
   are not followed into `wallet_rpc_server::handle_http_request` (the wallet
-  RPC is semi-trusted) or into daemon RPC methods restricted mode refuses.
+  RPC is semi-trusted) or into daemon RPC methods restricted mode refuses,
+  nor into those methods' request parsers; `rtool path` says when its only
+  path goes that way.
 - The daemon is untrusted by the wallet: wallet functions that ask it for
   data, and `wallet2::refresh`, are untrusted entrypoints ("daemon reply to
   the wallet"), since a remote node chooses the reply.
@@ -81,6 +83,7 @@ class Graph:
         rpc_map = {i for i, n in enumerate(self.nodes) if RPC_MAP.search(strip_targs(n[1]))}
         self.cut = {(m, e) for e, (t, d) in self.entry.items() if d == UNRESTRICTED
                     for m in rpc_map if e in self.succ[m]}
+        self.cut |= {tuple(x) for x in g.get("untrusted_cut", [])}   # their request parsers too
         self.shared = collections.Counter(n[1] for n in self.nodes)
 
     def label(self, i):
@@ -95,15 +98,13 @@ class Graph:
         return short(self.nodes[i][1])
 
     def find(self, name, path=None):
-        """Nodes whose qualified name ends with `name`, optionally in `path`."""
+        """Nodes whose qualified name ends with `name`, optionally in `path`; else
+        nodes whose label is the tail of `name` (labels of code under `using
+        namespace` lack the namespace), class::name at least."""
         want = scope(name)
-        out = []
-        for i, (_, lab, p, _, _) in enumerate(self.nodes):
-            if path and p != path:
-                continue
-            if scope(lab)[-len(want):] == want:
-                out.append(i)
-        return out
+        nodes = [(i, scope(n[1])) for i, n in enumerate(self.nodes) if not path or n[2] == path]
+        out = [i for i, h in nodes if h[-len(want):] == want]
+        return out or [i for i, h in nodes if len(h) >= 2 and want[-len(h):] == h]
 
     def back(self, target, skip=(), cut=()):
         """Reverse BFS: hops to `target` and the next node towards it, for every
@@ -131,7 +132,7 @@ class Graph:
         hops = [self.succ[a][b] for a, b in zip(path, path[1:])]
         if any(h in INFERRED for h in hops):
             flags.append("inferred hops")
-        if any(CONDITIONAL.search(self.label(x)) for x in path[1:-1]):
+        if any(CONDITIONAL.search(strip_targs(self.label(x))) for x in path[1:]):
             flags.append("conditional")
         return " ".join(parts) + (f"  *[{', '.join(flags)}]*" if flags else "")
 
@@ -164,7 +165,7 @@ class Graph:
             out.append("No callers in the graph.")
         return out
 
-    def shortest(self, srcs, dsts):
+    def shortest(self, srcs, dsts, skip=(), cut=()):
         prev, q = {s: None for s in srcs}, collections.deque(srcs)
         while q:
             x = q.popleft()
@@ -174,7 +175,7 @@ class Graph:
                     path.append(prev[path[-1]])
                 return path[::-1]
             for y in self.succ[x]:
-                if y not in prev:
+                if y not in prev and (y not in skip or y in dsts) and (x, y) not in cut:
                     prev[y] = x
                     q.append(y)
         return None
@@ -236,11 +237,11 @@ def header(g):
     return f"Call graph of upstream master {g.commit[:12]}, built {g.built}."
 
 
-def base_lines(root, base):
-    """{path: [(head start, head count, base start, base count)]} hunks of the diff."""
+def base_lines(root, rng):
+    """{path: [(new start, new count, old start, old count)]} hunks of `git diff rng`."""
     out, path = {}, None
     diff = subprocess.run(["git", "--no-pager", "diff", "-U0", "--no-ext-diff", "--no-textconv",
-                           f"{base}...HEAD", "--", "src", "contrib"],
+                           *rng, "--", "src", "contrib"],
                           cwd=root, capture_output=True, text=True).stdout
     for line in diff.splitlines():
         if line.startswith("+++ "):
@@ -251,6 +252,17 @@ def base_lines(root, base):
                 a, b, c, d = (int(x) if x is not None else 1 for x in m.groups())
                 out.setdefault(path, []).append((c, d, a, b))
     return out
+
+
+def to_graph(root, base, commit):
+    """Line maps head -> merge-base -> the graph's commit (or `base`, when the
+    commit is not in this clone: the graph is at most a day older)."""
+    git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True)
+    mb = git("merge-base", base, "HEAD").stdout.strip()
+    tip = commit if git("cat-file", "-e", commit + "^{commit}").returncode == 0 else base
+    head = base_lines(root, [f"{base}...HEAD"])
+    ahead = {p: [(a, b, c, d) for c, d, a, b in h] for p, h in base_lines(root, [mb, tip]).items()} if mb else {}
+    return head, lambda path, line: to_base(ahead.get(path, []), to_base(head.get(path, []), line))
 
 
 def to_base(hunks, line):
@@ -266,7 +278,7 @@ def to_base(hunks, line):
 
 
 def match(g, name, qual, path, line):
-    """The master node for a function at base line `line` of `path`, and a
+    """The master node for a function at master line `line` of `path`, and a
     caveat when the match is not certain. Same file and short name; then the
     same scope, else the same innermost scope, else a nearby node whose scope
     lacks components (trailmark drops some). Overloads by nearest line."""
@@ -291,12 +303,12 @@ def nearness(g, hit, i, line):
     template header can put the name 1-3 lines down)."""
     near = [h for h in hit if abs(g.nodes[h][3] - line) <= 3]
     if i not in near:
-        return (f"The nearest graph node with this name is at master line {g.nodes[i][3]}, "
-                f"not base line {line}: this overload may be missing from the graph, so "
-                "confirm it is this function.")
+        return (f"This function maps to master line {line}, but the nearest graph node with "
+                f"this name is at line {g.nodes[i][3]}: this overload may be missing from the "
+                "graph, so confirm it is this function.")
     if len(near) > 1:
-        return (f"{len(near)} overloads sit within 3 lines of base line {line} "
-                f"({', '.join(str(g.nodes[h][3]) for h in near)}); confirm it is this one.")
+        return (f"{len(near)} overloads sit within 3 lines of master line {line}, where this "
+                f"function maps to ({', '.join(str(g.nodes[h][3]) for h in near)}); confirm it is this one.")
     return None
 
 
@@ -338,14 +350,15 @@ def cmd_pr(root, base):
     fns = sorted(best.values(), key=lambda t: (t[2], t[3]))
     if len(fns) > MAX_FUNCS:
         print(f"{len(fns)} changed functions; the first {MAX_FUNCS} by path are listed.\n")
-    hunks, done = base_lines(root, base), set()
+    hunks, mapped = to_graph(root, base, g.commit)
+    done = set()
     for name, qual, path, start, end in fns[:MAX_FUNCS]:
         print(f"## `{qual}` -- {path}:{start}-{end}\n")
         if added(hunks.get(path, []), start, end):
             print("Added by this pull request, so not in the master graph. Inconclusive;")
             print("read its callers in the source.\n")
             continue
-        i, caveat = match(g, name, qual, path, to_base(hunks.get(path, []), start))
+        i, caveat = match(g, name, qual, path, mapped(path, start))
         if i is None:
             print("Not in the master graph under this name and scope: added or renamed by")
             print("this pull request, or not built on Linux. Inconclusive; read its callers")
@@ -401,9 +414,18 @@ def cmd_path(root, a, b):
     if not A or not B:
         print(f"# not in the master graph: {a if not A else b}; inconclusive")
         return 0
-    p = g.shortest(A, B)
     print(f"# {header(g)}")
-    print(g.fmt(p) if p else f"# no path from {a} to {b} in the graph; inconclusive (see PR_REACH.md)")
+    p = g.shortest(A, B, g.gate, g.cut)
+    if p:
+        print(g.fmt(p))
+        return 0
+    p = g.shortest(A, B)
+    if p:
+        print("# only through the wallet RPC or a daemon RPC method restricted mode refuses,")
+        print("# both semi-trusted: not a path for an untrusted client")
+        print(g.fmt(p))
+        return 0
+    print(f"# no path from {a} to {b} in the graph; inconclusive (see PR_REACH.md)")
     return 0
 
 
