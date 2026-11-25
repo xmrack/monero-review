@@ -2,8 +2,9 @@ name: callgraph
 
 # The call graph of upstream master that review.yml hands the reviewers as
 # PR_REACH.md and `rtool reach`. GCC call-graph dumps and libclang, merged
-# into a trailmark snapshot (callgraph/). Built once per master commit, in
-# its own job with no secrets, and saved to the cache only if the gate passes.
+# into a trailmark snapshot (callgraph/). Built once per master commit and
+# version of callgraph/, in its own job with no secrets, and saved to the
+# cache only if the gate passes.
 on:
   schedule:
     - cron: '41 4 * * *'
@@ -40,7 +41,7 @@ jobs:
         id: have
         with:
           path: ${{ runner.temp }}/callgraph/callgraph.json
-          key: callgraph-${{ steps.head.outputs.sha }}
+          key: callgraph-${{ steps.head.outputs.sha }}-${{ hashFiles('harness/callgraph/**') }}
       - name: Fetch master
         if: steps.have.outputs.cache-hit != 'true'
         env:
@@ -63,7 +64,7 @@ jobs:
         if: steps.have.outputs.cache-hit != 'true'
         with:
           path: ${{ runner.temp }}/callgraph/callgraph.json
-          key: callgraph-${{ steps.head.outputs.sha }}
+          key: callgraph-${{ steps.head.outputs.sha }}-${{ hashFiles('harness/callgraph/**') }}
       # Every run, so the newest successful one always carries a graph for
       # review-local.sh.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

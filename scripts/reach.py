@@ -4,7 +4,7 @@
   reach.py pr <checkout> [base-ref]      PR_REACH.md on stdout: every function the
                                          pull request changes, the entrypoints that
                                          reach it and their shortest paths
-  reach.py fn <checkout> <function> [path]
+  reach.py fn <checkout> <function> [path[:line]]
   reach.py path <checkout> <from> <to>
 
 The graph is master's, built from GCC call-graph dumps and libclang and merged
@@ -16,12 +16,14 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 
 MAX_FUNCS = 60
 PATHS = {"untrusted_external": 4, "semi_trusted_external": 3}
 MAX_CALLERS = 15
-INFERRED = {"virtual", "template_virtual", "template_argument", "template_enclosing_class",
+GRAPH = "monero-review-callgraph.json"   # in the checkout's git directory, out of rg's way
+INFERRED = {"gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
             "reference", "reference_instantiation", "lambda", "function_table"}
 CONDITIONAL = re.compile(r"(release_protocol|anvoke_handler::cancel|miner::start|miner::worker_thread)$")
 TRUST = {"untrusted_external": "untrusted", "semi_trusted_external": "semi-trusted",
@@ -30,10 +32,10 @@ TRUST = {"untrusted_external": "untrusted", "semi_trusted_external": "semi-trust
 HOW = """How to read this:
 - A path is a lead, to confirm in the source at this pull request's head.
   `gcc` hops are calls the compiler made; `gcc_instantiation` is a call made
-  by a template instantiated from that caller; `gcc_bridged` passes through
-  std or boost; `trailmark` is trailmark's own parse. `virtual`, `reference`, `lambda`, `template_*` and
-  `function_table` hops are inferred from the class hierarchy or from where a
-  callback is registered.
+  by a template instantiated from that caller; `trailmark` is trailmark's
+  own parse. `gcc_bridged` hops pass through std or boost; `virtual`,
+  `reference`, `lambda`, `template_*` and `function_table` hops are inferred
+  from the class hierarchy or from where a callback is registered.
 - No path, or a function missing from the graph, proves nothing. The graph
   is of master, so calls this pull request adds are absent, and it covers one
   Linux build. asio handlers hang off the code that registers them, not off
@@ -52,6 +54,8 @@ class Graph:
             raise ValueError("unknown call graph format")
         self.commit, self.built = g["commit"], g["built"]
         self.nodes = g["nodes"]                  # [id, label, path, start, end]
+        for n in self.nodes:
+            n[1] = n[1].replace("::::", "::(anonymous)::")
         self.origins = g["origins"]
         self.pred = collections.defaultdict(dict)
         self.succ = collections.defaultdict(dict)
@@ -68,13 +72,12 @@ class Graph:
 
     def find(self, name, path=None):
         """Nodes whose qualified name ends with `name`, optionally in `path`."""
-        want = strip_targs(name)
+        want = scope(name)
         out = []
         for i, (_, lab, p, _, _) in enumerate(self.nodes):
             if path and p != path:
                 continue
-            q = strip_targs(lab)
-            if q == want or q.endswith("::" + want):
+            if scope(lab)[-len(want):] == want:
                 out.append(i)
         return out
 
@@ -111,7 +114,7 @@ class Graph:
         """Markdown lines for one node: entrypoint counts, shortest paths, direct callers."""
         out = [f"Graph node: `{self.label(i)}` (master {self.nodes[i][2]}:{self.nodes[i][3]})"]
         dist, nxt = self.back(i)
-        eps = sorted((dist[e], self.label(e), e) for e in self.entry if e in dist)
+        eps = sorted((dist[e], self.label(e), e) for e in self.entry if e in dist and e != i)
         count = collections.Counter(self.entry[e][0] for _, _, e in eps)
         if i in self.entry:
             out.append(f"It is itself an entrypoint ({TRUST.get(self.entry[i][0], self.entry[i][0])}: {self.entry[i][1]}).")
@@ -120,7 +123,7 @@ class Graph:
         for trust, cap in PATHS.items():
             shown, labels = [], set()
             for x in eps:
-                if self.entry[x[2]][0] == trust and x[2] != i and x[1] not in labels and len(shown) < cap:
+                if self.entry[x[2]][0] == trust and x[1] not in labels and len(shown) < cap:
                     shown.append(x); labels.add(x[1])
             if shown:
                 out.append(f"Shortest from {TRUST[trust]} entrypoints:")
@@ -151,25 +154,56 @@ class Graph:
         return None
 
 
+OPERATOR = re.compile(r"\boperator\s*(\(\)|\[\]|->\*?|<=>|<<=?|>>=?|&&|\|\||\+\+|--|[-+*/%^&|~!=<>,]=?)")
+
+
+def norm(n):
+    """ctags writes `operator ()`, the graph `operator()`."""
+    return OPERATOR.sub(lambda m: "operator" + m.group(1), n)
+
+
 def strip_targs(n):
-    out, depth = "", 0
-    for ch in n:
+    n, out, depth, i = norm(n), "", 0, 0
+    while i < len(n):
+        m = OPERATOR.match(n, i)
+        if m and (i == 0 or not (n[i - 1].isalnum() or n[i - 1] == "_")):
+            if depth == 0:
+                out += m.group(0)
+            i = m.end()
+            continue
+        ch = n[i]
         if ch == "<":
             depth += 1
         elif ch == ">":
             depth -= 1
         elif depth == 0:
             out += ch
+        i += 1
     return out
 
 
+def scope(n):
+    """Name components, without template arguments or anonymous namespaces."""
+    return [c.strip() for c in strip_targs(n).split("::")
+            if c.strip() and c != "(anonymous)" and not c.startswith("__anon")]
+
+
 def short(n):
-    return strip_targs(n).split("::")[-1]
+    return strip_targs(n).split("::")[-1].strip()
+
+
+def graph_path(root):
+    try:
+        p = subprocess.run(["git", "-C", root, "rev-parse", "--git-path", GRAPH],
+                           capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return os.path.join(root, p)
 
 
 def graph_of(root):
-    p = os.path.join(root, "callgraph.json")
-    return Graph(p) if os.path.isfile(p) else None
+    p = graph_path(root)
+    return Graph(p) if p and os.path.isfile(p) else None
 
 
 def header(g):
@@ -177,13 +211,20 @@ def header(g):
 
 
 def match(g, name, qual, path, start):
-    """The master node for a function changed at path:start (head line numbers)."""
-    cands = [i for i, n in enumerate(g.nodes) if n[2] == path and g.short(i) == name]
-    if not cands:
-        return None
-    scoped = [i for i in cands if strip_targs(g.label(i)).endswith(strip_targs(qual))]
-    cands = scoped or cands
-    return min(cands, key=lambda i: abs(g.nodes[i][3] - start))
+    """The master node for a function changed at path:start (head line numbers),
+    and whether its scope matched exactly. Same file and short name; then the
+    same scope, else the same innermost class, else a nearby node whose scope
+    lacks components (trailmark drops some). Overloads by nearest line."""
+    want = scope(qual)
+    cands = [i for i, n in enumerate(g.nodes) if n[2] == path and g.short(i) == short(name)]
+    for tier, ok in enumerate((
+            lambda i, h: h[-len(want):] == want,
+            lambda i, h: len(want) > 1 and want[-2] in h[:-1],
+            lambda i, h: set(h[:-1]) <= set(want[:-1]) and abs(g.nodes[i][3] - start) <= 10)):
+        hit = [i for i in cands if ok(i, scope(g.label(i)))]
+        if hit:
+            return min(hit, key=lambda i: abs(g.nodes[i][3] - start)), tier == 0
+    return None, False
 
 
 def cmd_pr(root, base):
@@ -210,39 +251,50 @@ def cmd_pr(root, base):
     if not fns:
         print("No changed function definitions in src or contrib.")
         return
+    # ctags also lists each definition by its qualified name, with no end line.
+    best = {}
+    for fn in fns:
+        k = (short(fn[0]), fn[2], fn[3])
+        if k not in best or "::" in best[k][0]:
+            best[k] = fn
+    fns = sorted(best.values(), key=lambda t: (t[2], t[3]))
     if len(fns) > MAX_FUNCS:
         print(f"{len(fns)} changed functions; the first {MAX_FUNCS} by path are listed.\n")
-    done, seen = set(), set()
+    done = set()
     for name, qual, path, start, end in fns[:MAX_FUNCS]:
-        name = short(name)                  # ctags also lists a definition by its qualified name
-        if (name, path, start) in seen:
-            continue
-        seen.add((name, path, start))
         print(f"## `{qual}` -- {path}:{start}-{end}\n")
-        i = match(g, name, qual, path, start)
+        i, exact = match(g, name, qual, path, start)
         if i is None:
-            print("Not in the master graph: added or renamed by this pull request, or not")
-            print("built on Linux. Inconclusive; read its callers in the source.\n")
+            print("Not in the master graph under this name and scope: added or renamed by")
+            print("this pull request, or not built on Linux. Inconclusive; read its callers")
+            print("in the source.\n")
             continue
         if i in done:
             print(f"Same graph node as above (`{g.label(i)}`).\n")
             continue
         done.add(i)
+        if not exact:
+            print("Matched by file and name; the graph's scope differs, so confirm it is this function.")
         print("\n".join(g.section(i)) + "\n")
 
 
 def cmd_fn(root, name, path=None):
     g = graph_of(root)
     if g is None:
-        print("no call graph in this run (callgraph.json); use rtool callers")
+        print("no call graph in this run; use rtool callers")
         return 0
     print(f"# {header(g)} A path is a lead; no path proves nothing.")
-    found = g.find(name, path)
+    line = None
+    if path and re.fullmatch(r".+:\d+", path):
+        path, line = path.rsplit(":", 1)
+    found = g.find(name, path and os.path.normpath(path))
     if not found:
         print(f"# no function named {name} in the master graph; a miss is inconclusive")
         return 0
+    if line:
+        found = [min(found, key=lambda i: abs(g.nodes[i][3] - int(line)))]
     if len(found) > 5:
-        print(f"# {len(found)} matches; qualify the name or add a path:")
+        print(f"# {len(found)} matches; qualify the name, or give path:line to pick one:")
         for i in found[:40]:
             print(f"  {g.label(i)}  {g.nodes[i][2]}:{g.nodes[i][3]}")
         return 0
@@ -255,7 +307,7 @@ def cmd_fn(root, name, path=None):
 def cmd_path(root, a, b):
     g = graph_of(root)
     if g is None:
-        print("no call graph in this run (callgraph.json)")
+        print("no call graph in this run")
         return 0
     A, B = g.find(a), set(g.find(b))
     if not A or not B:

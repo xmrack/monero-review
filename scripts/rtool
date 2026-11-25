@@ -8,10 +8,11 @@
                                          rust-deps/<name>; cmd is one of
                                          log show diff grep ls-files ls-tree
                                          rev-list rev-parse
-  rtool reach <function> [path]          entrypoints that reach a function in the
+  rtool reach <function> [path[:line]]   entrypoints that reach a function in the
                                          call graph of master, shortest paths,
                                          graph callers (virtual, template and
-                                         callback calls resolved)
+                                         callback calls resolved); :line picks
+                                         one overload
   rtool path <from> <to>                 shortest call path in that graph
   rtool weggli [-u] [-R v=re]... <pattern> <path>
                                          weggli in C++ mode over .c .cc .cpp
@@ -41,6 +42,8 @@ GIT_OPT = re.compile(
 SAFE_GIT = ["git", "--no-pager", "-c", "core.pager=cat", "-c", "diff.external=",
             "-c", "core.fsmonitor=false", "-c", "protocol.file.allow=never"]
 NAME = re.compile(r"^[A-Za-z_~][A-Za-z0-9_:~<>]*$")
+# Call graph labels also hold operators, (anonymous) and {lambda}.
+GRAPH_NAME = re.compile(r"^[A-Za-z_~({][A-Za-z0-9_:~<>(){}\[\]=!+*/%^&|,. -]*$")
 SRC_EXT = ["c", "cc", "cpp", "h", "hpp", "inl"]
 
 
@@ -196,15 +199,18 @@ def reach_py():
 
 
 def cmd_reach(args, base):
-    if not 1 <= len(args) <= 2 or not NAME.match(args[0]):
-        die("usage: rtool reach <function> [path]")
-    if len(args) == 2 and (args[1].startswith("-") or not inside(os.path.join(base, args[1]), base)):
-        die("path must be relative and inside the checkout")
+    if not 1 <= len(args) <= 2 or not GRAPH_NAME.match(args[0]):
+        die("usage: rtool reach <function> [path[:line]]")
+    if len(args) == 2:
+        path, line = re.fullmatch(r"(.+?)(:\d+)?", args[1]).groups()
+        if path.startswith("-") or not inside(os.path.join(base, path), base):
+            die("path must be relative and inside the checkout")
+        args = [args[0], os.path.relpath(os.path.realpath(os.path.join(base, path)), base) + (line or "")]
     return run(["python3", "-I", reach_py(), "fn", base] + args, base)
 
 
 def cmd_path(args, base):
-    if len(args) != 2 or not all(NAME.match(a) for a in args):
+    if len(args) != 2 or not all(GRAPH_NAME.match(a) for a in args):
         die("usage: rtool path <from> <to>")
     return run(["python3", "-I", reach_py(), "path", base] + args, base)
 

@@ -165,8 +165,8 @@ your reading to find more.
 `PR_REACH.md`: entrypoints that reach the function, shortest paths with the
 origin of each hop, and its callers as the compiler resolved them, including
 virtual, template and callback calls that cscope cannot see. `rtool path
-<from> <to>` gives one shortest path. Read `callgraph.json` only through
-these. Inferred hops (`virtual`, `reference`, `lambda`, `template_*`) and
+<from> <to>` gives one shortest path; `rtool reach <fn> <path>:<line>` picks
+one overload. Inferred hops (`virtual`, `reference`, `lambda`, `template_*`) and
 paths marked conditional need the source read before a finding rests on them.
 
 Trust a hit. Never trust a miss: **cscope does not see a call inside a macro

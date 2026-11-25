@@ -192,7 +192,7 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # As in CI: case-insensitive, any file type, and symlinks.
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt" \
   "$CACHE/PR_CALLERS.md" "$CACHE/PR_REACH.md" "$CACHE/PR_TESTS.md" "$CACHE/PR_COMMITS.md" "$CACHE/PR_SUBMODULES.md" \
-  "$CACHE/exec.json" "$CACHE/callgraph.json"
+  "$CACHE/exec.json" "$(git -C "$CACHE" rev-parse --path-format=absolute --git-path monero-review-callgraph.json)"
 # The checkout is reused across pull requests: a previous PR's submodule
 # patches read as this one's would be wrong context with nothing to reveal it.
 rm -rf "$CACHE/submodule-base" "$CACHE/submodule-diffs"
@@ -593,9 +593,10 @@ python3 -I "$HERE/scripts/callers.py" "$CACHE" origin/base > "$CACHE/PR_CALLERS.
 #     "$(gh run list -R xmrack/monero-review -w callgraph.yml -s success -L 1 --json databaseId -q '.[0].databaseId')"
 # or build one with callgraph/run.sh. CALLGRAPH names another file.
 CALLGRAPH=${CALLGRAPH:-$HOME/.cache/monero-review/callgraph/callgraph.json}
-if [ -f "$CALLGRAPH" ]; then
-  cp "$CALLGRAPH" "$CACHE/callgraph.json"
-  GRAPH_NOTE="call graph of master $(jq -r '.commit[:12]' "$CACHE/callgraph.json") in callgraph.json (use rtool reach, not cat)"
+# In the git directory, where rg and grep -r over the tree do not see it.
+if COMMIT=$(python3 -I -c 'import json, sys; g = json.load(open(sys.argv[1])); assert g["format"] == "monero-review-callgraph/1"; print(g["commit"][:12])' "$CALLGRAPH" 2>/dev/null); then
+  install -m 0444 "$CALLGRAPH" "$(git -C "$CACHE" rev-parse --path-format=absolute --git-path monero-review-callgraph.json)"
+  GRAPH_NOTE="master $COMMIT, read through rtool reach and rtool path"
 else
   GRAPH_NOTE="none in this run, so rtool reach and rtool path have nothing to search"
 fi

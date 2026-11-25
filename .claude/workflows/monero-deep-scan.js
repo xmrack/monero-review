@@ -758,7 +758,7 @@ const CONTEXT = [
   'read the grep matches before calling anything uncalled.',
   'rtool reach <fn> [path] and rtool path <from> <to> query the call graph of',
   'master behind PR_REACH.md: it sees virtual, template and callback calls and',
-  'calls inside macros. Read callgraph.json only through them. A path is a lead;',
+  'calls inside macros. A path is a lead;',
   'an inferred hop (virtual, reference, lambda, template_*) or a path marked',
   'conditional needs the source read before a finding rests on it.',
   'external/rapidjson, randomx, supercop, gtest, mx25519, polyseed and utf8proc',
