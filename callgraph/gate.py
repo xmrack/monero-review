@@ -25,9 +25,16 @@ def reach(start):
 
 check(len(g["nodes"]) >= 12000, f"function nodes {len(g['nodes'])} >= 12000")
 check(len(g["edges"]) >= 38000, f"call edges {len(g['edges'])} >= 38000")
-trust = collections.Counter(t for _, t, _ in g["entrypoints"])
-check(trust["untrusted_external"] >= 60, f"untrusted entrypoints {trust['untrusted_external']} >= 60")
+DAEMON = "daemon reply to the wallet (remote node)"
+trust = collections.Counter(t for _, t, d in g["entrypoints"] if d != DAEMON)
+reply = [e for e, _, d in g["entrypoints"] if d == DAEMON]
+check(trust["untrusted_external"] >= 45, f"untrusted network entrypoints {trust['untrusted_external']} >= 45")
 check(trust["semi_trusted_external"] >= 120, f"semi-trusted entrypoints {trust['semi_trusted_external']} >= 120")
+check(len(reply) >= 20, f"daemon-reply entrypoints {len(reply)} >= 20")
+guess = sorted({d for _, _, d in g["entrypoints"] if d.startswith(("C/C++ exported symbol", "Rust FFI export"))})
+check(not guess, f"no trailmark heuristic entrypoints {guess}")
+check(bool(reach(reply) & set(ids(r"wallet2::process_new_transaction$"))),
+      "daemon replies reach wallet2::process_new_transaction")
 
 T = r"(<[^>]*>)?"
 CHAINS = [

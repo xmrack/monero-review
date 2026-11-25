@@ -131,8 +131,11 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
   same thing: a path is a lead, and no path proves nothing. The panel's
   reachability angle refutes; a graph that could refute would turn a gap in
   the graph into a dismissed finding.
-- Changed functions are matched to the graph by file and name. Head, base and
-  master line numbers all differ.
+- Changed functions are matched to the graph by file, name and scope, at the
+  base line the diff maps the head line to. Overloads share a label, so a
+  match more than 3 lines off, or with a second overload as near, carries a
+  caveat, and a function the diff adds whole is reported as new. Silently
+  showing another overload's paths is the failure this guards against.
 - Trailmark alone resolves about one call site in eight in this tree: it does
   not bind member, virtual or template calls. The edges come from GCC's
   `-fcallgraph-info`, which sees calls inside macros and after template
@@ -143,8 +146,16 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
   moved to the caller that instantiated the template, and the gate fails a
   graph in which either server reaches the other's frame parser.
 - Dispatch through one object is not tracked: the daemon and wallet RPC
-  servers share an HTTP handler instantiation, so each appears to reach the
-  other's handlers. `PR_REACH.md` says so.
+  servers share an HTTP handler instantiation. Untrusted paths therefore stop
+  at the wallet's request handler and at daemon methods restricted mode
+  refuses, which otherwise read as remotely reachable.
+- Entrypoints are the configured ones only. Trailmark's guesses (exported C
+  symbols, Rust FFI) are internal boundaries and are dropped. The wallet's
+  requests to the daemon, and `wallet2::refresh`, are untrusted entrypoints:
+  a remote node chooses the reply, which the call graph alone cannot show.
+- A libclang caller is mapped to a trailmark node only if the names agree.
+  Trailmark sometimes gives one node the span of a whole file region, and
+  span alone sent other functions' calls through it.
 - Paths through connection teardown or the miner thread are marked
   conditional, because a finding that needs one is weaker than its hop count.
 

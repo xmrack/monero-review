@@ -11,8 +11,9 @@
   rtool reach <function> [path[:line]]   entrypoints that reach a function in the
                                          call graph of master, shortest paths,
                                          graph callers (virtual, template and
-                                         callback calls resolved); :line picks
-                                         one overload
+                                         callback calls resolved); :line, a
+                                         master line as rtool and PR_REACH.md
+                                         print it, picks one overload
   rtool path <from> <to>                 shortest call path in that graph
   rtool weggli [-u] [-R v=re]... <pattern> <path>
                                          weggli in C++ mode over .c .cc .cpp
@@ -43,7 +44,7 @@ SAFE_GIT = ["git", "--no-pager", "-c", "core.pager=cat", "-c", "diff.external=",
             "-c", "core.fsmonitor=false", "-c", "protocol.file.allow=never"]
 NAME = re.compile(r"^[A-Za-z_~][A-Za-z0-9_:~<>]*$")
 # Call graph labels also hold operators, (anonymous) and {lambda}.
-GRAPH_NAME = re.compile(r"^[A-Za-z_~({][A-Za-z0-9_:~<>(){}\[\]=!+*/%^&|,.# -]*$")
+GRAPH_NAME = re.compile(r"^[A-Za-z_~({$][A-Za-z0-9_:~<>(){}\[\]=!+*/%^&|,.#$ -]*$")
 SRC_EXT = ["c", "cc", "cpp", "h", "hpp", "inl"]
 
 

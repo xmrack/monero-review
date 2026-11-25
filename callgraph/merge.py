@@ -272,20 +272,32 @@ def usr_name(usr):
     m = re.findall(r"@F@([^#@]+)#|@FT@>\d+(?:#[^#]*)*?#T([^#@]+)#|@FI@([^#@]+)", usr)
     if not m: return None
     return next(x for x in m[-1] if x)
-cmap = {}; clang_dis = []
-for usr, v in cdefs.items():
+clang_dis = []
+_rescache = {}
+def resolve(usr, v, count=False):
+    """map_def, then the name check: a trailmark node whose span swallows a
+    differently named function is not that function."""
+    key = (usr, v[0], v[1], v[2]) if v else None
+    if key in _rescache and not count: return _rescache[key]
     n = map_def(usr, v)
     if n and not usr.startswith("lambda:"):
         un = usr_name(usr)
         if un and un != base(funcs[n]["name"] if n in funcs else G["nodes"][n]["name"]):
-            stats["clang_map_name_disagree"] += 1
-            clang_dis.append((un, funcs[n]["name"] if n in funcs else G["nodes"][n]["name"], usr[:100]))
+            if count:
+                stats["clang_map_name_disagree"] += 1
+                clang_dis.append((un, funcs[n]["name"] if n in funcs else G["nodes"][n]["name"], usr[:100]))
             n = locate_named(v[0], v[1], v[2], un)
-            if n: stats["clang_map_agree_after_lookup"] += 1
+            if n:
+                if count: stats["clang_map_agree_after_lookup"] += 1
             else:
                 c = [x for x in synth_by_file.get(to_tree(v[0]), ()) if v[1] <= x[0] <= v[2] and x[1].endswith(":" + un)]
                 n = c[0][1] if c else None
-        elif un: stats["clang_map_name_agree"] += 1
+        elif un and count: stats["clang_map_name_agree"] += 1
+    _rescache[key] = n
+    return n
+cmap = {}
+for usr, v in cdefs.items():
+    n = resolve(usr, v, count=True)
     if n: cmap[usr] = n
     elif to_tree(v[0]): stats["clang_defs_in_tree_unmapped"] += 1
 children = collections.defaultdict(set)
@@ -351,7 +363,7 @@ for d in tus:
     local = d["all_defs"]
     def caller(usr):
         v = local.get(usr) or cdefs.get(usr)
-        return (map_def(usr, v), v[0] if v else None)
+        return (resolve(usr, v) if v else None, v[0] if v else None)
     for c, m, name, line in d["vcalls"]:
         src, cf = caller(c)
         if src and to_tree(cf): site_lines[src].add((to_tree(cf), line))

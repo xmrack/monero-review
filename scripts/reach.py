@@ -4,7 +4,7 @@
   reach.py pr <checkout> [base-ref]      PR_REACH.md on stdout: every function the
                                          pull request changes, the entrypoints that
                                          reach it and their shortest paths
-  reach.py fn <checkout> <function> [path[:line]]
+  reach.py fn <checkout> <function> [path[:line]]   (line: master's, as printed)
   reach.py path <checkout> <from> <to>
 
 The graph is master's, built from GCC call-graph dumps and libclang and merged
@@ -23,11 +23,14 @@ MAX_FUNCS = 60
 PATHS = {"untrusted_external": 4, "semi_trusted_external": 3}
 MAX_CALLERS = 15
 GRAPH = "monero-review-callgraph.json"   # in the checkout's git directory, out of rg's way
-INFERRED = {"gcc_instantiation_kept", "gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
+INFERRED = {"trailmark", "gcc_instantiation_kept", "gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
             "reference", "reference_instantiation", "lambda", "function_table"}
 # The daemon and wallet RPC servers share one HTTP parser, an untrusted
-# entrypoint; untrusted paths stop at the wallet's handler.
+# entrypoint; untrusted paths stop at the wallet's handler, and do not enter
+# a daemon RPC method that restricted mode refuses.
 WALLET_GATE = re.compile(r"wallet_rpc_server::handle_http_request$")
+RPC_MAP = re.compile(r"core_rpc_server::handle_http_request_map$")
+UNRESTRICTED = "daemon RPC, unrestricted only"
 CONDITIONAL = re.compile(r"(release_protocol|anvoke_handler::cancel|miner::start|miner::worker_thread)$")
 TRUST = {"untrusted_external": "untrusted", "semi_trusted_external": "semi-trusted",
          "trusted_internal": "trusted-internal"}
@@ -35,8 +38,8 @@ TRUST = {"untrusted_external": "untrusted", "semi_trusted_external": "semi-trust
 HOW = """How to read this:
 - A path is a lead, to confirm in the source at this pull request's head.
   `gcc` hops are calls the compiler made; `gcc_instantiation` is a call made
-  by a template instantiated from that caller; `trailmark` is trailmark's
-  own parse. `gcc_instantiation_kept` is a call made by some instantiation
+  by a template instantiated from that caller. `trailmark` is trailmark's
+  name-based parse, where the compiler saw no call. `gcc_instantiation_kept` is a call made by some instantiation
   of a template, credited to every caller of it; `gcc_bridged` hops pass
   through std or boost; `virtual`, `reference`, `lambda`, `template_*` and
   `function_table` hops are inferred from the class hierarchy or from where
@@ -49,8 +52,13 @@ HOW = """How to read this:
   (`release_protocol`, `anvoke_handler::cancel`) or the miner thread. They
   are real, but a finding that rests on one must say so.
 - The daemon and wallet RPC servers share one HTTP parser. Untrusted paths
-  are not followed into `wallet_rpc_server::handle_http_request`: the wallet
-  RPC is semi-trusted and its handlers count from its own entrypoints."""
+  are not followed into `wallet_rpc_server::handle_http_request` (the wallet
+  RPC is semi-trusted) or into daemon RPC methods restricted mode refuses.
+- The daemon is untrusted by the wallet: wallet functions that ask it for
+  data, and `wallet2::refresh`, are untrusted entrypoints ("daemon reply to
+  the wallet"), since a remote node chooses the reply.
+- A label shared by several functions (overloads) carries its master
+  `path:line`; pass that to `rtool reach <fn> <path>:<line>`."""
 
 
 class Graph:
@@ -70,9 +78,18 @@ class Graph:
             self.succ[a][b] = self.origins[o]
         self.entry = {e: (t, d) for e, t, d in g["entrypoints"]}
         self.gate = {i for i, n in enumerate(self.nodes) if WALLET_GATE.search(strip_targs(n[1]))}
+        rpc_map = {i for i, n in enumerate(self.nodes) if RPC_MAP.search(strip_targs(n[1]))}
+        self.cut = {(m, e) for e, (t, d) in self.entry.items() if d == UNRESTRICTED
+                    for m in rpc_map if e in self.succ[m]}
+        self.shared = collections.Counter(n[1] for n in self.nodes)
 
     def label(self, i):
         return self.nodes[i][1]
+
+    def name(self, i):
+        """The label, with master path:line when other functions share it."""
+        n = self.nodes[i]
+        return f"{n[1]} ({n[2]}:{n[3]})" if self.shared[n[1]] > 1 else n[1]
 
     def short(self, i):
         return short(self.nodes[i][1])
@@ -88,14 +105,14 @@ class Graph:
                 out.append(i)
         return out
 
-    def back(self, target, skip=()):
+    def back(self, target, skip=(), cut=()):
         """Reverse BFS: hops to `target` and the next node towards it, for every
-        ancestor, not passing through `skip`."""
+        ancestor, not passing through `skip` or along an edge in `cut`."""
         dist, nxt, q = {target: 0}, {}, collections.deque([target])
         while q:
             x = q.popleft()
             for p in self.pred[x]:
-                if p not in dist and p not in skip:
+                if p not in dist and p not in skip and (p, x) not in cut:
                     dist[p], nxt[p] = dist[x] + 1, x
                     q.append(p)
         return dist, nxt
@@ -107,9 +124,9 @@ class Graph:
         return path
 
     def fmt(self, path):
-        parts = [f"`{self.label(path[0])}`"]
+        parts = [f"`{self.name(path[0])}`"]
         for a, b in zip(path, path[1:]):
-            parts.append(f"-({self.succ[a][b]})-> `{self.label(b)}`")
+            parts.append(f"-({self.succ[a][b]})-> `{self.name(b)}`")
         flags = []
         hops = [self.succ[a][b] for a, b in zip(path, path[1:])]
         if any(h in INFERRED for h in hops):
@@ -121,7 +138,7 @@ class Graph:
     def section(self, i):
         """Markdown lines for one node: entrypoint counts, shortest paths, direct callers."""
         out = [f"Graph node: `{self.label(i)}` (master {self.nodes[i][2]}:{self.nodes[i][3]})"]
-        full, untrusted = self.back(i), self.back(i, self.gate)
+        full, untrusted = self.back(i), self.back(i, self.gate, self.cut)
         via = {e: untrusted if self.entry[e][0] == "untrusted_external" else full for e in self.entry}
         eps = sorted((via[e][0][e], self.label(e), e) for e in self.entry if e in via[e][0] and e != i)
         count = collections.Counter(self.entry[e][0] for _, _, e in eps)
@@ -142,7 +159,7 @@ class Graph:
         if callers:
             more = f" ({len(callers) - MAX_CALLERS} more)" if len(callers) > MAX_CALLERS else ""
             out.append("Direct callers: " + ", ".join(
-                f"`{self.label(c)}` ({o})" for c, o in callers[:MAX_CALLERS]) + more)
+                f"`{self.name(c)}` ({o})" for c, o in callers[:MAX_CALLERS]) + more)
         else:
             out.append("No callers in the graph.")
         return out
@@ -265,12 +282,27 @@ def match(g, name, qual, path, line):
         i = min(hit, key=lambda i: abs(g.nodes[i][3] - line))
         if tier:
             return i, "Matched by file and name; the graph's scope differs, so confirm it is this function."
-        if abs(g.nodes[i][3] - line) > 3:   # a template header can put the name 1-3 lines down
-            return i, (f"The nearest graph node with this name is at master line {g.nodes[i][3]}, "
-                       f"not base line {line}: this overload may be missing from the graph, so "
-                       "confirm it is this function.")
-        return i, None
+        return i, nearness(g, hit, i, line)
     return None, None
+
+
+def nearness(g, hit, i, line):
+    """A caveat unless `i` is the only candidate within 3 lines of `line` (a
+    template header can put the name 1-3 lines down)."""
+    near = [h for h in hit if abs(g.nodes[h][3] - line) <= 3]
+    if i not in near:
+        return (f"The nearest graph node with this name is at master line {g.nodes[i][3]}, "
+                f"not base line {line}: this overload may be missing from the graph, so "
+                "confirm it is this function.")
+    if len(near) > 1:
+        return (f"{len(near)} overloads sit within 3 lines of base line {line} "
+                f"({', '.join(str(g.nodes[h][3]) for h in near)}); confirm it is this one.")
+    return None
+
+
+def added(hunks, start, end):
+    """Every line of head start..end is in a hunk that replaced nothing."""
+    return any(b == 0 and c <= start and end < c + d for c, d, a, b in hunks)
 
 
 def cmd_pr(root, base):
@@ -309,18 +341,22 @@ def cmd_pr(root, base):
     hunks, done = base_lines(root, base), set()
     for name, qual, path, start, end in fns[:MAX_FUNCS]:
         print(f"## `{qual}` -- {path}:{start}-{end}\n")
+        if added(hunks.get(path, []), start, end):
+            print("Added by this pull request, so not in the master graph. Inconclusive;")
+            print("read its callers in the source.\n")
+            continue
         i, caveat = match(g, name, qual, path, to_base(hunks.get(path, []), start))
         if i is None:
             print("Not in the master graph under this name and scope: added or renamed by")
             print("this pull request, or not built on Linux. Inconclusive; read its callers")
             print("in the source.\n")
             continue
-        if i in done:
-            print(f"Same graph node as above (`{g.label(i)}`).\n")
-            continue
-        done.add(i)
         if caveat:
             print(caveat)
+        if i in done:
+            print(f"Same graph node as above (`{g.name(i)}`).\n")
+            continue
+        done.add(i)
         print("\n".join(g.section(i)) + "\n")
 
 
@@ -338,7 +374,13 @@ def cmd_fn(root, name, path=None):
         print(f"# no function named {name} in the master graph; a miss is inconclusive")
         return 0
     if line:
-        found = [min(found, key=lambda i: abs(g.nodes[i][3] - int(line)))]
+        # A master line, as this tool and PR_REACH.md print them.
+        line = int(line)
+        pick = min(found, key=lambda i: abs(g.nodes[i][3] - line))
+        caveat = nearness(g, found, pick, line)
+        if caveat:
+            print("# " + caveat)
+        found = [pick]
     if len(found) > 5:
         print(f"# {len(found)} matches; qualify the name, or give path:line to pick one:")
         for i in found[:40]:
