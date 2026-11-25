@@ -37,6 +37,12 @@ divergence.
 - `PR_CALLERS.md`: callers of every function the diff changes, from cscope
   and from `git grep -w`, computed before the review started. Start
   reachability here. It is name-based, so overloads share an entry.
+- `PR_REACH.md`: for every changed function, the untrusted and semi-trusted
+  entrypoints that reach it in a call graph of upstream master, with the
+  shortest paths and the callers the compiler resolved (virtual, template,
+  callback). A path is a lead to confirm in the source at the head. No path,
+  or a function missing from the graph, proves nothing: the graph is of
+  master, so calls the PR adds are absent.
 - `PR_COMMITS.md`: the patch of each commit within the PR. This is a blobless
   clone and `git show <intermediate-sha>` fails, so read this to see whether a
   guard was added and then dropped.
@@ -154,6 +160,16 @@ your reading to find more.
 `rtool callers <fn>` prints cscope's production and test callers and every
 `git grep -w` match. `rtool def <symbol>` finds a definition (C++ and Rust).
 `PR_CALLERS.md` already has this for every changed function.
+
+`rtool reach <fn> [path]` reads the call graph of master behind
+`PR_REACH.md`: entrypoints that reach the function, shortest paths with the
+origin of each hop, and its callers as the compiler resolved them, including
+virtual, template and callback calls that cscope cannot see. `rtool path
+<from> <to>` gives one shortest path; `rtool reach <fn> <path>:<line>`, with
+the master line the tool prints, picks one overload. Untrusted entrypoints
+include the wallet's daemon requests: a remote node is untrusted. Paths flagged *inferred hops* or *conditional*, and matches
+PR_REACH.md asks you to confirm, need the source read before a finding rests
+on them.
 
 Trust a hit. Never trust a miss: **cscope does not see a call inside a macro
 argument**, and most guards here are written that way

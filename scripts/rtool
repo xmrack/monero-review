@@ -8,6 +8,13 @@
                                          rust-deps/<name>; cmd is one of
                                          log show diff grep ls-files ls-tree
                                          rev-list rev-parse
+  rtool reach <function> [path[:line]]   entrypoints that reach a function in the
+                                         call graph of master, shortest paths,
+                                         graph callers (virtual, template and
+                                         callback calls resolved); :line, a
+                                         master line as rtool and PR_REACH.md
+                                         print it, picks one overload
+  rtool path <from> <to>                 shortest call path in that graph
   rtool weggli [-u] [-R v=re]... <pattern> <path>
                                          weggli in C++ mode over .c .cc .cpp
                                          .h .hpp .inl
@@ -36,6 +43,8 @@ GIT_OPT = re.compile(
 SAFE_GIT = ["git", "--no-pager", "-c", "core.pager=cat", "-c", "diff.external=",
             "-c", "core.fsmonitor=false", "-c", "protocol.file.allow=never"]
 NAME = re.compile(r"^[A-Za-z_~][A-Za-z0-9_:~<>]*$")
+# Call graph labels also hold operators, (anonymous) and {lambda}.
+GRAPH_NAME = re.compile(r"^[A-Za-z_~({$][A-Za-z0-9_:~<>(){}\[\]=!+*/%^&|,.#$ -]*$")
 SRC_EXT = ["c", "cc", "cpp", "h", "hpp", "inl"]
 
 
@@ -181,6 +190,35 @@ def cmd_git(args, base):
     return run(SAFE_GIT + [cmd] + extra + rest, real)
 
 
+def reach_py():
+    """scripts/reach.py beside this file when run from the harness, else the installed copy."""
+    for d in (os.path.dirname(os.path.realpath(__file__)), "/usr/local/lib/monero-review"):
+        p = os.path.join(d, "reach.py")
+        if os.path.isfile(p):
+            return p
+    die("reach.py is not installed in this run")
+
+
+def cmd_reach(args, base):
+    if not 1 <= len(args) <= 2 or not GRAPH_NAME.match(args[0]):
+        die("usage: rtool reach <function> [path[:line]]")
+    if len(args) == 2:
+        m = re.fullmatch(r"(.+?)(:\d+)?", args[1])
+        if not m:
+            die("usage: rtool reach <function> [path[:line]]")
+        path, line = m.groups()
+        if path.startswith("-") or not inside(os.path.join(base, path), base):
+            die("path must be relative and inside the checkout")
+        args = [args[0], os.path.relpath(os.path.realpath(os.path.join(base, path)), base) + (line or "")]
+    return run(["python3", "-I", reach_py(), "fn", base] + args, base)
+
+
+def cmd_path(args, base):
+    if len(args) != 2 or not all(GRAPH_NAME.match(a) for a in args):
+        die("usage: rtool path <from> <to>")
+    return run(["python3", "-I", reach_py(), "path", base] + args, base)
+
+
 def cmd_weggli(args, base):
     flags, pos = [], []
     it = iter(args)
@@ -213,7 +251,7 @@ def main():
         return 0
     base = root()
     cmds = {"def": cmd_def, "callers": cmd_callers, "history": cmd_history,
-            "git": cmd_git, "weggli": cmd_weggli}
+            "git": cmd_git, "weggli": cmd_weggli, "reach": cmd_reach, "path": cmd_path}
     if sys.argv[1] not in cmds:
         die(f"unknown command {sys.argv[1]}; see rtool help")
     return cmds[sys.argv[1]](sys.argv[2:], base)

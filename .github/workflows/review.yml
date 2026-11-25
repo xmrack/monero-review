@@ -1675,18 +1675,43 @@ jobs:
             echo "no test results for this run"
           fi
 
+      # The call graph of upstream master that callgraph.yml builds and gates.
+      # The newest one is restored; a miss leaves no file, and PR_REACH.md and
+      # rtool reach say there is no graph.
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/callgraph/callgraph.json
+          key: callgraph-none
+          restore-keys: callgraph-
+
       - name: Install rtool and list callers
         continue-on-error: true
         run: |
           set -u
           sudo install -m 0555 "$RUNNER_TEMP/harness-scripts/rtool" /usr/local/bin/rtool
+          sudo install -d -m 0755 /usr/local/lib/monero-review
+          sudo install -m 0444 "$RUNNER_TEMP/harness-scripts/reach.py" /usr/local/lib/monero-review/reach.py
           echo "RTOOL_ROOT=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
           python3 -I "$RUNNER_TEMP/harness-scripts/callers.py" . origin/base > PR_CALLERS.md
           echo "PR_CALLERS.md: $(grep -c '^## ' PR_CALLERS.md || true) changed function(s)"
+          # In the git directory, where rg and grep -r over the tree do not see it.
+          dest=$(git rev-parse --git-path monero-review-callgraph.json)
+          rm -f "$dest"
+          graph="$RUNNER_TEMP/callgraph/callgraph.json"
+          if commit=$(python3 -I -c 'import json, sys; g = json.load(open(sys.argv[1])); assert g["format"] == "monero-review-callgraph/1"; print(g["commit"][:12])' "$graph" 2>/dev/null); then
+            install -m 0444 "$graph" "$dest"
+            graph_note="master $commit, read through rtool reach and rtool path"
+          else
+            graph_note="none in this run, so rtool reach and rtool path have nothing to search"
+          fi
+          PR_BASE_REF="$BASE_REF" python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" pr . origin/base > PR_REACH.md
+          echo "PR_REACH.md: $(grep -c '^## ' PR_REACH.md || true) changed function(s); $graph_note"
           {
             echo
-            echo "rtool (run \`rtool help\`): def, callers, history, git inside a"
-            echo "submodule or rust-deps/<name>, and weggli in C++ mode."
+            echo "rtool (run \`rtool help\`): def, callers, reach, path, history, git"
+            echo "inside a submodule or rust-deps/<name>, and weggli in C++ mode."
+            echo "Call graph: $graph_note."
           } >> TOOLING.md
           bash "$RUNNER_TEMP/harness-scripts/ref_drift.sh" . >> TOOLING.md || true
 

@@ -121,6 +121,48 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
 - Severity is re-rated by the panel in both directions, so neither inflating
   nor lowballing works.
 
+## Call graph
+
+- The graph is of upstream master, never of the pull request. A graph of the
+  head would mean building the pull request's code with the review's
+  credentials nearby, or an hour of runner time per review in the offline
+  tests job. Master is built once a day by a job that holds nothing.
+- Calls a pull request adds are therefore missing, so every prompt says the
+  same thing: a path is a lead, and no path proves nothing. The panel's
+  reachability angle refutes; a graph that could refute would turn a gap in
+  the graph into a dismissed finding.
+- Changed functions are matched to the graph by file, name and scope, at the
+  line the diff maps the head line to on the graph's commit (through the
+  merge-base, which can be weeks behind master). Overloads share a label, so a
+  match more than 3 lines off, or with a second overload as near, carries a
+  caveat, and a function the diff adds whole is reported as new. Silently
+  showing another overload's paths is the failure this guards against.
+- Trailmark alone resolves about one call site in eight in this tree: it does
+  not bind member, virtual or template calls. The edges come from GCC's
+  `-fcallgraph-info`, which sees calls inside macros and after template
+  instantiation, and from libclang for virtual calls, callbacks and lambdas.
+- Trailmark has one node per template and GCC one per instantiation. Merged
+  naively, the levin and HTTP servers shared `connection<T>` and every P2P
+  handler reached the RPC dispatchers. Instantiation-specific callees are
+  moved to the caller that instantiated the template, and the gate fails a
+  graph in which either server reaches the other's frame parser.
+- Dispatch through one object is not tracked: the daemon and wallet RPC
+  servers share an HTTP handler instantiation. Untrusted paths therefore stop
+  at the wallet's request handler and at daemon methods restricted mode
+  refuses (their request parsers included, since the dispatcher calls them
+  before the handler), which otherwise read as remotely reachable. The two
+  dispatchers are semi-trusted entrypoints, so that code is not left with
+  none.
+- Entrypoints are the configured ones only. Trailmark's guesses (exported C
+  symbols, Rust FFI) are internal boundaries and are dropped. The wallet's
+  requests to the daemon, and `wallet2::refresh`, are untrusted entrypoints:
+  a remote node chooses the reply, which the call graph alone cannot show.
+- A libclang caller is mapped to a trailmark node only if the names agree.
+  Trailmark sometimes gives one node the span of a whole file region, and
+  span alone sent other functions' calls through it.
+- Paths through connection teardown or the miner thread are marked
+  conditional, because a finding that needs one is weaker than its hop count.
+
 ## House style
 
 - ASD-STE100 Part 2 (the approved dictionary) is not used: it is built for

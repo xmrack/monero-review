@@ -125,3 +125,16 @@ exactly the parts that must not drift. `.claude/agents/monero-context.md` is
 the context contract every agent opens with. `scripts/rtool` gives the agents
 read-only git inside submodules and `rust-deps/`, caller lists, and weggli with
 the right flags; `scripts/callers.py` writes `PR_CALLERS.md` before a review.
+
+**Call graph** — `callgraph/` builds a call graph of upstream master from GCC
+`-fcallgraph-info` dumps and a libclang pass, merged into a
+[trailmark](https://github.com/trailofbits/trailmark) snapshot. It resolves
+virtual, template and callback calls, and splits template instantiations so
+one protocol's handlers do not leak into another's. `callgraph.yml` builds it
+once per master commit in an offline container, and `callgraph/gate.py` checks
+it (known P2P, RPC and ZMQ chains present, known false edges and cross-protocol
+reach absent) before it is cached. `scripts/reach.py` writes `PR_REACH.md`:
+the entrypoints that reach each changed function, with shortest paths, and
+`rtool reach` and `rtool path` query the same graph. The graph is of master,
+so calls a pull request adds are not in it; it is a lead, never proof of
+unreachability.

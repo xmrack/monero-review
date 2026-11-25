@@ -1,0 +1,8 @@
+# Pinned with hashes; regenerate in the Dockerfile's base image with pip download + pip hash.
+libclang==18.1.1 --hash=sha256:c533091d8a3bbf7460a00cb6c1a71da93bffe148f172c7d03b1c31fbf8aa2a0b
+numpy==2.5.5 --hash=sha256:704d819265e5d1064d932968e9ee85fff2103ccc78c05b878c06943ba27b8507
+rustworkx==0.18.1 --hash=sha256:1ebd2441a51c68a784df8c62dc2e6f1a9f58c0eb1c2e21fd59776e08f55c0c0b
+trailmark==0.9.1 --hash=sha256:0cd498b1b0e51fa21396a87705ae4e64d3d15a06331cb4b9338861442f2f8ae4
+tree-sitter==0.26.1 --hash=sha256:7b14ac81a2afdcf75610f714f1d2eeaac40da93965c104cabb5c4c2b536a488a
+tree-sitter-language-pack==1.25.2 --hash=sha256:d433d8b6dfa4fc3577eb3518b869af8dd81c22ceb625d7983fe08057902947fc
+tree-sitter-sql==0.3.13 --hash=sha256:86569da8c728a73859b41477eff2dbdc2a2c31da77a1eda9328b27d3c2dbd7ce
