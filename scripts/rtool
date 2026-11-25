@@ -43,7 +43,7 @@ SAFE_GIT = ["git", "--no-pager", "-c", "core.pager=cat", "-c", "diff.external=",
             "-c", "core.fsmonitor=false", "-c", "protocol.file.allow=never"]
 NAME = re.compile(r"^[A-Za-z_~][A-Za-z0-9_:~<>]*$")
 # Call graph labels also hold operators, (anonymous) and {lambda}.
-GRAPH_NAME = re.compile(r"^[A-Za-z_~({][A-Za-z0-9_:~<>(){}\[\]=!+*/%^&|,. -]*$")
+GRAPH_NAME = re.compile(r"^[A-Za-z_~({][A-Za-z0-9_:~<>(){}\[\]=!+*/%^&|,.# -]*$")
 SRC_EXT = ["c", "cc", "cpp", "h", "hpp", "inl"]
 
 
@@ -202,7 +202,10 @@ def cmd_reach(args, base):
     if not 1 <= len(args) <= 2 or not GRAPH_NAME.match(args[0]):
         die("usage: rtool reach <function> [path[:line]]")
     if len(args) == 2:
-        path, line = re.fullmatch(r"(.+?)(:\d+)?", args[1]).groups()
+        m = re.fullmatch(r"(.+?)(:\d+)?", args[1])
+        if not m:
+            die("usage: rtool reach <function> [path[:line]]")
+        path, line = m.groups()
         if path.startswith("-") or not inside(os.path.join(base, path), base):
             die("path must be relative and inside the checkout")
         args = [args[0], os.path.relpath(os.path.realpath(os.path.join(base, path)), base) + (line or "")]

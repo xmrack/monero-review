@@ -65,12 +65,17 @@ jobs:
         with:
           path: ${{ runner.temp }}/callgraph/callgraph.json
           key: callgraph-${{ steps.head.outputs.sha }}-${{ hashFiles('harness/callgraph/**') }}
-      # Every run, so the newest successful one always carries a graph for
-      # review-local.sh.
+      # The graph only when it passed the gate (or came from the cache), so
+      # the newest successful run always carries one for review-local.sh.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
         with:
           name: callgraph
           path: ${{ runner.temp }}/callgraph/
+          retention-days: 30
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: callgraph-logs
+          path: ${{ runner.temp }}/callgraph/*.log
           if-no-files-found: ignore
           retention-days: 30

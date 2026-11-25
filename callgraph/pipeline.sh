@@ -32,7 +32,8 @@ $PY -I "$HERE/snapshot.py" "$WORK/tree" "$WORK/trailmark.json" 2> "$OUT/trailmar
 log "merge"
 $PY -I "$HERE/merge.py" "$SRC" "$WORK/build" "$WORK/tree" "$WORK/clang" "$WORK/trailmark.json" \
   "$WORK/merged.json" "$WORK/report" > "$OUT/merge.log"
-$PY -I "$HERE/export.py" "$WORK/merged.json" "$(git -C "$SRC" rev-parse HEAD)" > "$OUT/callgraph.json"
+$PY -I "$HERE/export.py" "$WORK/merged.json" "$(git -C "$SRC" rev-parse HEAD)" \
+  "$WORK/report/compiler_pairs.json" > "$OUT/callgraph.json"
 
 log "gate"
 $PY -I "$HERE/gate.py" "$OUT/callgraph.json" | tee "$OUT/gate.log"

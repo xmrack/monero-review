@@ -23,8 +23,11 @@ MAX_FUNCS = 60
 PATHS = {"untrusted_external": 4, "semi_trusted_external": 3}
 MAX_CALLERS = 15
 GRAPH = "monero-review-callgraph.json"   # in the checkout's git directory, out of rg's way
-INFERRED = {"gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
+INFERRED = {"gcc_instantiation_kept", "gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
             "reference", "reference_instantiation", "lambda", "function_table"}
+# The daemon and wallet RPC servers share one HTTP parser, an untrusted
+# entrypoint; untrusted paths stop at the wallet's handler.
+WALLET_GATE = re.compile(r"wallet_rpc_server::handle_http_request$")
 CONDITIONAL = re.compile(r"(release_protocol|anvoke_handler::cancel|miner::start|miner::worker_thread)$")
 TRUST = {"untrusted_external": "untrusted", "semi_trusted_external": "semi-trusted",
          "trusted_internal": "trusted-internal"}
@@ -33,9 +36,11 @@ HOW = """How to read this:
 - A path is a lead, to confirm in the source at this pull request's head.
   `gcc` hops are calls the compiler made; `gcc_instantiation` is a call made
   by a template instantiated from that caller; `trailmark` is trailmark's
-  own parse. `gcc_bridged` hops pass through std or boost; `virtual`,
-  `reference`, `lambda`, `template_*` and `function_table` hops are inferred
-  from the class hierarchy or from where a callback is registered.
+  own parse. `gcc_instantiation_kept` is a call made by some instantiation
+  of a template, credited to every caller of it; `gcc_bridged` hops pass
+  through std or boost; `virtual`, `reference`, `lambda`, `template_*` and
+  `function_table` hops are inferred from the class hierarchy or from where
+  a callback is registered. All of these are flagged *inferred hops*.
 - No path, or a function missing from the graph, proves nothing. The graph
   is of master, so calls this pull request adds are absent, and it covers one
   Linux build. asio handlers hang off the code that registers them, not off
@@ -43,8 +48,9 @@ HOW = """How to read this:
 - Paths marked *conditional* pass through connection teardown
   (`release_protocol`, `anvoke_handler::cancel`) or the miner thread. They
   are real, but a finding that rests on one must say so.
-- Dispatch is not tracked per object: the daemon and wallet RPC servers share
-  one HTTP handler, so either can appear to reach the other's handlers."""
+- The daemon and wallet RPC servers share one HTTP parser. Untrusted paths
+  are not followed into `wallet_rpc_server::handle_http_request`: the wallet
+  RPC is semi-trusted and its handlers count from its own entrypoints."""
 
 
 class Graph:
@@ -63,6 +69,7 @@ class Graph:
             self.pred[b][a] = self.origins[o]
             self.succ[a][b] = self.origins[o]
         self.entry = {e: (t, d) for e, t, d in g["entrypoints"]}
+        self.gate = {i for i, n in enumerate(self.nodes) if WALLET_GATE.search(strip_targs(n[1]))}
 
     def label(self, i):
         return self.nodes[i][1]
@@ -81,13 +88,14 @@ class Graph:
                 out.append(i)
         return out
 
-    def back(self, target):
-        """Reverse BFS: hops to `target` and the next node towards it, for every ancestor."""
+    def back(self, target, skip=()):
+        """Reverse BFS: hops to `target` and the next node towards it, for every
+        ancestor, not passing through `skip`."""
         dist, nxt, q = {target: 0}, {}, collections.deque([target])
         while q:
             x = q.popleft()
             for p in self.pred[x]:
-                if p not in dist:
+                if p not in dist and p not in skip:
                     dist[p], nxt[p] = dist[x] + 1, x
                     q.append(p)
         return dist, nxt
@@ -113,8 +121,9 @@ class Graph:
     def section(self, i):
         """Markdown lines for one node: entrypoint counts, shortest paths, direct callers."""
         out = [f"Graph node: `{self.label(i)}` (master {self.nodes[i][2]}:{self.nodes[i][3]})"]
-        dist, nxt = self.back(i)
-        eps = sorted((dist[e], self.label(e), e) for e in self.entry if e in dist and e != i)
+        full, untrusted = self.back(i), self.back(i, self.gate)
+        via = {e: untrusted if self.entry[e][0] == "untrusted_external" else full for e in self.entry}
+        eps = sorted((via[e][0][e], self.label(e), e) for e in self.entry if e in via[e][0] and e != i)
         count = collections.Counter(self.entry[e][0] for _, _, e in eps)
         if i in self.entry:
             out.append(f"It is itself an entrypoint ({TRUST.get(self.entry[i][0], self.entry[i][0])}: {self.entry[i][1]}).")
@@ -128,7 +137,7 @@ class Graph:
             if shown:
                 out.append(f"Shortest from {TRUST[trust]} entrypoints:")
                 for d, _, e in shown:
-                    out.append(f"- {self.entry[e][1]}, {d} hop(s): {self.fmt(self.walk(e, nxt))}")
+                    out.append(f"- {self.entry[e][1]}, {d} hop(s): {self.fmt(self.walk(e, via[e][1]))}")
         callers = sorted(self.pred[i].items(), key=lambda kv: self.label(kv[0]))
         if callers:
             more = f" ({len(callers) - MAX_CALLERS} more)" if len(callers) > MAX_CALLERS else ""
@@ -210,21 +219,58 @@ def header(g):
     return f"Call graph of upstream master {g.commit[:12]}, built {g.built}."
 
 
-def match(g, name, qual, path, start):
-    """The master node for a function changed at path:start (head line numbers),
-    and whether its scope matched exactly. Same file and short name; then the
-    same scope, else the same innermost class, else a nearby node whose scope
+def base_lines(root, base):
+    """{path: [(head start, head count, base start, base count)]} hunks of the diff."""
+    out, path = {}, None
+    diff = subprocess.run(["git", "--no-pager", "diff", "-U0", "--no-ext-diff", "--no-textconv",
+                           f"{base}...HEAD", "--", "src", "contrib"],
+                          cwd=root, capture_output=True, text=True).stdout
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+        elif line.startswith("@@") and path:
+            m = re.match(r"@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", line)
+            if m:
+                a, b, c, d = (int(x) if x is not None else 1 for x in m.groups())
+                out.setdefault(path, []).append((c, d, a, b))
+    return out
+
+
+def to_base(hunks, line):
+    """A head line number on the base side: shifted by every hunk before it,
+    or the start of the hunk it is in."""
+    shift = 0
+    for c, d, a, b in hunks:
+        if (c + d <= line) if d else (c < line):
+            shift += b - d
+        elif d and c <= line:
+            return a
+    return line + shift
+
+
+def match(g, name, qual, path, line):
+    """The master node for a function at base line `line` of `path`, and a
+    caveat when the match is not certain. Same file and short name; then the
+    same scope, else the same innermost scope, else a nearby node whose scope
     lacks components (trailmark drops some). Overloads by nearest line."""
     want = scope(qual)
     cands = [i for i, n in enumerate(g.nodes) if n[2] == path and g.short(i) == short(name)]
     for tier, ok in enumerate((
             lambda i, h: h[-len(want):] == want,
-            lambda i, h: len(want) > 1 and want[-2] in h[:-1],
-            lambda i, h: set(h[:-1]) <= set(want[:-1]) and abs(g.nodes[i][3] - start) <= 10)):
+            lambda i, h: len(want) > 1 and len(h) > 1 and h[-2] == want[-2],
+            lambda i, h: set(h[:-1]) <= set(want[:-1]) and abs(g.nodes[i][3] - line) <= 10)):
         hit = [i for i in cands if ok(i, scope(g.label(i)))]
-        if hit:
-            return min(hit, key=lambda i: abs(g.nodes[i][3] - start)), tier == 0
-    return None, False
+        if not hit:
+            continue
+        i = min(hit, key=lambda i: abs(g.nodes[i][3] - line))
+        if tier:
+            return i, "Matched by file and name; the graph's scope differs, so confirm it is this function."
+        if abs(g.nodes[i][3] - line) > 3:   # a template header can put the name 1-3 lines down
+            return i, (f"The nearest graph node with this name is at master line {g.nodes[i][3]}, "
+                       f"not base line {line}: this overload may be missing from the graph, so "
+                       "confirm it is this function.")
+        return i, None
+    return None, None
 
 
 def cmd_pr(root, base):
@@ -260,10 +306,10 @@ def cmd_pr(root, base):
     fns = sorted(best.values(), key=lambda t: (t[2], t[3]))
     if len(fns) > MAX_FUNCS:
         print(f"{len(fns)} changed functions; the first {MAX_FUNCS} by path are listed.\n")
-    done = set()
+    hunks, done = base_lines(root, base), set()
     for name, qual, path, start, end in fns[:MAX_FUNCS]:
         print(f"## `{qual}` -- {path}:{start}-{end}\n")
-        i, exact = match(g, name, qual, path, start)
+        i, caveat = match(g, name, qual, path, to_base(hunks.get(path, []), start))
         if i is None:
             print("Not in the master graph under this name and scope: added or renamed by")
             print("this pull request, or not built on Linux. Inconclusive; read its callers")
@@ -273,8 +319,8 @@ def cmd_pr(root, base):
             print(f"Same graph node as above (`{g.label(i)}`).\n")
             continue
         done.add(i)
-        if not exact:
-            print("Matched by file and name; the graph's scope differs, so confirm it is this function.")
+        if caveat:
+            print(caveat)
         print("\n".join(g.section(i)) + "\n")
 
 

@@ -601,7 +601,7 @@ else
   GRAPH_NOTE="none in this run, so rtool reach and rtool path have nothing to search"
 fi
 PR_BASE_REF="$BASE" python3 -I "$HERE/scripts/reach.py" pr "$CACHE" origin/base > "$CACHE/PR_REACH.md"
-printf '\nrtool reach and rtool path read it. Call graph: %s.\n' "$GRAPH_NOTE" >> "$CACHE/TOOLING.md"
+printf '\nrtool reach and rtool path read the call graph behind PR_REACH.md. Call graph: %s.\n' "$GRAPH_NOTE" >> "$CACHE/TOOLING.md"
 
 # rtool on PATH for the review, alone in a directory outside the checkout so
 # the model can run it and not rewrite it.
