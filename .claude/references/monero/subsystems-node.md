@@ -153,9 +153,20 @@ construction. Dispatch is through overloaded free `do_serialize` functions at
   `make_pool_supplement_from_block_entry`
   (`src/cryptonote_protocol/block_entry_utils.h`), which passes
   `require_eof=true`.
-- Varints must be **canonical**: `tools::read_varint` returns
+- Varints are **mostly canonical**: `tools::read_varint` returns
   `EVARINT_REPRESENT` (-2) for a `0x00` continuation byte at a non-zero shift
-  and `EVARINT_OVERFLOW` (-1) above the target width.
+  and `EVARINT_OVERFLOW` (-1) above the target width. **One non-canonical
+  form gets through: a varint truncated at end of buffer.** If the input
+  ends right after a byte with the continuation bit set, `read_varint`
+  returns the positive count of bytes read, with a partial value (the
+  `if (first == last) return read;` branch in `src/common/varint.h`). Only
+  empty input returns 0, which callers treat as failure.
+  `binary_archive<false>::serialize_uvarint`
+  (`src/serialization/binary_archive.h`) checks only
+  `good_ &= (1 <= tools::read_varint(current, end, v))`, so it accepts that
+  partial value. A blob whose last field is a varint therefore parses with a
+  trailing `0x80` read as 0. For example, a block blob whose final
+  `tx_hashes` count byte is `0x80` parses as count 0.
 - Every read-side allocation bound is keyed on
   `binary_archive<false>::remaining_bytes()`, and there are only a handful:
   `container.h` (element count ≤ bytes left, then
