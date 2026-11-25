@@ -477,8 +477,13 @@ runtime DB choice) → `BlockchainLMDB::open` → `Blockchain::init` (adds
 genesis to an empty DB, pops top blocks whose version disagrees with the
 ideal hard-fork version, `load_compiled_in_block_hashes`) →
 `tx_memory_pool::init` (re-parses each stored pool tx's prefix and rebuilds
-the key-image and fee indices; no consensus re-validation unless the
-hard-fork version changed during init, which calls `tx_memory_pool::validate`) →
+the key-image and fee indices; it does no consensus re-validation and never
+calls `tx_memory_pool::validate` itself. It is `core::init` that calls
+`m_mempool.validate` after `m_mempool.init`, and only when the top block's
+fork version differs from `get_current_hard_fork_version` -- the version of
+the next block -- i.e. the node stopped at a fork boundary; see
+`core::init` in `src/cryptonote_core/cryptonote_core.cpp`,
+`grep -n -A12 'session_start_height' src/cryptonote_core/cryptonote_core.cpp`) →
 `core::update_checkpoints` → `miner::init` (parses flags; **does not start
 mining** — `--start-mining` takes effect in `miner::on_synchronized`) →
 `drop_alt_blocks()` unless `--keep-alt-blocks`.
