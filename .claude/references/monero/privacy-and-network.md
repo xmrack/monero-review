@@ -388,12 +388,22 @@ for public and private zones.
   (`try_ping` in `handle_handshake`) enters the white list.
 - **Sharing.** `get_peerlist_head` with `anonymize` shuffles the whole white
   list, keeps `P2P_DEFAULT_PEERS_IN_HANDSHAKE`, and zeroes `last_seen`;
-  `sent_addresses` stops repeats on a connection.
+  `sent_addresses` stops repeats on a connection. `handle_handshake` and
+  `handle_timed_sync` then strip only forbidden IPv6 entries
+  (`is_forbidden_ipv6_address`) from that output; no other filter runs on
+  the send side.
 - **Receiving.** `handle_remote_peerlist` rejects more than
   `P2P_MAX_PEERS_IN_HANDSHAKE` as spam and entries from another zone.
-  `sanitize_peerlist` drops loopback, local, zero-IP and port-equals-RPC-port
-  entries and zeroes `last_seen`; `merge_peerlist` adds the rest to gray. This
-  runs for timed-sync responses from inbound peers too.
+  `sanitize_peerlist` drops loopback, local and zero-IP entries, forbidden
+  IPv6 entries (v4-mapped or unspecified, via `is_forbidden_ipv6_address`),
+  IPv4 entries whose port equals the RPC port (the port test is IPv4 only),
+  and entries whose non-zero `pruning_seed` is outside
+  `make_pruning_seed(1..2^CRYPTONOTE_PRUNING_LOG_STRIPES)`; it zeroes
+  `last_seen`, and `merge_peerlist` adds the rest to gray. This runs for
+  timed-sync responses from inbound peers too. See
+  `node_server::sanitize_peerlist` and `is_forbidden_ipv6_address` in
+  `src/p2p/net_node.inl`; `git grep -n 'is_forbidden_ipv6_address(peer.adr)' -- src/p2p/net_node.inl`
+  lists the call sites.
 - **Bans.** `add_host_fail` blocks after `P2P_IP_FAILS_BEFORE_BLOCK` failures
   for `P2P_IP_BLOCKTIME`; also `block_host`, `block_subnet`, `--ban-list`,
   `--enable-dns-blocklist` and unrestricted `set_bans`. After a 2026 DNS
