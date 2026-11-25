@@ -1701,7 +1701,7 @@ jobs:
             cp "$graph" callgraph.json
             graph_note="call graph of master $(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["commit"][:12])' callgraph.json) in callgraph.json (use rtool reach, not cat)"
           else
-            graph_note="no call graph in this run: rtool reach and rtool path print nothing"
+            graph_note="none in this run, so rtool reach and rtool path have nothing to search"
           fi
           PR_BASE_REF="$BASE_REF" python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" pr . origin/base > PR_REACH.md
           echo "PR_REACH.md: $(grep -c '^## ' PR_REACH.md || true) changed function(s); $graph_note"

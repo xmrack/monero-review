@@ -597,7 +597,7 @@ if [ -f "$CALLGRAPH" ]; then
   cp "$CALLGRAPH" "$CACHE/callgraph.json"
   GRAPH_NOTE="call graph of master $(jq -r '.commit[:12]' "$CACHE/callgraph.json") in callgraph.json (use rtool reach, not cat)"
 else
-  GRAPH_NOTE="no call graph in this run: rtool reach and rtool path print nothing"
+  GRAPH_NOTE="none in this run, so rtool reach and rtool path have nothing to search"
 fi
 PR_BASE_REF="$BASE" python3 -I "$HERE/scripts/reach.py" pr "$CACHE" origin/base > "$CACHE/PR_REACH.md"
 printf '\nrtool reach and rtool path read it. Call graph: %s.\n' "$GRAPH_NOTE" >> "$CACHE/TOOLING.md"
