@@ -208,8 +208,10 @@ C++ binaries. A change to one of those is not exercised by CI's test step.
 `tests/unit_tests/fcmp_pp.cpp` (proof verification from the fixed vectors
 `tests/data/fcmp_pp_verify_inputs_*in.bin`), the `fcmp_pp` cases in
 `tests/unit_tests/crypto.cpp`, `tests/performance_tests/fcmp_pp.h`, and the
-`cncrypto` vectors below; the only fuzz target is `fcmp-pp-point`, and the
-DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
+`cncrypto` vectors below; there are two FCMP++ fuzz targets,
+`fcmp-pp-point` and `fcmp-pp-curve-trees` (`ls tests/fuzz/ | grep fcmp`), the
+second (`fcmp-pp-curve-trees_fuzz_tests`, linking `fcmp_pp`) built only inside
+the `if(OSSFUZZ)` block of `tests/fuzz/CMakeLists.txt`; and the DB tree code runs in tests only where `ENABLE_FCMP_INTEGRATION` is on
 (`git grep -il 'fcmp\|curve_trees' -- tests`).
 
 Also: under `OSSFUZZ=ON` or `CMAKE_BUILD_TYPE=fuzz`, `tests/CMakeLists.txt`
