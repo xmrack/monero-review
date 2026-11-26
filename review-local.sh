@@ -8,6 +8,8 @@
 #   TESTS=1 ./review-local.sh 9876      # also build with ASan and run the tests
 #                                       # in an offline container (needs docker);
 #                                       # TESTS=core adds the consensus suite
+#   HEAD_GRAPH=1 ./review-local.sh 9876 # also build the head's call graph
+#                                       # (needs docker, about 15 minutes)
 #
 # Findings land in reviews/pr-<n>-<sha>.md
 #
@@ -600,8 +602,32 @@ if COMMIT=$(python3 -I -c 'import json, sys; g = json.load(open(sys.argv[1])); a
 else
   GRAPH_NOTE="none in this run, so rtool reach and rtool path have nothing to search"
 fi
+HEAD_DEST=$(git -C "$CACHE" rev-parse --path-format=absolute --git-path monero-review-callgraph-head.json)
+rm -f "$HEAD_DEST"
+# The head's graph, as the callgraph-pr job builds it. Off unless asked.
+case "${HEAD_GRAPH:-0}" in
+  0|false|"") ;;
+  *)
+    echo "==> building the head's call graph in an offline container"
+    HCOPY=$(mktemp -d)
+    git -C "$CACHE" worktree add -q --detach "$HCOPY/src" HEAD
+    # A fresh work directory: the build runs the pull request's code.
+    if git -C "$HCOPY/src" -c protocol.allow=never -c protocol.https.allow=always \
+         submodule update -q --init --recursive &&
+       GATE=advisory WORK="$HCOPY/work" bash "$HERE/callgraph/run.sh" "$HCOPY/src" "$HCOPY/out" &&
+       python3 -I "$HERE/callgraph/take.py" "$HCOPY/out" "$HCOPY/taken" &&
+       [ -f "$HCOPY/taken/callgraph.json" ]; then
+      install -m 0444 "$HCOPY/taken/callgraph.json" "$HEAD_DEST"
+    else
+      echo "!! the head's call graph failed to build; reviewing without it" >&2
+    fi
+    git -C "$CACHE" worktree remove --force "$HCOPY/src" || true
+    rm -rf "$HCOPY"
+    ;;
+esac
 PR_BASE_REF="$BASE" python3 -I "$HERE/scripts/reach.py" pr "$CACHE" origin/base > "$CACHE/PR_REACH.md"
-printf '\nrtool reach and rtool path read the call graph behind PR_REACH.md. Call graph: %s.\n' "$GRAPH_NOTE" >> "$CACHE/TOOLING.md"
+printf '\nrtool reach and rtool path read the call graph behind PR_REACH.md. Call graph: %s. Head call graph: %s.\n' \
+  "$GRAPH_NOTE" "$(python3 -I "$HERE/scripts/reach.py" head "$CACHE" 2>&1 | head -c 400)" >> "$CACHE/TOOLING.md"
 
 # rtool on PATH for the review, alone in a directory outside the checkout so
 # the model can run it and not rewrite it.

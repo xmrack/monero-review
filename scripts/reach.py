@@ -4,12 +4,18 @@
   reach.py pr <checkout> [base-ref]      PR_REACH.md on stdout: every function the
                                          pull request changes, the entrypoints that
                                          reach it and their shortest paths
-  reach.py fn <checkout> <function> [path[:line]]   (line: master's, as printed)
+  reach.py fn <checkout> <function> [path[:line]]   (line: as printed)
   reach.py path <checkout> <from> <to>
+  reach.py head <checkout>               one line: the head graph's state
 
 The graph is master's, built from GCC call-graph dumps and libclang and merged
 into a trailmark snapshot. A path is a lead to confirm in the source; no path
 proves nothing. Context only: any failure prints a note.
+
+A graph of the pull request's head, built the same way from its code, may sit
+beside master's. Its names and edges are the pull request's claims, so it only
+adds leads: the calls the pull request adds, and entrypoints that reach a
+function only at the head. Trust comes from master wherever a node is in both.
 """
 import collections
 import importlib.util
@@ -23,6 +29,13 @@ MAX_FUNCS = 60
 PATHS = {"untrusted_external": 4, "semi_trusted_external": 3}
 MAX_CALLERS = 15
 GRAPH = "monero-review-callgraph.json"   # in the checkout's git directory, out of rg's way
+HEAD_GRAPH = "monero-review-callgraph-head.json"
+HEAD_MAX = 30 << 20
+LABEL = re.compile(r"[ -_a-~]{1,400}")    # printable ASCII, no backtick
+QUALIFIER = re.compile(r"\b(?:namespace|class|struct|union|enum)\s+([A-Za-z_]\w*)|\b([A-Za-z_]\w*)\s*(?:<[^;{}]*?>)?\s*(?:::|\()")
+HEAD_PART = re.compile(r"~?[A-Za-z_]\w*|\{lambda(#\d+)?\}|\(anonymous\)|"
+                       r"operator(\(\)|\[\]|->\*?|<=>|<<=?|>>=?|&&|\|\||\+\+|--|[-+*/%^&|~!=<>,]=?)")
+NODE_PATH = re.compile(r"(src|contrib)/[A-Za-z0-9_./+-]{1,300}")
 INFERRED = {"trailmark", "gcc_instantiation_kept", "gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
             "reference", "reference_instantiation", "lambda", "function_table"}
 # The daemon and wallet RPC servers share one HTTP parser, an untrusted
@@ -45,7 +58,9 @@ HOW = """How to read this:
   `function_table` hops are inferred from the class hierarchy or from where
   a callback is registered. All of these are flagged *inferred hops*.
 - No path, or a function missing from the graph, proves nothing. The graph
-  is of master, so calls this pull request adds are absent, and it covers one
+  is of master, so calls this pull request adds are absent from it. The head
+  graph, when there is one, is built from the pull request's own code: what
+  it adds is a lead to confirm, what it lacks proves nothing. Both cover one
   Linux build. asio handlers hang off the code that registers them, not off
   `io_context::run()`.
 - Paths marked *conditional* pass through connection teardown
@@ -59,16 +74,22 @@ HOW = """How to read this:
 - The daemon is untrusted by the wallet: wallet functions that ask it for
   data, and `wallet2::refresh`, are untrusted entrypoints ("daemon reply to
   the wallet"), since a remote node chooses the reply.
-- A label shared by several functions (overloads) carries its master
-  `path:line`; pass that to `rtool reach <fn> <path>:<line>`."""
+- A label shared by several functions (overloads) carries its `path:line`
+  (master's; the head's in a section from the head graph); pass that to
+  `rtool reach <fn> <path>:<line>`."""
 
 
 class Graph:
-    def __init__(self, path):
+    def __init__(self, path, side="master"):
+        if side == "head" and os.path.getsize(path) > HEAD_MAX:
+            raise Bad("too large")
         g = json.load(open(path))
         if g.get("format") != "monero-review-callgraph/1":
             raise ValueError("unknown call graph format")
-        self.commit, self.built = g["commit"], g["built"]
+        if side == "head":
+            validate(g)
+        self.side = side
+        self.commit, self.built, self.rules = g["commit"], g["built"], g.get("rules")
         self.nodes = g["nodes"]                  # [id, label, path, start, end]
         for n in self.nodes:
             n[1] = n[1].replace("::::", "::(anonymous)::")
@@ -78,21 +99,27 @@ class Graph:
         for a, b, o in g["edges"]:
             self.pred[b][a] = self.origins[o]
             self.succ[a][b] = self.origins[o]
-        self.entry = {e: (t, d) for e, t, d in g["entrypoints"]}
         self.gate = {i for i, n in enumerate(self.nodes) if WALLET_GATE.search(strip_targs(n[1]))}
-        rpc_map = {i for i, n in enumerate(self.nodes) if RPC_MAP.search(strip_targs(n[1]))}
-        self.cut = {(m, e) for e, (t, d) in self.entry.items() if d == UNRESTRICTED
-                    for m in rpc_map if e in self.succ[m]}
-        self.cut |= {tuple(x) for x in g.get("untrusted_cut", [])}   # their request parsers too
+        self.rpc_map = {i for i, n in enumerate(self.nodes) if RPC_MAP.search(strip_targs(n[1]))}
+        self.untrusted_cut = {tuple(x) for x in g.get("untrusted_cut", [])}   # their request parsers too
+        self.set_entry({e: (t, d) for e, t, d in g["entrypoints"]}, self.untrusted_cut)
         self.shared = collections.Counter(n[1] for n in self.nodes)
+
+    def set_entry(self, entry, cut):
+        self.entry = entry
+        self.cut = {(m, e) for e, (t, d) in entry.items() if d == UNRESTRICTED
+                    for m in self.rpc_map if e in self.succ[m]} | cut
 
     def label(self, i):
         return self.nodes[i][1]
 
     def name(self, i):
-        """The label, with master path:line when other functions share it."""
+        """The label, with path:line when other functions share it."""
         n = self.nodes[i]
         return f"{n[1]} ({n[2]}:{n[3]})" if self.shared[n[1]] > 1 else n[1]
+
+    def ref(self, i):
+        return f"`{self.name(i)}`"
 
     def short(self, i):
         return short(self.nodes[i][1])
@@ -125,9 +152,9 @@ class Graph:
         return path
 
     def fmt(self, path):
-        parts = [f"`{self.name(path[0])}`"]
+        parts = [self.ref(path[0])]
         for a, b in zip(path, path[1:]):
-            parts.append(f"-({self.succ[a][b]})-> `{self.name(b)}`")
+            parts.append(f"-({self.succ[a][b]})-> {self.ref(b)}")
         flags = []
         hops = [self.succ[a][b] for a, b in zip(path, path[1:])]
         if any(h in INFERRED for h in hops):
@@ -136,17 +163,15 @@ class Graph:
             flags.append("conditional")
         return " ".join(parts) + (f"  *[{', '.join(flags)}]*" if flags else "")
 
-    def section(self, i):
-        """Markdown lines for one node: entrypoint counts, shortest paths, direct callers."""
-        out = [f"Graph node: `{self.label(i)}` (master {self.nodes[i][2]}:{self.nodes[i][3]})"]
+    def reached(self, i):
+        """[(hops, label, entrypoint)] for the entrypoints that reach `i`, and the
+        BFS each was found by."""
         full, untrusted = self.back(i), self.back(i, self.gate, self.cut)
         via = {e: untrusted if self.entry[e][0] == "untrusted_external" else full for e in self.entry}
-        eps = sorted((via[e][0][e], self.label(e), e) for e in self.entry if e in via[e][0] and e != i)
-        count = collections.Counter(self.entry[e][0] for _, _, e in eps)
-        if i in self.entry:
-            out.append(f"It is itself an entrypoint ({TRUST.get(self.entry[i][0], self.entry[i][0])}: {self.entry[i][1]}).")
-        out.append("Reached from " + ", ".join(f"{count[t]} {TRUST[t]}" for t in TRUST)
-                   + " entrypoint(s).")
+        return sorted((via[e][0][e], self.label(e), e) for e in self.entry if e in via[e][0] and e != i), via
+
+    def paths(self, eps, via):
+        out = []
         for trust, cap in PATHS.items():
             shown, labels = [], set()
             for x in eps:
@@ -156,11 +181,23 @@ class Graph:
                 out.append(f"Shortest from {TRUST[trust]} entrypoints:")
                 for d, _, e in shown:
                     out.append(f"- {self.entry[e][1]}, {d} hop(s): {self.fmt(self.walk(e, via[e][1]))}")
+        return out
+
+    def section(self, i):
+        """Markdown lines for one node: entrypoint counts, shortest paths, direct callers."""
+        out = [f"Graph node: `{self.label(i)}` ({self.side} {self.nodes[i][2]}:{self.nodes[i][3]})"]
+        eps, via = self.reached(i)
+        count = collections.Counter(self.entry[e][0] for _, _, e in eps)
+        if i in self.entry:
+            out.append(f"It is itself an entrypoint ({TRUST.get(self.entry[i][0], self.entry[i][0])}: {self.entry[i][1]}).")
+        out.append("Reached from " + ", ".join(f"{count[t]} {TRUST[t]}" for t in TRUST)
+                   + " entrypoint(s).")
+        out += self.paths(eps, via)
         callers = sorted(self.pred[i].items(), key=lambda kv: self.label(kv[0]))
         if callers:
             more = f" ({len(callers) - MAX_CALLERS} more)" if len(callers) > MAX_CALLERS else ""
             out.append("Direct callers: " + ", ".join(
-                f"`{self.name(c)}` ({o})" for c, o in callers[:MAX_CALLERS]) + more)
+                f"{self.ref(c)} ({o})" for c, o in callers[:MAX_CALLERS]) + more)
         else:
             out.append("No callers in the graph.")
         return out
@@ -179,6 +216,177 @@ class Graph:
                     prev[y] = x
                     q.append(y)
         return None
+
+
+CERTAIN = {"gcc", "gcc_instantiation"}
+ORIGINS = CERTAIN | INFERRED
+
+
+class Bad(Exception):
+    pass
+
+
+def validate(g):
+    """A head graph comes out of a build of the pull request's code, which can
+    write anything there: check every field that is printed or indexed by."""
+    def need(ok):
+        if not ok:
+            raise Bad("malformed")
+    need(isinstance(g.get("commit"), str) and re.fullmatch(r"[0-9a-f]{40}", g["commit"]))
+    need(isinstance(g.get("built"), str) and LABEL.fullmatch(g["built"]))
+    need(isinstance(g.get("rules"), str) and re.fullmatch(r"[0-9a-f]{16}", g["rules"]))
+    o = g.get("origins")
+    need(isinstance(o, list) and o and all(isinstance(x, str) and x in ORIGINS for x in o))
+    nodes = g.get("nodes")
+    need(isinstance(nodes, list) and 0 < len(nodes) <= 200000)
+    for n in nodes:
+        need(isinstance(n, list) and len(n) == 5 and isinstance(n[0], str)
+             and isinstance(n[1], str) and LABEL.fullmatch(n[1])
+             and isinstance(n[2], str) and NODE_PATH.fullmatch(n[2]) and ".." not in n[2]
+             and type(n[3]) is int and type(n[4]) is int and 0 < n[3] <= n[4] < 10**7)
+    idx = lambda x: type(x) is int and 0 <= x < len(nodes)
+    for key, size in (("edges", 3), ("entrypoints", 3), ("untrusted_cut", 2)):
+        need(isinstance(g.get(key, []), list) and len(g.get(key, [])) <= 10**6)
+        for e in g.get(key, []):
+            need(isinstance(e, list) and len(e) == size and idx(e[0]))
+            if key == "edges":
+                need(idx(e[1]) and type(e[2]) is int and 0 <= e[2] < len(o))
+            elif key == "entrypoints":
+                need(e[1] in TRUST and isinstance(e[2], str) and LABEL.fullmatch(e[2]))
+            else:
+                need(idx(e[1]))
+
+
+class Head:
+    """The head graph `h` beside master's `m`. A head node is master's when both
+    have its label in its file (overloads paired by nearest mapped line); trust
+    is master's for those and the head graph's only for the others. Removed
+    calls and lower counts are never reported as such."""
+    def __init__(self, root, m, path, mapped, moved):
+        h = self.h = Graph(path, "head")
+        if len(h.nodes) > 2 * len(m.nodes) or sum(map(len, h.succ.values())) > 3 * sum(map(len, m.succ.values())):
+            raise Bad("too large")
+        self.m, self.root, self.moved, self.files = m, root, moved, {}
+        group = collections.defaultdict(lambda: ([], []))
+        for i, n in enumerate(m.nodes):
+            group[(n[1], n[2])][1].append(i)
+        for i, n in enumerate(h.nodes):
+            if (n[1], n[2]) in group:
+                group[(n[1], n[2])][0].append(i)
+        self.to_m = {}
+        for hs, ms in group.values():
+            used = set()
+            for _, a, b in sorted((abs(mapped(h.nodes[a][2], h.nodes[a][3]) - m.nodes[b][3]), a, b)
+                                  for a in hs for b in ms):
+                if a not in self.to_m and b not in used:
+                    self.to_m[a] = b
+                    used.add(b)
+        self.from_m = {b: a for a, b in self.to_m.items()}
+        # A name only the head graph has is printed only as printable() allows,
+        # and an entrypoint's description only if master uses it.
+        self.vocab = {c for n in m.nodes for c in scope(n[1])}
+        for i, n in enumerate(h.nodes):
+            if i not in self.to_m:
+                name = self.printable(n)
+                n[1] = name or (f"(a name not in the head source, {n[2]}:{n[3]})" if self.source(n[2])
+                                else "(a name the head graph puts in no file of the checkout)")
+        h.shared = collections.Counter(n[1] for n in h.nodes)
+        descs = {d for t, d in m.entry.values()}
+        entry = {}
+        for i in range(len(h.nodes)):
+            j = self.to_m.get(i)
+            if j is None and i in h.entry:
+                t, d = h.entry[i]
+                entry[i] = (t, d if d in descs else "an entrypoint only the head graph has")
+            elif j is not None and j in m.entry:
+                entry[i] = m.entry[j]
+        h.set_entry(entry, {(a, b) for a, b in h.untrusted_cut
+                            if b not in self.to_m or (self.to_m.get(a), self.to_m[b]) in m.cut})
+        self.partial = len(h.nodes) < 0.9 * len(m.nodes)
+
+    def source(self, path):
+        """(lines, the names it uses as a scope) of a file in the head checkout, or None."""
+        if path not in self.files:
+            f = os.path.realpath(os.path.join(self.root, path))
+            try:
+                ok = f.startswith(os.path.realpath(self.root) + os.sep)
+                text = open(f, errors="replace").read() if ok else None
+            except OSError:
+                text = None
+            self.files[path] = text and (text.split("\n"), {a or b for a, b in QUALIFIER.findall(text)})
+        return self.files[path]
+
+    def printable(self, n):
+        """The name to print for a node only the head graph has, else None: no
+        template arguments; every component an identifier, destructor, operator,
+        lambda or anonymous namespace; the last a word within 3 lines of where
+        the node starts in the head source; the rest scopes master's graph has,
+        or names that file declares, qualifies with or calls."""
+        src = self.source(n[2])
+        if not src:
+            return None
+        lines, idents = src
+        name = strip_targs(n[1])
+        parts = name.split("::")
+        if not all(HEAD_PART.fullmatch(p) for p in parts) or not all(
+                p in self.vocab or p in idents or p[0] in "({" for p in parts[:-1]):
+            return None
+        last, near = parts[-1], "\n".join(lines[max(0, n[3] - 3):n[3] + 3])
+        if last.startswith("{"):
+            return name if "[" in near else None
+        word = "operator" if last.startswith("operator") else last.lstrip("~")
+        return name if re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", near) else None
+
+    def intro(self):
+        out = [f"Head graph: built the same way from this pull request's head {self.h.commit[:12]}, "
+               "so its names and edges are the pull request's own code compiled and analysed: "
+               "leads, never evidence. A name only the head graph has is shown without template "
+               "arguments, and only if it is a plain C++ name found where the graph says it is "
+               "defined; else its path:line. Trust is master's for every function in both graphs."]
+        if self.moved:
+            out.append(f"Master changed {len(self.moved)} file(s) under src and contrib since this "
+                       "branch's merge-base, so a difference between the graphs can be master's; "
+                       "the calls of a function master changed are not compared.")
+        if self.partial:
+            out.append(f"The head graph has {len(self.h.nodes)} functions to master's "
+                       f"{len(self.m.nodes)} (part of the build failed?): calls it lacks are not listed.")
+        return out
+
+    def delta(self, hi, mi, path):
+        """The calls of head node `hi` that master node `mi` lacks, and the reverse."""
+        h, m = self.h, self.m
+        n = m.nodes[mi]
+        if any(a <= n[4] and n[3] < a + max(b, 1) for c, d, a, b in self.moved.get(path, [])):
+            return ["Master changed this function since the branch point: calls not compared."]
+        # Callees by node, so a call to a new overload counts.
+        mine = {self.to_m.get(j) for j in h.succ[hi]}
+        out = []
+        add = sorted((o not in CERTAIN, h.label(j), j, o) for j, o in h.succ[hi].items()
+                     if self.to_m.get(j) not in m.succ[mi])
+        if add:
+            more = f" ({len(add) - MAX_CALLERS} more)" if len(add) > MAX_CALLERS else ""
+            out.append("Calls this pull request adds (head graph): " + ", ".join(
+                f"{h.ref(j)} ({o})" for _, _, j, o in add[:MAX_CALLERS]) + more)
+        gone = sorted((m.label(j), j) for j, o in m.succ[mi].items() if o in CERTAIN and j not in mine)
+        if gone and not self.partial:
+            more = f" ({len(gone) - MAX_CALLERS} more)" if len(gone) > MAX_CALLERS else ""
+            out.append("Compiler calls in master the head graph lacks (removed, or missed by the "
+                       "head build: the weakest lead): " + ", ".join(
+                           m.ref(j) for _, j in gone[:MAX_CALLERS]) + more)
+        return out
+
+    def new_reach(self, hi, mi):
+        """Entrypoints that reach head node `hi` but, at that trust, not master node `mi`."""
+        h, m = self.h, self.m
+        old = {(e, m.entry[e][0]) for _, _, e in m.reached(mi)[0]}
+        eps, via = h.reached(hi)
+        new = [x for x in eps if h.entry[x[2]][0] in PATHS
+               and (self.to_m.get(x[2]), h.entry[x[2]][0]) not in old]
+        if not new:
+            return []
+        count = collections.Counter(h.entry[e][0] for _, _, e in new)
+        return ["Reached in the head graph only from " + ", ".join(
+            f"{count[t]} {TRUST[t]}" for t in PATHS) + " entrypoint(s):"] + h.paths(new, via)
 
 
 OPERATOR = re.compile(r"\boperator\s*(\(\)|\[\]|->\*?|<=>|<<=?|>>=?|&&|\|\||\+\+|--|[-+*/%^&|~!=<>,]=?)")
@@ -256,13 +464,34 @@ def base_lines(root, rng):
 
 def to_graph(root, base, commit):
     """Line maps head -> merge-base -> the graph's commit (or `base`, when the
-    commit is not in this clone: the graph is at most a day older)."""
+    commit is not in this clone: the graph is at most a day older), and the
+    hunks between those two, {path: [(merge-base start, count, graph start, count)]}."""
     git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True)
     mb = git("merge-base", base, "HEAD").stdout.strip()
     tip = commit if git("cat-file", "-e", commit + "^{commit}").returncode == 0 else base
     head = base_lines(root, [f"{base}...HEAD"])
     ahead = {p: [(a, b, c, d) for c, d, a, b in h] for p, h in base_lines(root, [mb, tip]).items()} if mb else {}
-    return head, lambda path, line: to_base(ahead.get(path, []), to_base(head.get(path, []), line))
+    return head, lambda path, line: to_base(ahead.get(path, []), to_base(head.get(path, []), line)), ahead
+
+
+def head_of(root, m, mapped, moved):
+    """(Head or None, a sentence on the head graph)."""
+    p = graph_path(root)
+    p = p and os.path.join(os.path.dirname(p), HEAD_GRAPH)
+    if not p or not os.path.isfile(p):
+        return None, "No graph of this pull request's head in this run: none is built without C or C++ changes, or its build failed."
+    try:
+        head = Head(root, m, p, mapped, moved)
+    except Bad as exc:
+        return None, f"The graph of this pull request's head was not used: {exc}."
+    except Exception:  # noqa: BLE001
+        return None, "The graph of this pull request's head was not used: malformed."
+    sha = subprocess.run(["git", "-C", root, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    if head.h.commit != sha:
+        return None, "The graph of this pull request's head was built for another commit, so it was not used."
+    if head.h.rules != m.rules:
+        return None, "The graph of this pull request's head was built by other rules than master's, so it was not used."
+    return head, None
 
 
 def to_base(hunks, line):
@@ -350,19 +579,28 @@ def cmd_pr(root, base):
     fns = sorted(best.values(), key=lambda t: (t[2], t[3]))
     if len(fns) > MAX_FUNCS:
         print(f"{len(fns)} changed functions; the first {MAX_FUNCS} by path are listed.\n")
-    hunks, mapped = to_graph(root, base, g.commit)
+    hunks, mapped, moved = to_graph(root, base, g.commit)
+    head, why = head_of(root, g, mapped, moved)
+    print("\n".join(head.intro()) + "\n" if head else why + "\n")
     done = set()
     for name, qual, path, start, end in fns[:MAX_FUNCS]:
         print(f"## `{qual}` -- {path}:{start}-{end}\n")
-        if added(hunks.get(path, []), start, end):
-            print("Added by this pull request, so not in the master graph. Inconclusive;")
-            print("read its callers in the source.\n")
-            continue
-        i, caveat = match(g, name, qual, path, mapped(path, start))
+        hi, hcaveat = match(head.h, name, qual, path, start) if head else (None, None)
+        new = added(hunks.get(path, []), start, end)
+        i, caveat = (None, None) if new else match(g, name, qual, path, mapped(path, start))
         if i is None:
-            print("Not in the master graph under this name and scope: added or renamed by")
-            print("this pull request, or not built on Linux. Inconclusive; read its callers")
-            print("in the source.\n")
+            if new:
+                print("Added by this pull request, so not in the master graph.", end=" ")
+            else:
+                print("Not in the master graph under this name and scope: added or renamed by")
+                print("this pull request, or not built on Linux.", end=" ")
+            if hi is None:
+                print("Inconclusive;\nread its callers in the source.\n")
+            else:
+                print("From the head graph (leads only):\n")
+                if hcaveat:
+                    print(hcaveat.replace("master line", "head line"))
+                print("\n".join(head.h.section(hi)) + "\n")
             continue
         if caveat:
             print(caveat)
@@ -370,7 +608,28 @@ def cmd_pr(root, base):
             print(f"Same graph node as above (`{g.name(i)}`).\n")
             continue
         done.add(i)
-        print("\n".join(g.section(i)) + "\n")
+        print("\n".join(g.section(i)))
+        if head and hi is None:
+            print("Not found in the head graph.")
+        elif head and head.to_m.get(hi) != i:
+            print("The head graph's node for it is not this master node, so the two are not compared.")
+        elif head:
+            print("\n".join(head.delta(hi, i, path) + head.new_reach(hi, i)))
+        print()
+
+
+def head_for(root, g):
+    hunks, mapped, moved = to_graph(root, os.environ.get("REACH_BASE", "origin/base"), g.commit)
+    return head_of(root, g, mapped, moved)
+
+
+def pick(g, name, path, line):
+    """Nodes named `name` (in `path`, nearest `line`), and a caveat."""
+    found = g.find(name, path)
+    if not found or line is None:
+        return found, None
+    i = min(found, key=lambda i: abs(g.nodes[i][3] - line))
+    return [i], nearness(g, found, i, line)
 
 
 def cmd_fn(root, name, path=None):
@@ -382,27 +641,54 @@ def cmd_fn(root, name, path=None):
     line = None
     if path and re.fullmatch(r".+:\d+", path):
         path, line = path.rsplit(":", 1)
-    found = g.find(name, path and os.path.normpath(path))
-    if not found:
-        print(f"# no function named {name} in the master graph; a miss is inconclusive")
-        return 0
-    if line:
-        # A master line, as this tool and PR_REACH.md print them.
         line = int(line)
-        pick = min(found, key=lambda i: abs(g.nodes[i][3] - line))
-        caveat = nearness(g, found, pick, line)
-        if caveat:
-            print("# " + caveat)
-        found = [pick]
+    path = path and os.path.normpath(path)
+    found, caveat = pick(g, name, path, line)
+    side, head = g, None
+    if not found:
+        head = head_for(root, g)[0]
+        if head:
+            # Only in the head graph: the line, if any, is the head's, as printed.
+            found, caveat = pick(head.h, name, path, line)
+            side = head.h
+            caveat = caveat and caveat.replace("master line", "head line")
+            if found:
+                print("# not in the master graph; from the graph of this pull request's head, "
+                      "built from its own code: leads only")
+    if not found:
+        print(f"# no function named {name} in the {'master or head graph' if head else 'master graph'}; "
+              "a miss is inconclusive")
+        return 0
+    if caveat:
+        print("# " + caveat)
     if len(found) > 5:
         print(f"# {len(found)} matches; qualify the name, or give path:line to pick one:")
         for i in found[:40]:
-            print(f"  {g.label(i)}  {g.nodes[i][2]}:{g.nodes[i][3]}")
+            print(f"  {side.label(i)}  {side.nodes[i][2]}:{side.nodes[i][3]}")
         return 0
     for i in found:
-        print(f"\n## {g.label(i)}  {g.nodes[i][2]}:{g.nodes[i][3]}")
-        print("\n".join(g.section(i)))
+        print(f"\n## {side.label(i)}  {side.side} {side.nodes[i][2]}:{side.nodes[i][3]}")
+        print("\n".join(side.section(i)))
+    if side is g:
+        # Master's answer first: the head graph can be slow to load.
+        sys.stdout.flush()
+        head = head_for(root, g)[0]
+        for i in found:
+            lines = head.new_reach(head.from_m[i], i) if head and i in head.from_m else []
+            if lines:
+                print(f"\n## {g.label(i)}: in the graph of this pull request's head (leads only)")
+                print("\n".join(lines))
     return 0
+
+
+def route(g, A, B):
+    """The shortest path an untrusted client could take, else any, with a note."""
+    p = g.shortest(A, B, g.gate, g.cut)
+    if p:
+        return p, []
+    p = g.shortest(A, B)
+    return p, ["# only through the wallet RPC or a daemon RPC method restricted mode refuses,",
+               "# both semi-trusted: not a path for an untrusted client"]
 
 
 def cmd_path(root, a, b):
@@ -410,22 +696,39 @@ def cmd_path(root, a, b):
     if g is None:
         print("no call graph in this run")
         return 0
+    print(f"# {header(g)}")
     A, B = g.find(a), set(g.find(b))
+    p, note = route(g, A, B) if A and B else (None, [])
+    if p:
+        print("\n".join(note + [g.fmt(p)]))
+        return 0
+    head = head_for(root, g)[0]
+    if head:
+        HA, HB = head.h.find(a), set(head.h.find(b))
+        q, note = route(head.h, HA, HB) if HA and HB else (None, [])
+        if q:
+            print("# none in the master graph; in the graph of this pull request's head, "
+                  "built from its own code: a lead to confirm")
+            print("\n".join(note + [head.h.fmt(q)]))
+            return 0
     if not A or not B:
         print(f"# not in the master graph: {a if not A else b}; inconclusive")
+    else:
+        print(f"# no path from {a} to {b} in the graph; inconclusive (see PR_REACH.md)")
+    return 0
+
+
+def cmd_head(root):
+    g = graph_of(root)
+    if g is None:
+        print("no master call graph, so the head graph is not used")
         return 0
-    print(f"# {header(g)}")
-    p = g.shortest(A, B, g.gate, g.cut)
-    if p:
-        print(g.fmt(p))
-        return 0
-    p = g.shortest(A, B)
-    if p:
-        print("# only through the wallet RPC or a daemon RPC method restricted mode refuses,")
-        print("# both semi-trusted: not a path for an untrusted client")
-        print(g.fmt(p))
-        return 0
-    print(f"# no path from {a} to {b} in the graph; inconclusive (see PR_REACH.md)")
+    head, why = head_for(root, g)
+    if head:
+        print(f"head {head.h.commit[:12]}, {len(head.h.nodes)} functions, compared with master's in "
+              "PR_REACH.md and by rtool reach and rtool path; built from the pull request's code, so leads only")
+    else:
+        print(why.rstrip("."))
     return 0
 
 
@@ -441,6 +744,8 @@ def main():
         return cmd_fn(root, *sys.argv[3:])
     if cmd == "path" and len(sys.argv) == 5:
         return cmd_path(root, sys.argv[3], sys.argv[4])
+    if cmd == "head" and len(sys.argv) == 3:
+        return cmd_head(root)
     print(__doc__.strip())
     return 2
 

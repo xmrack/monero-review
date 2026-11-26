@@ -1,6 +1,6 @@
 # Compact call graph from the merged trailmark snapshot, readable with the standard library.
 # usage: export.py <merged snapshot> <monero commit> [compiler_pairs.json [refused.json]] > callgraph.json
-import collections, json, os, re, sys, time
+import collections, hashlib, json, os, re, sys, time
 
 ORDER = ["gcc", "gcc_instantiation", "gcc_instantiation_kept", "gcc_bridged", "trailmark", "virtual",
          "template_virtual", "template_argument", "template_enclosing_class", "reference",
@@ -79,7 +79,14 @@ refuse = re.compile(r"(^|::)(" + "|".join(map(re.escape, refused["commands"] or 
 rpc_map = {k for k, l in lab.items() if l == "cryptonote::core_rpc_server::handle_http_request_map"}
 cut = sorted([a, b] for (a, b) in best if a in rpc_map and refuse.search(lab[b]))
 eps = sorted(eps.values())
-json.dump({"format": "monero-review-callgraph/1", "commit": commit,
+# Which version of these scripts built it: a head graph is compared with master's only
+# when both were built by the same rules.
+here = os.path.dirname(os.path.realpath(__file__))
+rules = hashlib.sha256()
+for f in sorted(os.listdir(here)):
+    if os.path.isfile(os.path.join(here, f)):
+        rules.update(f.encode() + b"\0" + open(os.path.join(here, f), "rb").read())
+json.dump({"format": "monero-review-callgraph/1", "commit": commit, "rules": rules.hexdigest()[:16],
            "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
            "origins": ORDER, "nodes": nodes,
            "edges": sorted([a, b, ORDER.index(o)] for (a, b), o in best.items()),

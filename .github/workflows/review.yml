@@ -682,8 +682,79 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # THE CALL GRAPH OF THE PULL REQUEST'S HEAD, built like master's by
+  # callgraph/, so PR_REACH.md can show the calls it adds and what reaches the
+  # functions it adds. The build runs the pull request's code: like the tests
+  # job, no secrets, and no cache (a `callgraph-` key would be restored as
+  # master's). The review reads the graph as untrusted. Off when the
+  # PR_CALLGRAPH variable is 0.
+  callgraph-pr:
+    needs: select
+    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' && (vars.PR_CALLGRAPH || '1') != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pr: ${{ fromJSON(needs.select.outputs.prs) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Fetch the pull request
+        id: fetch
+        env:
+          PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          meta=$(curl -fsS --retry 3 "https://api.github.com/repos/$UPSTREAM/pulls/$PR")
+          base=$(jq -r .base.ref <<<"$meta")
+          [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::bad base branch"; exit 1; }
+          git clone -q --filter=blob:none --no-tags --single-branch --branch "$base" \
+            "https://github.com/$UPSTREAM.git" src
+          cd src
+          git fetch -q --filter=blob:none origin "+refs/pull/$PR/head:refs/heads/pr"
+          git checkout -q pr
+          # Only when C or C++ moves; not `grep -q` (see the tests job).
+          if git diff --name-only "$(git merge-base origin/"$base" pr)...pr" \
+               | grep -E '^(src|contrib/epee)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inl|ipp)$' >/dev/null; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            # Submodule URLs come from the pull request: https only.
+            git -c protocol.allow=never -c protocol.https.allow=always \
+              submodule update -q --init --recursive
+          else
+            # A marker, so the review's download finds an artifact.
+            mkdir -p "$RUNNER_TEMP/callgraph-head"
+            echo "no C or C++ changes" | tee "$RUNNER_TEMP/callgraph-head/skipped"
+          fi
+      # On the build step, not the job, so the upload below still runs.
+      - name: Build the head's call graph
+        if: steps.fetch.outputs.build == 'true'
+        timeout-minutes: 60
+        run: |
+          GATE=advisory WORK="$PWD/callgraph-work" bash harness/callgraph/run.sh src "$RUNNER_TEMP/callgraph-out"
+      # The build could write anything to its out directory, symlinks
+      # included, which the upload would follow.
+      - name: Take the graph out
+        if: always() && steps.fetch.outputs.build == 'true'
+        run: python3 -I harness/callgraph/take.py "$RUNNER_TEMP/callgraph-out" "$RUNNER_TEMP/callgraph-head"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: callgraph-head-${{ matrix.pr }}
+          path: |
+            ${{ runner.temp }}/callgraph-head/callgraph.json
+            ${{ runner.temp }}/callgraph-head/gate.log
+            ${{ runner.temp }}/callgraph-head/skipped
+          if-no-files-found: ignore
+          retention-days: 7
+
   review:
-    needs: [select, tests]
+    needs: [select, tests, callgraph-pr]
     if: ${{ !cancelled() && needs.select.result == 'success' && needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' }}
     # Deliberately unchanged for the deep pass. `ubuntu-latest` on a PUBLIC
     # repo is already the 4-vCPU tier, and the workflow runtime caps
@@ -1684,6 +1755,14 @@ jobs:
           path: ${{ runner.temp }}/callgraph/callgraph.json
           key: callgraph-none
           restore-keys: callgraph-
+      # The graph of the pull request's head, from the callgraph-pr job, when
+      # it ran. reach.py validates it and uses it only for this head.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: needs.callgraph-pr.result != 'skipped'
+        continue-on-error: true
+        with:
+          name: callgraph-head-${{ matrix.pr }}
+          path: ${{ runner.temp }}/callgraph-head
 
       - name: Install rtool and list callers
         continue-on-error: true
@@ -1705,6 +1784,13 @@ jobs:
           else
             graph_note="none in this run, so rtool reach and rtool path have nothing to search"
           fi
+          head_dest=$(git rev-parse --git-path monero-review-callgraph-head.json)
+          rm -f "$head_dest"
+          hg="$RUNNER_TEMP/callgraph-head/callgraph.json"
+          if [ -f "$hg" ] && [ ! -L "$hg" ] && [ "$(stat -c %s "$hg")" -le 31457280 ]; then
+            install -m 0444 "$hg" "$head_dest"
+          fi
+          head_note=$(python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" head . 2>&1 | head -c 400 | tr -d '`' || true)
           PR_BASE_REF="$BASE_REF" python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" pr . origin/base > PR_REACH.md
           echo "PR_REACH.md: $(grep -c '^## ' PR_REACH.md || true) changed function(s); $graph_note"
           {
@@ -1712,6 +1798,7 @@ jobs:
             echo "rtool (run \`rtool help\`): def, callers, reach, path, history, git"
             echo "inside a submodule or rust-deps/<name>, and weggli in C++ mode."
             echo "Call graph: $graph_note."
+            echo "Head call graph: $head_note."
           } >> TOOLING.md
           bash "$RUNNER_TEMP/harness-scripts/ref_drift.sh" . >> TOOLING.md || true
 
