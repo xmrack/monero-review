@@ -327,7 +327,7 @@ class Head:
         if self.moved:
             out.append(f"Master changed {len(self.moved)} file(s) under src and contrib since this "
                        "branch's merge-base, so a difference between the graphs can be master's; "
-                       "a function in one of those files is not compared.")
+                       "the calls of a function master changed are not compared.")
         if self.partial:
             out.append(f"The head graph has {len(self.h.nodes)} functions to master's "
                        f"{len(self.m.nodes)} (part of the build failed?): calls it lacks are not listed.")
@@ -336,8 +336,9 @@ class Head:
     def delta(self, hi, mi, path):
         """The calls of head node `hi` that master node `mi` lacks, and the reverse."""
         h, m = self.h, self.m
-        if path in self.moved:
-            return ["Master changed this file since the branch point: calls not compared."]
+        n = m.nodes[mi]
+        if any(a <= n[4] and n[3] < a + max(b, 1) for c, d, a, b in self.moved.get(path, [])):
+            return ["Master changed this function since the branch point: calls not compared."]
         # Callees by node, so a call to a new overload counts.
         mine = {self.to_m.get(j) for j in h.succ[hi]}
         out = []
@@ -445,13 +446,13 @@ def base_lines(root, rng):
 def to_graph(root, base, commit):
     """Line maps head -> merge-base -> the graph's commit (or `base`, when the
     commit is not in this clone: the graph is at most a day older), and the
-    files that differ between those two."""
+    hunks between those two, {path: [(merge-base start, count, graph start, count)]}."""
     git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, text=True)
     mb = git("merge-base", base, "HEAD").stdout.strip()
     tip = commit if git("cat-file", "-e", commit + "^{commit}").returncode == 0 else base
     head = base_lines(root, [f"{base}...HEAD"])
     ahead = {p: [(a, b, c, d) for c, d, a, b in h] for p, h in base_lines(root, [mb, tip]).items()} if mb else {}
-    return head, lambda path, line: to_base(ahead.get(path, []), to_base(head.get(path, []), line)), set(ahead)
+    return head, lambda path, line: to_base(ahead.get(path, []), to_base(head.get(path, []), line)), ahead
 
 
 def head_of(root, m, mapped, moved):

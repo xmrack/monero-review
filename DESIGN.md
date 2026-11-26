@@ -136,9 +136,10 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
   that reach a changed function only at the head, and the reach of the
   functions it adds. A lower count at the head is never reported as a
   reduction, and calls it lacks are listed only when the compiler saw them in
-  master and the head graph is not much smaller. A function in a file master
+  master and the head graph is not much smaller. A function whose lines master
   changed since the merge-base is not compared, since the difference could be
-  master's.
+  master's. Skipping whole files instead skipped everything on a typical
+  pull request, which is weeks behind master.
 - So every prompt still says: a path is a lead, and no path proves nothing.
   The panel's reachability angle refutes; a graph that could refute would turn
   a gap in the graph into a dismissed finding.
