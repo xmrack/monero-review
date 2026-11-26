@@ -727,14 +727,21 @@ jobs:
             git -c protocol.allow=never -c protocol.https.allow=always \
               submodule update -q --init --recursive
           else
-            echo "no C or C++ changes; no head graph"
+            # A marker, so the review's download finds an artifact.
+            mkdir -p "$RUNNER_TEMP/callgraph-head"
+            echo "no C or C++ changes" | tee "$RUNNER_TEMP/callgraph-head/skipped"
           fi
       # On the build step, not the job, so the upload below still runs.
       - name: Build the head's call graph
         if: steps.fetch.outputs.build == 'true'
         timeout-minutes: 60
         run: |
-          GATE=advisory WORK="$PWD/callgraph-work" bash harness/callgraph/run.sh src "$RUNNER_TEMP/callgraph-head"
+          GATE=advisory WORK="$PWD/callgraph-work" bash harness/callgraph/run.sh src "$RUNNER_TEMP/callgraph-out"
+      # The build could write anything to its out directory, symlinks
+      # included, which the upload would follow.
+      - name: Take the graph out
+        if: always() && steps.fetch.outputs.build == 'true'
+        run: python3 -I harness/callgraph/take.py "$RUNNER_TEMP/callgraph-out" "$RUNNER_TEMP/callgraph-head"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -742,6 +749,7 @@ jobs:
           path: |
             ${{ runner.temp }}/callgraph-head/callgraph.json
             ${{ runner.temp }}/callgraph-head/gate.log
+            ${{ runner.temp }}/callgraph-head/skipped
           if-no-files-found: ignore
           retention-days: 7
 

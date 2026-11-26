@@ -611,11 +611,13 @@ case "${HEAD_GRAPH:-0}" in
     echo "==> building the head's call graph in an offline container"
     HCOPY=$(mktemp -d)
     git -C "$CACHE" worktree add -q --detach "$HCOPY/src" HEAD
+    # A fresh work directory: the build runs the pull request's code.
     if git -C "$HCOPY/src" -c protocol.allow=never -c protocol.https.allow=always \
          submodule update -q --init --recursive &&
-       GATE=advisory WORK="${HEAD_GRAPH_WORK:-$HOME/.cache/monero-review/callgraph-head}" \
-         bash "$HERE/callgraph/run.sh" "$HCOPY/src" "$HCOPY/out"; then
-      install -m 0444 "$HCOPY/out/callgraph.json" "$HEAD_DEST"
+       GATE=advisory WORK="$HCOPY/work" bash "$HERE/callgraph/run.sh" "$HCOPY/src" "$HCOPY/out" &&
+       python3 -I "$HERE/callgraph/take.py" "$HCOPY/out" "$HCOPY/taken" &&
+       [ -f "$HCOPY/taken/callgraph.json" ]; then
+      install -m 0444 "$HCOPY/taken/callgraph.json" "$HEAD_DEST"
     else
       echo "!! the head's call graph failed to build; reviewing without it" >&2
     fi

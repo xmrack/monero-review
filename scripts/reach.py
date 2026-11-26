@@ -338,16 +338,16 @@ class Head:
         h, m = self.h, self.m
         if path in self.moved:
             return ["Master changed this file since the branch point: calls not compared."]
-        cm, ch = {m.label(j) for j in m.succ[mi]}, {}
-        for j, o in sorted(h.succ[hi].items()):
-            ch.setdefault(h.label(j), (j, o))
+        # Callees by node, so a call to a new overload counts.
+        mine = {self.to_m.get(j) for j in h.succ[hi]}
         out = []
-        add = sorted((o not in CERTAIN, lab, j, o) for lab, (j, o) in ch.items() if lab not in cm)
+        add = sorted((o not in CERTAIN, h.label(j), j, o) for j, o in h.succ[hi].items()
+                     if self.to_m.get(j) not in m.succ[mi])
         if add:
             more = f" ({len(add) - MAX_CALLERS} more)" if len(add) > MAX_CALLERS else ""
             out.append("Calls this pull request adds (head graph): " + ", ".join(
                 f"{h.ref(j)} ({o})" for _, _, j, o in add[:MAX_CALLERS]) + more)
-        gone = sorted((m.label(j), j) for j, o in m.succ[mi].items() if o in CERTAIN and m.label(j) not in ch)
+        gone = sorted((m.label(j), j) for j, o in m.succ[mi].items() if o in CERTAIN and j not in mine)
         if gone and not self.partial:
             more = f" ({len(gone) - MAX_CALLERS} more)" if len(gone) > MAX_CALLERS else ""
             out.append("Compiler calls in master the head graph lacks (removed, or missed by the "
@@ -459,7 +459,7 @@ def head_of(root, m, mapped, moved):
     p = graph_path(root)
     p = p and os.path.join(os.path.dirname(p), HEAD_GRAPH)
     if not p or not os.path.isfile(p):
-        return None, "No graph of this pull request's head in this run."
+        return None, "No graph of this pull request's head in this run (none is built when no C or C++ changes)."
     try:
         head = Head(root, m, p, mapped, moved)
     except Bad as exc:
@@ -565,7 +565,7 @@ def cmd_pr(root, base):
     done = set()
     for name, qual, path, start, end in fns[:MAX_FUNCS]:
         print(f"## `{qual}` -- {path}:{start}-{end}\n")
-        hi = match(head.h, name, qual, path, start)[0] if head else None
+        hi, hcaveat = match(head.h, name, qual, path, start) if head else (None, None)
         new = added(hunks.get(path, []), start, end)
         i, caveat = (None, None) if new else match(g, name, qual, path, mapped(path, start))
         if i is None:
@@ -578,6 +578,8 @@ def cmd_pr(root, base):
                 print("Inconclusive;\nread its callers in the source.\n")
             else:
                 print("From the head graph (leads only):\n")
+                if hcaveat:
+                    print(hcaveat.replace("master line", "head line"))
                 print("\n".join(head.h.section(hi)) + "\n")
             continue
         if caveat:
@@ -589,6 +591,8 @@ def cmd_pr(root, base):
         print("\n".join(g.section(i)))
         if head and hi is None:
             print("Not found in the head graph.")
+        elif head and head.to_m.get(hi) != i:
+            print("The head graph's node for it is not this master node, so the two are not compared.")
         elif head:
             print("\n".join(head.delta(hi, i, path) + head.new_reach(hi, i)))
         print()
