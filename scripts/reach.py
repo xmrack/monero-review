@@ -460,7 +460,7 @@ def head_of(root, m, mapped, moved):
     p = graph_path(root)
     p = p and os.path.join(os.path.dirname(p), HEAD_GRAPH)
     if not p or not os.path.isfile(p):
-        return None, "No graph of this pull request's head in this run (none is built when no C or C++ changes)."
+        return None, "No graph of this pull request's head in this run: none is built without C or C++ changes, or its build failed."
     try:
         head = Head(root, m, p, mapped, moved)
     except Bad as exc:
