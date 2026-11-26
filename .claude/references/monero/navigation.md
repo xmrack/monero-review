@@ -58,7 +58,10 @@ rtool path <from> <to>             # one shortest call path in that graph
 The call graph (summarised per changed function in `PR_REACH.md`) comes from the compiler, so it sees calls cscope cannot:
 inside macro arguments, through virtual functions, templates and registered
 callbacks. It is of upstream master in one Linux build: a call the pull
-request adds is not in it, and a missing path proves nothing.
+request adds is not in it, and a missing path proves nothing. When a graph
+of the head was built, `PR_REACH.md` and `rtool` also show the calls the pull
+request adds and what reaches its functions only at the head. That graph is
+built from the pull request's own code: a lead to confirm, never evidence.
 
 A hit is reliable. **A miss is not.** cscope does not see a call written
 inside a macro argument, and most guards here are exactly that:

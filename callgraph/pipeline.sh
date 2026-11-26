@@ -36,4 +36,7 @@ $PY -I "$HERE/export.py" "$WORK/merged.json" "$(git -C "$SRC" rev-parse HEAD)" \
   "$WORK/report/compiler_pairs.json" "$WORK/refused.json" > "$OUT/callgraph.json"
 
 log "gate"
-$PY -I "$HERE/gate.py" "$OUT/callgraph.json" | tee "$OUT/gate.log"
+# GATE=advisory (a pull request's head): the result is recorded, the graph kept.
+if ! $PY -I "$HERE/gate.py" "$OUT/callgraph.json" | tee "$OUT/gate.log" && [ "${GATE:-}" != advisory ]; then
+  exit 1
+fi

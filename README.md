@@ -137,4 +137,10 @@ reach absent) before it is cached. `scripts/reach.py` writes `PR_REACH.md`:
 the entrypoints that reach each changed function, with shortest paths, and
 `rtool reach` and `rtool path` query the same graph. The graph is of master,
 so calls a pull request adds are not in it; it is a lead, never proof of
-unreachability.
+unreachability. The `callgraph-pr` job builds the same graph of the pull
+request's head, in a job with no secrets (off with the `PR_CALLGRAPH`
+variable set to `0`); `PR_REACH.md` then also lists the calls the pull
+request adds and the entrypoints that reach a changed or added function only
+at the head. That graph comes from the pull request's code, so it only adds
+leads: trust stays master's, and names it alone has are checked against the
+head source.

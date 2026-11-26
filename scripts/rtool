@@ -11,10 +11,14 @@
   rtool reach <function> [path[:line]]   entrypoints that reach a function in the
                                          call graph of master, shortest paths,
                                          graph callers (virtual, template and
-                                         callback calls resolved); :line, a
-                                         master line as rtool and PR_REACH.md
-                                         print it, picks one overload
-  rtool path <from> <to>                 shortest call path in that graph
+                                         callback calls resolved); :line, as
+                                         rtool and PR_REACH.md print it, picks
+                                         one overload. With a graph of the
+                                         head: entrypoints that reach it only
+                                         there, or the head's when master
+                                         lacks the function (leads only)
+  rtool path <from> <to>                 shortest call path in that graph, else
+                                         in the head's (a lead)
   rtool weggli [-u] [-R v=re]... <pattern> <path>
                                          weggli in C++ mode over .c .cc .cpp
                                          .h .hpp .inl
