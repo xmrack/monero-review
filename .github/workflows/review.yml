@@ -690,7 +690,7 @@ jobs:
   # PR_CALLGRAPH variable is 0.
   callgraph-pr:
     needs: select
-    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' && vars.PR_CALLGRAPH != '0'
+    if: needs.select.outputs.prs != '' && needs.select.outputs.prs != '[]' && (vars.PR_CALLGRAPH || '1') != '0'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
