@@ -635,12 +635,29 @@ jobs:
         with:
           path: harness
           persist-credentials: false
-      - name: Fetch the pull request
+      # Authenticated: unauthenticated calls share the runner's IP and its 60
+      # an hour, and fail with 403. The read-only token stays in this step.
+      - name: Pull request metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ matrix.pr }}
         run: |
           set -euo pipefail
-          meta=$(curl -fsS --retry 3 "https://api.github.com/repos/$UPSTREAM/pulls/${{ matrix.pr }}")
-          base=$(jq -r .base.ref <<<"$meta"); merged=$(jq -r .merged <<<"$meta")
-          merge=$(jq -r '.merge_commit_sha // ""' <<<"$meta")
+          for i in 1 2 3; do
+            meta=$(gh api "repos/$UPSTREAM/pulls/$PR" \
+              --jq '"base=\(.base.ref)\nmerged=\(.merged)\nmerge=\(.merge_commit_sha // "")"') && break
+            [ "$i" = 3 ] && exit 1
+            sleep 10
+          done
+          echo "$meta" >> "$GITHUB_OUTPUT"
+      - name: Fetch the pull request
+        env:
+          base: ${{ steps.meta.outputs.base }}
+          merged: ${{ steps.meta.outputs.merged }}
+          merge: ${{ steps.meta.outputs.merge }}
+        run: |
+          set -euo pipefail
           [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::bad base branch"; exit 1; }
           git clone -q --filter=blob:none --no-tags --single-branch --branch "$base" \
             "https://github.com/$UPSTREAM.git" src
@@ -705,14 +722,29 @@ jobs:
         with:
           path: harness
           persist-credentials: false
+      # Authenticated: unauthenticated calls share the runner's IP and its 60
+      # an hour, and fail with 403. The read-only token stays in this step.
+      - name: Pull request metadata
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ matrix.pr }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            meta=$(gh api "repos/$UPSTREAM/pulls/$PR" \
+              --jq '"base=\(.base.ref)\nmerged=\(.merged)\nmerge=\(.merge_commit_sha // "")"') && break
+            [ "$i" = 3 ] && exit 1
+            sleep 10
+          done
+          echo "$meta" >> "$GITHUB_OUTPUT"
       - name: Fetch the pull request
         id: fetch
         env:
           PR: ${{ matrix.pr }}
+          base: ${{ steps.meta.outputs.base }}
         run: |
           set -euo pipefail
-          meta=$(curl -fsS --retry 3 "https://api.github.com/repos/$UPSTREAM/pulls/$PR")
-          base=$(jq -r .base.ref <<<"$meta")
           [[ "$base" =~ ^[A-Za-z0-9._/-]+$ ]] || { echo "::error::bad base branch"; exit 1; }
           git clone -q --filter=blob:none --no-tags --single-branch --branch "$base" \
             "https://github.com/$UPSTREAM.git" src
