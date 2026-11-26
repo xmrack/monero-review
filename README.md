@@ -142,5 +142,5 @@ request's head, in a job with no secrets (off with the `PR_CALLGRAPH`
 variable set to `0`); `PR_REACH.md` then also lists the calls the pull
 request adds and the entrypoints that reach a changed or added function only
 at the head. That graph comes from the pull request's code, so it only adds
-leads: trust stays master's, and names it alone has are checked against the
-head source.
+leads: trust stays master's, and names it alone has are printed only as plain
+C++ names found in the head source where it says.

@@ -622,6 +622,7 @@ case "${HEAD_GRAPH:-0}" in
       echo "!! the head's call graph failed to build; reviewing without it" >&2
     fi
     git -C "$CACHE" worktree remove --force "$HCOPY/src" || true
+    rm -rf "$HCOPY"
     ;;
 esac
 PR_BASE_REF="$BASE" python3 -I "$HERE/scripts/reach.py" pr "$CACHE" origin/base > "$CACHE/PR_REACH.md"

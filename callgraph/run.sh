@@ -10,11 +10,13 @@ set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=$(realpath "$1"); OUT=$(realpath -m "$2")
 WORK=${WORK:-$(mktemp -d)}
+# Here, not in the container: a worktree's .git points outside its mounts.
+COMMIT=$(git -C "$SRC" rev-parse HEAD)
 IMAGE=monero-review-callgraph
 mkdir -p "$OUT" "$WORK/cargo"
 docker build -q -t "$IMAGE" "$HERE" > "$OUT/image.log"
 box() {
-  docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e JOBS="${JOBS:-}" -e GATE="${GATE:-}" ${CPUS:+--cpus "$CPUS"} \
+  docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e JOBS="${JOBS:-}" -e GATE="${GATE:-}" -e COMMIT="$COMMIT" ${CPUS:+--cpus "$CPUS"} \
     --cap-drop ALL --security-opt no-new-privileges --memory 14g --pids-limit 8192 \
     -e CARGO_HOME=/cargo -v "$SRC:/src" -v "$WORK:/work" -v "$WORK/cargo:/cargo" -v "$OUT:/out" \
     -v "$HERE:/cg:ro" "$@"

@@ -32,8 +32,9 @@ GRAPH = "monero-review-callgraph.json"   # in the checkout's git directory, out 
 HEAD_GRAPH = "monero-review-callgraph-head.json"
 HEAD_MAX = 30 << 20
 LABEL = re.compile(r"[ -_a-~]{1,400}")    # printable ASCII, no backtick
-IDENT = re.compile(r"[A-Za-z_]\w*")
-SCOPE = re.compile(r"[A-Za-z_]\w*|\{lambda(#\d+)?\}")
+QUALIFIER = re.compile(r"\b(?:namespace|class|struct|union|enum)\s+([A-Za-z_]\w*)|\b([A-Za-z_]\w*)\s*(?:<[^;{}]*?>)?\s*(?:::|\()")
+HEAD_PART = re.compile(r"~?[A-Za-z_]\w*|\{lambda(#\d+)?\}|\(anonymous\)|"
+                       r"operator(\(\)|\[\]|->\*?|<=>|<<=?|>>=?|&&|\|\||\+\+|--|[-+*/%^&|~!=<>,]=?)")
 NODE_PATH = re.compile(r"(src|contrib)/[A-Za-z0-9_./+-]{1,300}")
 INFERRED = {"trailmark", "gcc_instantiation_kept", "gcc_bridged", "virtual", "template_virtual", "template_argument", "template_enclosing_class",
             "reference", "reference_instantiation", "lambda", "function_table"}
@@ -73,8 +74,9 @@ HOW = """How to read this:
 - The daemon is untrusted by the wallet: wallet functions that ask it for
   data, and `wallet2::refresh`, are untrusted entrypoints ("daemon reply to
   the wallet"), since a remote node chooses the reply.
-- A label shared by several functions (overloads) carries its master
-  `path:line`; pass that to `rtool reach <fn> <path>:<line>`."""
+- A label shared by several functions (overloads) carries its `path:line`
+  (master's; the head's in a section from the head graph); pass that to
+  `rtool reach <fn> <path>:<line>`."""
 
 
 class Graph:
@@ -183,7 +185,7 @@ class Graph:
 
     def section(self, i):
         """Markdown lines for one node: entrypoint counts, shortest paths, direct callers."""
-        out = [f"Graph node: {self.ref(i)} ({self.side} {self.nodes[i][2]}:{self.nodes[i][3]})"]
+        out = [f"Graph node: `{self.label(i)}` ({self.side} {self.nodes[i][2]}:{self.nodes[i][3]})"]
         eps, via = self.reached(i)
         count = collections.Counter(self.entry[e][0] for _, _, e in eps)
         if i in self.entry:
@@ -262,6 +264,8 @@ class Head:
     calls and lower counts are never reported as such."""
     def __init__(self, root, m, path, mapped, moved):
         h = self.h = Graph(path, "head")
+        if len(h.nodes) > 2 * len(m.nodes) or sum(map(len, h.succ.values())) > 3 * sum(map(len, m.succ.values())):
+            raise Bad("too large")
         self.m, self.root, self.moved, self.files = m, root, moved, {}
         group = collections.defaultdict(lambda: ([], []))
         for i, n in enumerate(m.nodes):
@@ -278,12 +282,14 @@ class Head:
                     self.to_m[a] = b
                     used.add(b)
         self.from_m = {b: a for a, b in self.to_m.items()}
-        # A name only the head graph has is printed only if it is in the head
-        # source there, and an entrypoint's description only if master uses it.
+        # A name only the head graph has is printed only as printable() allows,
+        # and an entrypoint's description only if master uses it.
         self.vocab = {c for n in m.nodes for c in scope(n[1])}
         for i, n in enumerate(h.nodes):
-            if i not in self.to_m and not self.found(n):
-                n[1] = f"(a name not in the head source, {n[2]}:{n[3]})"
+            if i not in self.to_m:
+                name = self.printable(n)
+                n[1] = name or (f"(a name not in the head source, {n[2]}:{n[3]})" if self.source(n[2])
+                                else "(a name the head graph puts in no file of the checkout)")
         h.shared = collections.Counter(n[1] for n in h.nodes)
         descs = {d for t, d in m.entry.values()}
         entry = {}
@@ -298,32 +304,45 @@ class Head:
                             if b not in self.to_m or (self.to_m.get(a), self.to_m[b]) in m.cut})
         self.partial = len(h.nodes) < 0.9 * len(m.nodes)
 
-    def found(self, n):
-        """The label's own name occurs at its lines in the head checkout, and
-        every scope in it is an identifier master's graph or that file has."""
-        if n[2] not in self.files:
-            f = os.path.realpath(os.path.join(self.root, n[2]))
+    def source(self, path):
+        """(lines, the names it uses as a scope) of a file in the head checkout, or None."""
+        if path not in self.files:
+            f = os.path.realpath(os.path.join(self.root, path))
             try:
                 ok = f.startswith(os.path.realpath(self.root) + os.sep)
                 text = open(f, errors="replace").read() if ok else None
             except OSError:
                 text = None
-            self.files[n[2]] = text and (text.split("\n"), set(IDENT.findall(text)))
-        if not self.files[n[2]]:
-            return False
-        lines, idents = self.files[n[2]]
-        parts = scope(n[1])
-        s = parts[-1].lstrip("~") if parts else ""
-        s = "[" if s.startswith("{lambda") else "operator" if s.startswith("operator") else s
-        return s and s in "\n".join(lines[max(0, n[3] - 3):n[4] + 2]) and all(
-            SCOPE.fullmatch(c) and (c in self.vocab or c in idents) for c in parts[:-1])
+            self.files[path] = text and (text.split("\n"), {a or b for a, b in QUALIFIER.findall(text)})
+        return self.files[path]
+
+    def printable(self, n):
+        """The name to print for a node only the head graph has, else None: no
+        template arguments; every component an identifier, destructor, operator,
+        lambda or anonymous namespace; the last a word within 3 lines of where
+        the node starts in the head source; the rest scopes master's graph has,
+        or names that file declares, qualifies with or calls."""
+        src = self.source(n[2])
+        if not src:
+            return None
+        lines, idents = src
+        name = strip_targs(n[1])
+        parts = name.split("::")
+        if not all(HEAD_PART.fullmatch(p) for p in parts) or not all(
+                p in self.vocab or p in idents or p[0] in "({" for p in parts[:-1]):
+            return None
+        last, near = parts[-1], "\n".join(lines[max(0, n[3] - 3):n[3] + 3])
+        if last.startswith("{"):
+            return name if "[" in near else None
+        word = "operator" if last.startswith("operator") else last.lstrip("~")
+        return name if re.search(r"(?<!\w)" + re.escape(word) + r"(?!\w)", near) else None
 
     def intro(self):
         out = [f"Head graph: built the same way from this pull request's head {self.h.commit[:12]}, "
                "so its names and edges are the pull request's own code compiled and analysed: "
-               "leads, never evidence. A name only the head graph has that the harness did not "
-               "find in the head source is replaced by its path:line. Trust is master's for "
-               "every function in both graphs."]
+               "leads, never evidence. A name only the head graph has is shown without template "
+               "arguments, and only if it is a plain C++ name found where the graph says it is "
+               "defined; else its path:line. Trust is master's for every function in both graphs."]
         if self.moved:
             out.append(f"Master changed {len(self.moved)} file(s) under src and contrib since this "
                        "branch's merge-base, so a difference between the graphs can be master's; "
@@ -624,16 +643,18 @@ def cmd_fn(root, name, path=None):
         path, line = path.rsplit(":", 1)
         line = int(line)
     path = path and os.path.normpath(path)
-    head = head_for(root, g)[0]
     found, caveat = pick(g, name, path, line)
-    side = g
-    if not found and head:
-        # Only in the head graph: the line, if any, is the head's, as printed.
-        found, caveat = pick(head.h, name, path, line)
-        side = head.h
-        if found:
-            print("# not in the master graph; from the graph of this pull request's head, "
-                  "built from its own code: leads only")
+    side, head = g, None
+    if not found:
+        head = head_for(root, g)[0]
+        if head:
+            # Only in the head graph: the line, if any, is the head's, as printed.
+            found, caveat = pick(head.h, name, path, line)
+            side = head.h
+            caveat = caveat and caveat.replace("master line", "head line")
+            if found:
+                print("# not in the master graph; from the graph of this pull request's head, "
+                      "built from its own code: leads only")
     if not found:
         print(f"# no function named {name} in the {'master or head graph' if head else 'master graph'}; "
               "a miss is inconclusive")
@@ -648,8 +669,15 @@ def cmd_fn(root, name, path=None):
     for i in found:
         print(f"\n## {side.label(i)}  {side.side} {side.nodes[i][2]}:{side.nodes[i][3]}")
         print("\n".join(side.section(i)))
-        if side is g and head and i in head.from_m:
-            print("\n".join(head.new_reach(head.from_m[i], i)))
+    if side is g:
+        # Master's answer first: the head graph can be slow to load.
+        sys.stdout.flush()
+        head = head_for(root, g)[0]
+        for i in found:
+            lines = head.new_reach(head.from_m[i], i) if head and i in head.from_m else []
+            if lines:
+                print(f"\n## {g.label(i)}: in the graph of this pull request's head (leads only)")
+                print("\n".join(lines))
     return 0
 
 

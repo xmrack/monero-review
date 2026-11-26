@@ -129,16 +129,18 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
   artifact, never a cache (the review restores the newest `callgraph-` cache
   as master's). Its build runs the pull request's code, which can write any
   graph, so reach.py validates every field, prints a name only the head has
-  only if it is in the head source there, keeps master's trust for every
+  only if it is a plain C++ name (template arguments dropped) found as a word
+  where the graph says it is defined, keeps master's trust for every
   function both graphs have, and compares the two only for the head commit
   under review and the same version of callgraph/.
 - The head graph only adds leads: calls the pull request adds, entrypoints
   that reach a changed function only at the head, and the reach of the
   functions it adds. A lower count at the head is never reported as a
   reduction, and calls it lacks are listed only when the compiler saw them in
-  master and the head graph is not much smaller. A function whose lines master
-  changed since the merge-base is not compared, since the difference could be
-  master's. Skipping whole files instead skipped everything on a typical
+  master and the head graph is not much smaller. The calls of a function whose
+  lines master changed since the merge-base are not compared, since the
+  difference could be master's; entrypoints that reach it only at the head
+  are still listed, under a note that master moved. Skipping whole files instead skipped everything on a typical
   pull request, which is weeks behind master.
 - So every prompt still says: a path is a lead, and no path proves nothing.
   The panel's reachability angle refutes; a graph that could refute would turn
