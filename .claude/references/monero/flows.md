@@ -123,9 +123,19 @@ attacker-exposed sequence in the daemon.
     (60); difficulty non-zero; `check_hash(proof_of_work, difficulty)`;
     `m_checkpoints.check_block`; `prevalidate_miner_transaction`;
     `ver_non_input_consensus` over the supplement; per tx, `tx_exists`, then
-    `m_tx_pool.take_tx` or the supplement, then `check_tx_inputs`;
-    `validate_miner_transaction`. Only a `check_tx_inputs` failure calls
-    `add_block_as_invalid`; other failures leave the id uncached.
+    a copy read with `m_tx_pool.get_transaction_info(tx_id, txd, true)`,
+    falling back to the `extra_block_txs` supplement, then per-tx
+    `ver_non_input_consensus` and `check_tx_inputs`;
+    `validate_miner_transaction`. Nothing calls `take_tx`, so a failed block
+    leaves the pool untouched. A per-tx `ver_non_input_consensus` failure and
+    a `check_tx_inputs` failure both clear the same `valid` flag, and the
+    single `if (!valid || tvc.m_verifivation_failed)` branch calls
+    `add_block_as_invalid`; a failure of the supplement-wide
+    `ver_non_input_consensus` takes `goto leave` and leaves the id uncached,
+    as do the earlier checks. Check with
+    `grep -n 'take_tx\|get_transaction_info\|add_block_as_invalid\|ver_non_input_consensus'`
+    over `Blockchain::handle_block_to_main_chain` in
+    `src/cryptonote_core/blockchain.cpp`.
 12. **`BlockchainLMDB::add_block`** — `src/blockchain_db/lmdb/db_lmdb.cpp`,
     inside the still-open batch. Throws `BLOCK_EXISTS`, `BLOCK_PARENT_DNE`,
     `KEY_IMAGE_EXISTS` on conflict. It calls `BlockchainDB::add_block`
