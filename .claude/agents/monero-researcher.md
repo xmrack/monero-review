@@ -43,8 +43,11 @@ Read the changed hunks fully, then read outward. For each dangerous operation
 the change touches, walk backwards to where that value enters the process and
 read every step, including the ones in other files. Start from
 `PR_CALLERS.md` and `PR_REACH.md`, and never assume a function has one
-caller. `PR_REACH.md` names the untrusted entrypoints that reach a changed
-function on master; confirm each hop you use in the source.
+caller. Your brief carries the call graph's lines for your unit (the
+digest of `PR_REACH.md`): leads to confirm hop by hop in the source. For
+each candidate, run `rtool reach <symbol> <file>:<line>` once and copy what
+it prints into `graphReach`. A missing path proves nothing: never drop or
+lower a candidate because of it.
 
 **Check the siblings.** Monero implements many paths two or three times: JSON,
 binary and ZMQ RPC; P2P relay, RPC submission and transactions inside blocks;

@@ -982,7 +982,7 @@ jobs:
           fi
 
           # Names this job writes at the top level start out absent.
-          rm -rf diffstat.txt differr.txt PR_*.md PR_PRIOR.json PR_NUMSTAT.txt TOOLING.md RUST_DEPS.md RUST_FILES.txt \
+          rm -rf diffstat.txt differr.txt PR_*.md PR_PRIOR.json PR_REACH.json PR_NUMSTAT.txt TOOLING.md RUST_DEPS.md RUST_FILES.txt \
             rust-deps deps-include submodule-base submodule-diffs \
             tags tags-rust rust.files cscope.* tests.out review.md \
             workflow-updates.json exec-pass1.json
@@ -1825,6 +1825,11 @@ jobs:
           head_note=$(python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" head . 2>&1 | head -c 400 | tr -d '`' || true)
           PR_BASE_REF="$BASE_REF" python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" pr . origin/base > PR_REACH.md
           echo "PR_REACH.md: $(grep -c '^## ' PR_REACH.md || true) changed function(s); $graph_note"
+          # The same, compact, for the Lead to pass to the workflow, which puts
+          # each unit's lines in its researcher's brief.
+          python3 -I "$RUNNER_TEMP/harness-scripts/reach.py" brief . origin/base > PR_REACH.json \
+            || echo '{"graph": null, "count": 0, "entries": []}' > PR_REACH.json
+          echo "PR_REACH.json: $(jq .count PR_REACH.json 2>/dev/null || echo 0) line(s)"
           {
             echo
             echo "rtool (run \`rtool help\`): def, callers, reach, path, history, git"

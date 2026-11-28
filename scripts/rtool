@@ -11,9 +11,9 @@
   rtool reach <function> [path[:line]]   entrypoints that reach a function in the
                                          call graph of master, shortest paths,
                                          graph callers (virtual, template and
-                                         callback calls resolved); :line, as
-                                         rtool and PR_REACH.md print it, picks
-                                         one overload. With a graph of the
+                                         callback calls resolved); :line, any
+                                         line inside the function at the head,
+                                         picks one overload. With a graph of the
                                          head: entrypoints that reach it only
                                          there, or the head's when master
                                          lacks the function (leads only)

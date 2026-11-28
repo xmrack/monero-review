@@ -195,6 +195,15 @@ const CANDIDATES_SCHEMA = {
           category: { type: 'string', enum: CATEGORIES },
           untrustedInput: { type: 'string' },
           reaches: { type: 'string' },
+          // What the call graph says about `symbol`, copied from one rtool
+          // run. In the schema so every pass that proposes fills it, and it
+          // reaches every verifier whatever its angle. Pointing at
+          // PR_REACH.md in prose got it opened by nobody.
+          graphReach: { type: 'string', description:
+            'Run `rtool reach <symbol> <file>:<line>` once for this candidate and copy, unedited, ' +
+            'its "Reached from" line and the first untrusted path it prints (or its first ' +
+            'semi-trusted one), or the line it prints when the function or the graph is missing. A missing ' +
+            'path proves nothing: never drop or lower a candidate because of it.' },
           missingGuard: { type: 'string' },
           // How this weakness relates to the change, which is an ATTRIBUTE OF
           // THE FINDING AND NOT A TEST IT HAS TO PASS. A real vulnerability in
@@ -241,7 +250,7 @@ const CANDIDATES_SCHEMA = {
           priorId: { type: 'string' },
         },
         required: ['title', 'file', 'line', 'symbol', 'snippet', 'category',
-                   'untrustedInput', 'reaches', 'missingGuard', 'provenance',
+                   'untrustedInput', 'reaches', 'graphReach', 'missingGuard', 'provenance',
                    'relationToDiff', 'fix', 'severity', 'confidence', 'rationale'],
       },
     },
@@ -556,6 +565,18 @@ const MAX_UNITS = Math.max(1, Math.min(UNIT_CEILING, CHANGED.length,
 // Changed lines per path, from `git diff --numstat`, when the Lead passes
 // them. Used to split a large unit's classes across more than one researcher.
 const LINE_COUNTS = (a.lineCounts && typeof a.lineCounts === 'object') ? a.lineCounts : {}
+// The harness's call-graph digest (reach.py brief, PR_REACH.json), passed
+// through by the Lead: per changed file, the lines whose reach says something.
+// Each researcher gets its unit's lines in its brief, so nobody has to choose
+// to open a file.
+const REACH = (a.reach && typeof a.reach === 'object' && Array.isArray(a.reach.entries))
+  ? a.reach.entries.filter((e) => e && typeof e.path === 'string' && typeof e.text === 'string'
+      && CHANGED.includes(e.path)).map((e) => ({ path: e.path, text: e.text.slice(0, 400) }))
+  : []
+if (a.reach && Number(a.reach.count) !== REACH.length) {
+  log('call graph digest: ' + REACH.length + ' line(s) usable of ' + a.reach.count + ' the harness wrote')
+}
+const reachLines = (paths) => REACH.filter((e) => (paths || []).includes(e.path)).map((e) => '  - ' + e.text)
 const unitLines = (u) => (u.paths || []).reduce((n, p) => n + (Number(LINE_COUNTS[p]) || 0), 0)
 // Standard runs one researcher per unit; a unit this many lines over gets one
 // per share of its classes instead, up to the total below.
@@ -637,7 +658,7 @@ const anglesFor = (c) => ANGLES.map((a) => (a === 'REACHABILITY' && SPECIALIST[c
 // What each angle digs at, carried in the dispatch so the verifier does not
 // have to find its own angle in a long agent file.
 const ANGLE_BRIEF = {
-  REACHABILITY: 'Start at the input. Is it attacker-controlled in the terms of trust-boundaries.md, and is the path live in a default build? Walk the routes the proposer did not. PR_REACH.md and rtool reach list entrypoints from a call graph of master: a path there is a lead to check, and its absence refutes nothing.',
+  REACHABILITY: 'Start at the input. Is it attacker-controlled in the terms of trust-boundaries.md, and is the path live in a default build? Walk the routes the proposer did not. The call graph line above is what rtool reach printed for the proposer: read each hop you rely on in the source, and run rtool reach on any other function the path needs. A missing path refutes nothing.',
   GUARD: 'Grant input and path, then find what stops it anyway: a serializer bound, a CHECK_AND_ASSERT_MES frames up, passes_max_size_check, a per-command byte cap, a type that cannot hold the value. Read it; do not assume it.',
   IMPACT: 'Grant the mechanism and ask what it buys: chain split, theft, remote crash, stuck thread, privacy loss, or nothing an observer did not already have.',
   DIVERGENCE: 'Ask whether two honest nodes reach different verdicts on the same block or transaction: base against head, either side of the fork height, pruned against full, or after different reorgs. For state, DB and format defects, also compare one node before and after a reorg, a crash between writes, a restart or an upgrade that reads old data. Find the exact input or event that splits them, or the reason none can.',
@@ -968,6 +989,10 @@ const researchCell = (cell) => agent(
    'Unit: ' + cell.unit.name,
    'What it does: ' + cell.unit.role,
    'Trust boundary: ' + cell.unit.boundary,
+   ...(reachLines(cell.unit.paths).length ? [
+     'Call graph of master, with what this PR adds (the harness\'s digest of PR_REACH.md;',
+     'each line a lead to confirm in the source, and a missing path refutes nothing):',
+     ...reachLines(cell.unit.paths)] : []),
    (cell.lenses.length > 1 ? 'Weakness classes: ' : 'Weakness class: ') + cell.lens,
    BOUNDED
      ? 'Take them one at a time and finish each before starting the next, so a\nclass late in the list is not read through the theory an earlier one gave\nyou. ' + (cell.split
@@ -1135,9 +1160,9 @@ const researchCell = (cell) => agent(
    'is a design decision that is not yours, say so in a clause and give the',
    'local change that stops the bleeding.',
    '',
-   'Start reachability from PR_CALLERS.md and PR_REACH.md. For anything further, use',
-   'Agent(monero-explore) for "where is this defined / what reaches it": it',
-   'searches in its own context and hands back the answer, so the grep sprawl',
+   'Start reachability from the call graph lines above, PR_CALLERS.md and PR_REACH.md.',
+   'For anything further, use Agent(monero-explore) for "where is this defined /',
+   'what reaches it": it searches in its own context and hands back the answer, so the grep sprawl',
    'never enters yours.',
   ].join('\n'),
   { label: 'research:' + cell.unit.name + (BOUNDED && !cell.split ? '' : '/' + cell.lens),
@@ -1925,6 +1950,7 @@ const verifyAngle = (c, angle) => agent(
      '  category:         ' + c.category,
      '  untrusted input:  ' + c.untrustedInput,
      '  which reaches:    ' + c.reaches,
+     '  call graph:       ' + (c.graphReach || '(not given)'),
      '  missing guard:    ' + c.missingGuard,
      '  relation to diff: ' + c.provenance + ' -- ' + c.relationToDiff,
      '  reasoning:        ' + c.rationale,
@@ -2108,6 +2134,7 @@ const advocated = await parallel(marginal.map((r) => () => agent(
    '  category:        ' + r.candidate.category,
    '  untrusted input: ' + r.candidate.untrustedInput,
    '  which reaches:   ' + r.candidate.reaches,
+   '  call graph:      ' + (r.candidate.graphReach || '(not given)'),
    '  missing guard:   ' + r.candidate.missingGuard,
    '',
    'What each angle concluded:',

@@ -193,7 +193,7 @@ cp -r "$HERE/.claude" "$CACHE/.claude"
 # trusted, and the names this script itself writes and reads.
 # As in CI: case-insensitive, any file type, and symlinks.
 rm -f "$CACHE/review.md" "$CACHE/workflow-updates.json" "$CACHE/PR_PRIOR.json" "$CACHE/PR_NUMSTAT.txt" \
-  "$CACHE/PR_CALLERS.md" "$CACHE/PR_REACH.md" "$CACHE/PR_TESTS.md" "$CACHE/PR_COMMITS.md" "$CACHE/PR_SUBMODULES.md" \
+  "$CACHE/PR_CALLERS.md" "$CACHE/PR_REACH.md" "$CACHE/PR_REACH.json" "$CACHE/PR_TESTS.md" "$CACHE/PR_COMMITS.md" "$CACHE/PR_SUBMODULES.md" \
   "$CACHE/exec.json" "$(git -C "$CACHE" rev-parse --path-format=absolute --git-path monero-review-callgraph.json)"
 # The checkout is reused across pull requests: a previous PR's submodule
 # patches read as this one's would be wrong context with nothing to reveal it.
@@ -626,6 +626,8 @@ case "${HEAD_GRAPH:-0}" in
     ;;
 esac
 PR_BASE_REF="$BASE" python3 -I "$HERE/scripts/reach.py" pr "$CACHE" origin/base > "$CACHE/PR_REACH.md"
+python3 -I "$HERE/scripts/reach.py" brief "$CACHE" origin/base > "$CACHE/PR_REACH.json" \
+  || echo '{"graph": null, "count": 0, "entries": []}' > "$CACHE/PR_REACH.json"
 printf '\nrtool reach and rtool path read the call graph behind PR_REACH.md. Call graph: %s. Head call graph: %s.\n' \
   "$GRAPH_NOTE" "$(python3 -I "$HERE/scripts/reach.py" head "$CACHE" 2>&1 | head -c 400)" >> "$CACHE/TOOLING.md"
 
