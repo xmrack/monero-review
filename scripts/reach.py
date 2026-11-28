@@ -219,7 +219,7 @@ class Graph:
         if hits:
             return ("Nothing untrusted reaches it in this graph, which is one Linux build with default "
                     "options. A call above it sits under an option off by default: "
-                    + "; ".join(f"`{p}:{n}` calls `{f}` inside `{c}`" for p, n, f, c in hits[:3]) + ".")
+                    + "; ".join(f"`{p}:{n}` calls `{f}` under the option `{c}`" for p, n, f, c in hits[:3]) + ".")
         return ("Nothing untrusted reaches it in this graph. That proves nothing: the graph is one Linux "
                 "build with default options and misses some indirect calls, so read its callers.")
 
@@ -506,16 +506,20 @@ def tag_spans(root, paths):
 _OFF = {}
 
 
+def base_has(root, path):
+    """Whether origin/base has `path`: the pull request cannot name it."""
+    return subprocess.run(["git", "cat-file", "-e", f"origin/base:{path}"], cwd=root,
+                          capture_output=True).returncode == 0
+
+
 def off_options(root):
-    """CMake options the checkout declares OFF by default, which the graph's
-    build leaves off."""
+    """CMake options origin/base declares OFF by default, which the graph's
+    build leaves off. The base's, so the pull request cannot name one."""
     if root not in _OFF:
         names = set()
         for f in ("CMakeLists.txt", "src/CMakeLists.txt"):
-            try:
-                text = open(os.path.join(root, f), errors="replace").read()
-            except OSError:
-                continue
+            text = subprocess.run(["git", "show", f"origin/base:{f}"], cwd=root,
+                                  capture_output=True, text=True, errors="replace").stdout
             names |= set(re.findall(r'option\s*\(\s*(\w+)\s+"[^"]*"\s+OFF\s*\)', text))
         _OFF[root] = names
     return _OFF[root]
@@ -537,6 +541,8 @@ def gated(root, name, node):
         # The path is printed, and the pull request names its files.
         if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./+-]{0,200}", path) or ".." in path:
             continue
+        if path not in files and not base_has(root, path):
+            continue
         if not n.isdigit() or not re.search(r"(?<![\w.])" + re.escape(name) + r"\s*\(", text):
             continue
         n = int(n)
@@ -548,8 +554,9 @@ def gated(root, name, node):
             except OSError:
                 files[path] = []
         for c in conditions(files[path], n):
-            if any(re.search(r"\b" + o + r"\b", c) for o in off):
-                out.append((path, n, name, c))
+            hit = sorted(o for o in off if re.search(r"\b" + o + r"\b", c))
+            if hit:
+                out.append((path, n, name, hit[0]))
                 break
     return out
 
