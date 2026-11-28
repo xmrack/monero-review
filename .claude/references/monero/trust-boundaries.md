@@ -438,7 +438,14 @@ interpreter and every architecture must produce identical hashes.
 **Trust roots.**
 
 - *Hard-coded checkpoints* (`src/checkpoints/checkpoints.cpp`): no alt block
-  at or below the last checkpoint is allowed. Otherwise there is **no maximum
+  at or below the highest checkpoint at or below the node's own chain height
+  is allowed -- not the last compiled-in checkpoint. A node still syncing
+  below the last checkpoint accepts alt blocks above its nearest lower
+  checkpoint; the hash check at each checkpointed height constrains them
+  separately. (`checkpoints::is_alternative_block_allowed` takes
+  `m_points.upper_bound(blockchain_height)` then `--it`;
+  `Blockchain::handle_alternative_block` passes
+  `get_current_blockchain_height()`.) Otherwise there is **no maximum
   reorg depth**.
 - *Fast sync* (`src/blocks/checkpoints.dat`, its sha256 pinned in
   `blockchain.cpp`, `--fast-block-sync` on by default on mainnet): up to the
