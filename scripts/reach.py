@@ -334,7 +334,10 @@ class Head:
         # and an entrypoint's description only if master uses it.
         self.vocab = {c for n in m.nodes for c in scope(n[1])}
         for i, n in enumerate(h.nodes):
-            if i not in self.to_m:
+            if i in self.to_m:
+                # Paired by a tail of its scope: print master's name.
+                n[1] = m.nodes[self.to_m[i]][1]
+            else:
                 name = self.printable(n)
                 n[1] = name or (f"(a name not in the head source, {n[2]}:{n[3]})" if self.source(n[2])
                                 else "(a name the head graph puts in no file of the checkout)")
@@ -524,13 +527,16 @@ def gated(root, name, node):
     off = root and off_options(root)
     if not off or not re.fullmatch(r"~?[A-Za-z_]\w*", name):
         return []
-    grep = subprocess.run(["git", "grep", "-n", "-w", "-e", name, "--", "src", "contrib"],
+    grep = subprocess.run(["git", "grep", "-z", "-n", "-w", "-e", name, "--", "src", "contrib"],
                           cwd=root, capture_output=True, text=True).stdout.splitlines()
     if len(grep) > 40:
         return []
     out, files = [], {}
     for g in grep:
-        path, n, text = (g.split(":", 2) + ["", ""])[:3]
+        path, n, text = (g.split("\0", 2) + ["", ""])[:3]
+        # The path is printed, and the pull request names its files.
+        if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_./+-]{0,200}", path) or ".." in path:
+            continue
         if not n.isdigit() or not re.search(r"(?<![\w.])" + re.escape(name) + r"\s*\(", text):
             continue
         n = int(n)
