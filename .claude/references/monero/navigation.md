@@ -51,7 +51,7 @@ readtags -t tags <symbol>          # where a symbol is DEFINED — better than c
 cscope -d -L3 <function>           # functions calling this function
 cscope -d -f tests.out -L3 <fn>    # callers in tests/, a separate database
 rtool callers <function>           # both databases plus every git grep -w match
-rtool reach <function> [path[:line]]  # call graph of master: entrypoints, paths, resolved callers
+rtool reach <function> [path[:line]]  # call graph of master: entrypoints, paths, resolved callers; :line is any line inside the function
 rtool path <from> <to>             # one shortest call path in that graph
 ```
 
@@ -62,6 +62,9 @@ request adds is not in it, and a missing path proves nothing. When a graph
 of the head was built, `PR_REACH.md` and `rtool` also show the calls the pull
 request adds and what reaches its functions only at the head. That graph is
 built from the pull request's own code: a lead to confirm, never evidence.
+The graph is one build with default options: a zero count can mean the
+caller sits under an option that is off, which `rtool reach` names when it
+finds one.
 
 A hit is reliable. **A miss is not.** cscope does not see a call written
 inside a macro argument, and most guards here are exactly that:

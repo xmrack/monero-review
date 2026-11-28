@@ -45,7 +45,11 @@ divergence.
   master, so calls the PR adds are absent. When a graph of the head was
   built, it also lists the calls the PR adds and entrypoints that reach a
   function only at the head. That graph is built from the PR's own code: a
-  lead, never evidence.
+  lead, never evidence. A call only the head graph has counts as the PR's
+  only when the PR changes the function that makes it. A zero count names
+  the build option, off by default, that hides a caller, when there is one.
+- `PR_REACH.json`: the same, compact; the workflow puts each unit's lines in
+  its researcher's brief.
 - `PR_COMMITS.md`: the patch of each commit within the PR. This is a blobless
   clone and `git show <intermediate-sha>` fails, so read this to see whether a
   guard was added and then dropped.
@@ -169,7 +173,7 @@ your reading to find more.
 origin of each hop, and its callers as the compiler resolved them, including
 virtual, template and callback calls that cscope cannot see. `rtool path
 <from> <to>` gives one shortest path; `rtool reach <fn> <path>:<line>`, with
-the line the tool prints, picks one overload. With a head graph, both also
+any line inside the function at the head, picks one overload. With a head graph, both also
 report what only the head's graph has, as leads. Untrusted entrypoints
 include the wallet's daemon requests: a remote node is untrusted. Paths flagged *inferred hops* or *conditional*, and matches
 PR_REACH.md asks you to confirm, need the source read before a finding rests

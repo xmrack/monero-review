@@ -25,7 +25,7 @@ Start with `PR_CALLERS.md` when the question is about a function the diff
 changed, then `rtool callers <fn>` and `rtool def <symbol>`, which print the
 index's answer and every `git grep -w` match together. Say which you used.
 For virtual, template and callback calls, and for which entrypoints reach a
-function, use `PR_REACH.md` and `rtool reach <fn>` (callers resolved by the
+function, use `PR_REACH.md` and `rtool reach <fn> [<file>:<line>]` (callers resolved by the
 compiler, on master) or `rtool path <from> <to>`. A path there is a lead to
 read in the source; no path is not an answer.
 `cscope.out` covers `src` and `contrib` only, so a miss there is not an answer

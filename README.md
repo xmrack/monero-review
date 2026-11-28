@@ -141,6 +141,10 @@ unreachability. The `callgraph-pr` job builds the same graph of the pull
 request's head, in a job with no secrets (off with the `PR_CALLGRAPH`
 variable set to `0`); `PR_REACH.md` then also lists the calls the pull
 request adds and the entrypoints that reach a changed or added function only
-at the head. That graph comes from the pull request's code, so it only adds
+at the head; a call only the head graph has counts only in a function the
+pull request changes, since the graph's master can predate the merge-base.
+`reach.py brief` writes `PR_REACH.json`, the informative lines of the same
+report, which the workflow puts in each researcher's brief; each candidate
+carries what `rtool reach` printed for it. That graph comes from the pull request's code, so it only adds
 leads: trust stays master's, and names it alone has are printed only as plain
 C++ names found in the head source where it says.

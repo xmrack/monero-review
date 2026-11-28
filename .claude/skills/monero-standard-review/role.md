@@ -75,7 +75,7 @@ describe output nobody produced.
 
 The harness put it on disk before you started. Always: `PR_CONTEXT.md`,
 `PR_DISCUSSION.md`, `PR_HISTORY.md`, `PR_FILES.md`, `PR_NUMSTAT.txt`,
-`PR_PRIOR.json`, `RUST_DEPS.md` (with `rust-deps/` for git-pinned deps and
+`PR_PRIOR.json`, `PR_REACH.json`, `RUST_DEPS.md` (with `rust-deps/` for git-pinned deps and
 `rust-deps/crates/` for the crates.io packages this PR adds, bumps or patches;
 it also checks every registry package's lockfile sha256 against what crates.io
 published, and a mismatch there is a finding), `TOOLING.md` and the

@@ -142,6 +142,21 @@ gh workflow run review.yml --repo xmrack/monero-review -f mode=deep -f pr=11155
   difference could be master's; entrypoints that reach it only at the head
   are still listed, under a note that master moved. Skipping whole files instead skipped everything on a typical
   pull request, which is weeks behind master.
+- A call only the head graph has is the pull request's only if the pull
+  request changes the function that makes it. The graph's master can predate
+  the merge-base, and without this rule every call master added since showed
+  up as a head-only path. Compiler nodes have no end line, so a function's
+  span comes from ctags, or ends where the next function starts.
+- A zero count is explained when it can be: the graph is one Linux build
+  with default options, so reach.py looks for a caller under an option that
+  is off by default and names it. Otherwise it says the zero proves nothing.
+- Agents did not open PR_REACH.md or run rtool when the brief only pointed at
+  them. So `PR_REACH.json`, the informative lines only (deltas, zeros,
+  narrow reach; broad reach collapsed per file), goes through the
+  workflow's args into each researcher's brief, and every candidate must
+  carry the `rtool reach` output for its function (`graphReach`), which
+  every verifier sees whatever its angle and which covers functions the pull
+  request did not change.
 - So every prompt still says: a path is a lead, and no path proves nothing.
   The panel's reachability angle refutes; a graph that could refute would turn
   a gap in the graph into a dismissed finding.

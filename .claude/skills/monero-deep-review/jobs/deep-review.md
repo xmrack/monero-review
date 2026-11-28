@@ -69,6 +69,7 @@ Workflow({ name: "monero-deep-scan",
                    changedLines: <the sum of the counts in PR_NUMSTAT.txt>,
                    lineCounts: <an object from PR_NUMSTAT.txt: each path to its count>,
                    priorFindings: <the array in PR_PRIOR.json, verbatim; [] when absent>,
+                   reach: <the object in PR_REACH.json, verbatim; omit when absent>,
                    masterRef: <"origin/master" when step 1 says merged, else omit> } })
 ```
 
@@ -80,6 +81,9 @@ JSON-encoded string.
 findings earlier reviews of this pull request published at older heads. Pass
 the array exactly as it is; the report must account for every entry the
 workflow returns in `priorFindings`.
+
+`PR_REACH.json` is the harness's call-graph digest of the changed functions.
+Pass it exactly as it is: the workflow gives each researcher its unit's lines.
 
 Send one short message before it goes quiet: what is under review, the head, the
 file and line counts, that this is the deep pass, and that nothing is a finding
