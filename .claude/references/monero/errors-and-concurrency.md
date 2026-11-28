@@ -253,7 +253,14 @@ Other stated or structural rules:
   blocking acquire there would deadlock.
 - **Nothing held under `m_check_span_queue_mutex` may call a core path that
   takes the txpool lock or `m_incoming_tx_lock`** — the comment in
-  `try_add_next_blocks` says so.
+  `request_missing_objects`, beside its `m_check_span_queue_mutex` acquire,
+  says so (`grep -n "If any of the functions below acquire" src/cryptonote_protocol/cryptonote_protocol_handler.inl`).
+  `try_add_next_blocks` takes that mutex only inside its `cleanup_on_exit`
+  guard. The hazard is the locks held until cleanup: `Blockchain::prepare_handle_incoming_blocks`
+  takes `m_tx_pool.lock()` and keeps it until `cleanup_handle_incoming_blocks`,
+  but takes `m_blockchain_lock` (`CRITICAL_REGION_LOCAL1`) only for its own
+  duration. So core calls that only take `m_blockchain_lock` (for example
+  `core::have_block`) are not the hazard under that mutex.
 - Inside the node: `m_host_fails_score_lock` → `m_blocked_hosts_lock` →
   `m_peerlist_lock` (`add_host_fail` → `block_host` → peerlist eviction).
 - In the pool: `m_transactions_lock` → `m_blockchain` → the LMDB `LockedTXN`.
